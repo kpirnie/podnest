@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PodNest ~ Secure. Manage. Deploy.</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@latest/dist/css/uikit.min.css">
+        <link rel="stylesheet" href="/static/css/app.css">
+        <link rel="icon" type="image/svg+xml" href="https://cdn.kcp.im/logos/podnest.svg">
+        <link rel="alternate icon" type="image/svg+xml" href="https://cdn.kcp.im/logos/podnest.svg">
+        <link rel="apple-touch-icon" href="https://cdn.kcp.im/logos/podnest.svg">
+    </head>
+    <body class="kp-app-body">
+
+        <!-- -- mobile topbar -------------------------------------------------------- -->
+        <div class="kp-topbar">
+            <div class="kp-topbar-brand">
+                <a href="/" class="uk-flex uk-flex-middle" style="gap:10px">
+                    <img src="https://cdn.kcp.im/logos/podnest.svg" alt="PodNest" class="kp-topbar-logo">
+                    <h1 class="kp-brand-heading" style="font-size:1.1rem;">
+                        <span class="kp-brand-pod">POD</span><span class="kp-brand-nest">NEST</span>
+                    </h1>
+                </a>
+            </div>
+            <button class="kp-hamburger" uk-toggle="target: #kp-offcanvas">
+                <span uk-icon="menu"></span>
+            </button>
+        </div>
+
+        <!-- -- off-canvas sidebar (mobile) ----------------------------------------- -->
+        <div id="kp-offcanvas" uk-offcanvas="overlay: true; mode: slide; flip: true">
+            <div class="uk-offcanvas-bar">
+                <button class="uk-offcanvas-close" type="button" uk-close></button>
+                {{template "sidebar-content" .}}
+            </div>
+        </div>
+
+        <!-- -- main layout --------------------------------------------------------- -->
+        <div class="kp-layout">
+
+            <!-- sidebar (desktop) -->
+            <aside class="kp-sidebar">
+                {{template "sidebar-content" .}}
+            </aside>
+
+            <!-- main content -->
+            <main class="kp-main">
+                <div id="kp-view"></div>
+                <footer class="kp-footer">
+                    <span>Copyright &copy; <script>document.write(new Date().getFullYear())</script>, Kevin Pirnie. All Rights Reserved.</span>
+                    <br>
+                    <span>
+                        <a href="#">Terms of Use</a> | 
+                        <a href="#">Getting Support</a> | 
+                        <a href="#">Shameless Plug</a>
+                    </span>
+                </footer>
+            </main>
+
+        </div>
+
+        <!-- -- global confirm modal ------------------------------------------------ -->
+        <div id="kp-confirm-modal" uk-modal>
+            <div class="uk-modal-dialog uk-modal-body kp-modal">
+                <h3 class="uk-modal-title" id="kp-confirm-title">Confirm</h3>
+                <p id="kp-confirm-message" style="color:var(--kp-text-dim);margin:16px 0 24px"></p>
+                <div class="uk-flex uk-flex-right" style="gap:10px">
+                    <button class="uk-button kp-btn-ghost uk-modal-close">Cancel</button>
+                    <button class="uk-button kp-btn-danger" id="kp-confirm-ok">Confirm</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- -- toast container ----------------------------------------------------- -->
+        <div id="kp-toasts" class="kp-toasts"></div>
+
+        <!-- -- user data for JS ---------------------------------------------------- -->
+        <script>
+            window.KP = {
+                user: {
+                    id:    {{.User.ID}},
+                    uname: {{.User.UName | js}},
+                    fname: {{.User.FName | js}},
+                    lname: {{.User.LName | js}},
+                    role:  {{.User.Role}},
+                },
+                roles: { manager: 50, admin: 99 }
+            };
+        </script>
+
+        <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit-icons.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode@latest/build/qrcode.min.js" defer></script>
+        <script src="/static/js/app.js" defer></script>
+    </body>
+</html>
+
+{{define "sidebar-content"}}
+<div class="kp-sidebar-inner">
+
+    <!-- brand -->
+    <div class="kp-sidebar-brand kp-brand-sidebar">
+        <img src="https://cdn.kcp.im/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy." class="kp-logo-img-sm">
+        <div>
+            <h1 class="kp-brand-heading uk-margin-small-top uk-width-1-1 uk-text-center">
+                <span class="kp-brand-pod">POD</span><span class="kp-brand-nest">NEST</span>
+            </h1>
+            <p class="kp-brand-tagline">SECURE. MANAGE. DEPLOY.</p>
+        </div>
+    </div>
+
+    <!-- user badge -->
+    <div class="kp-user-badge">
+        <div class="kp-user-avatar">
+            {{slice .User.FName 0 1}}{{slice .User.LName 0 1}}
+        </div>
+        <div>
+            <div class="kp-user-name">{{.User.FName}} {{.User.LName}}</div>
+            <div class="kp-user-role">
+                {{if eq .User.Role 99}}
+                <span class="kp-badge kp-badge-admin">Admin</span>
+                {{else}}
+                <span class="kp-badge kp-badge-manager">Manager</span>
+                {{end}}
+            </div>
+        </div>
+    </div>
+
+    <!-- navigation -->
+    <nav class="kp-nav">
+        <div class="kp-nav-section">Main</div>
+        <a href="#" data-view="dashboard" class="kp-nav-link">
+            <span class="kp-nav-icon" uk-icon="icon: home; ratio: 0.9"></span>
+            Dashboard
+        </a>
+        <a href="#" data-view="sites" class="kp-nav-link">
+            <span class="kp-nav-icon" uk-icon="icon: world; ratio: 0.9"></span>
+            Sites
+        </a>
+        {{if eq .User.Role 99}}
+        <div class="kp-nav-section">Administration</div>
+        <a href="#" data-view="users" class="kp-nav-link">
+            <span class="kp-nav-icon" uk-icon="icon: users; ratio: 0.9"></span>
+            Users
+        </a>
+        <a href="#" data-view="settings" class="kp-nav-link">
+            <span class="kp-nav-icon" uk-icon="icon: cog; ratio: 0.9"></span>
+            Settings
+        </a>
+        <a href="#" data-view="security" class="kp-nav-link">
+            <span class="kp-nav-icon" uk-icon="icon: server; ratio: 0.9"></span>
+            Security
+        </a>
+        {{end}}
+    </nav>
+
+    <!-- footer / logout -->
+    <div class="kp-sidebar-footer">
+        <a href="/logout" class="kp-nav-link kp-logout">
+            <span class="kp-nav-icon" uk-icon="icon: sign-out; ratio: 0.9"></span>
+            Sign Out
+        </a>
+    </div>
+
+</div>
+{{end}}

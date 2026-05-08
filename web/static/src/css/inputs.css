@@ -1,0 +1,71 @@
+.kp-input {
+    background: var(--kp-bg-input) !important;
+    border: 1px solid var(--kp-border-bright) !important;
+    color: var(--kp-text) !important;
+    border-radius: var(--kp-radius) !important;
+    height: 48px;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-size: 0.95rem !important;
+    padding: 0 14px !important;
+    transition: border-color var(--kp-transition), box-shadow var(--kp-transition);
+}
+.kp-input:focus {
+    border-color: var(--kp-blue) !important;
+    outline: none;
+    box-shadow: 0 0 0 3px var(--kp-blue-glow) !important;
+}
+.kp-input::placeholder { color: var(--kp-text-dim); opacity: 0.6; }
+
+.kp-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--kp-text-dim);
+    margin-bottom: 6px;
+    display: block;
+}
+
+.kp-select {
+    background: var(--kp-bg-input) !important;
+    border: 1px solid var(--kp-border-bright) !important;
+    color: var(--kp-text) !important;
+    border-radius: var(--kp-radius) !important;
+    height: 48px;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-size: 0.95rem !important;
+    padding: 0 14px !important;
+}
+.kp-select:focus {
+    border-color: var(--kp-blue) !important;
+    box-shadow: 0 0 0 3px var(--kp-blue-glow) !important;
+    outline: none;
+}
+
+.kp-textarea {
+    background: var(--kp-bg-input) !important;
+    border: 1px solid var(--kp-border-bright) !important;
+    color: var(--kp-text) !important;
+    border-radius: var(--kp-radius) !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-size: 0.9rem !important;
+    padding: 12px 14px !important;
+    resize: vertical;
+}
+.kp-textarea:focus {
+    border-color: var(--kp-blue) !important;
+    box-shadow: 0 0 0 3px var(--kp-blue-glow) !important;
+    outline: none;
+}
+
+.uk-form-icon { color: var(--kp-text-dim); }
+
+.kp-alert-error {
+    background: rgba(255,69,96,0.08);
+    color: var(--kp-danger);
+    border: 1px solid rgba(255,69,96,0.2);
+    border-radius: var(--kp-radius);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.88rem;
+    padding: 14px 16px;
+}

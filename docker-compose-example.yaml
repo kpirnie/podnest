@@ -1,0 +1,45 @@
+services:
+  # rename this service to your liking
+  podnest:
+    # latest is the latest "release", while dev is under constant development. Use dev at your own risk
+    image: ghcr.io/kpirnie/podnest:latest
+    #image: ghcr.io/kpirnie/podnest:dev
+
+    # name your container to your liking
+    container_name: podnest
+
+    # change your hostname to your liking
+    hostname: podnest
+
+    # let it restart all the time, unless manually stopped
+    restart: unless-stopped
+
+    # our internal port is 8080, so make sure you keep that, otherwise change your host port to your liking
+    ports:
+      - 80:80
+      - 443:443
+      - 9000:8080
+
+    # the podman socket is required to interact with the podman of your host
+    volumes:
+      - /run/podman/podman.sock:/run/podman/podman.sock:rw,bind
+
+      # while this is not required, if you want site and config persistence... change your path and keep it
+      - /I/RECOMMEND/KEEPING/THIS:/opt/podnest:z
+
+    # this is optional to use the /tmp directory of your host
+    tmpfs:
+      - /tmp
+
+    # change this to match whatever timezone you like
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+    # not required
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

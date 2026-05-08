@@ -1,0 +1,46 @@
+:root {
+    /* core palette */
+    --kp-bg:            #070e20;
+    --kp-bg-card:       #0c1530;
+    --kp-bg-input:      #101c3a;
+    --kp-bg-hover:      #152040;
+    --kp-navy:          #0f1d3d;
+
+    /* blue spectrum */
+    --kp-blue:          #2B8EFF;
+    --kp-blue-dark:     #1a6fd4;
+    --kp-blue-glow:     rgba(43,142,255,0.25);
+    --kp-cyan:          #00D4FF;
+    --kp-cyan-dim:      rgba(0,212,255,0.15);
+    --kp-cyan-glow:     rgba(0,212,255,0.2);
+
+    /* text */
+    --kp-text:          #dde8f5;
+    --kp-text-dim:      #6b8cae;
+    --kp-white:         #ffffff;
+
+    /* borders */
+    --kp-border:        #1a2a4a;
+    --kp-border-bright: #2a3f6a;
+
+    /* states */
+    --kp-danger:        #ff4560;
+    --kp-success:       #00e5a0;
+    --kp-warning:       #ffb020;
+
+    /* spacing / shape */
+    --kp-radius:        10px;
+    --kp-radius-lg:     14px;
+    --kp-radius-xl:     20px;
+
+    /* layout */
+    --kp-sidebar-w:     260px;
+    --kp-topbar-h:      60px;
+    --kp-transition:    0.2s ease;
+
+    /* bg pattern */
+    --kp-dot-color:     rgba(43,142,255,0.08);
+
+    /* brand */
+    --kp-font-brand: 'Orbitron', sans-serif;
+}

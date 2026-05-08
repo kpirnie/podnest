@@ -1,0 +1,5 @@
+docker-compose.yaml
+podnest
+*.log
+package-lock.json
+node_modules/

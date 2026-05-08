@@ -1,0 +1,100 @@
+.kp-site-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+}
+@media (min-width: 640px) {
+    .kp-site-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1200px) {
+    .kp-site-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.kp-site-card {
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-border);
+    border-radius: var(--kp-radius-lg);
+    border-left: 3px solid var(--kp-border);
+    padding: 20px;
+    transition: border-color var(--kp-transition), transform var(--kp-transition), box-shadow var(--kp-transition);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.kp-site-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(43,142,255,0.25), transparent);
+    pointer-events: none;
+}
+.kp-site-card:hover {
+    border-color: rgba(43,142,255,0.4);
+    border-left-color: var(--kp-blue);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(43,142,255,0.08);
+}
+
+.kp-site-card[data-status="1"] { border-left-color: var(--kp-success); }
+.kp-site-card[data-status="2"] { border-left-color: var(--kp-border); }
+.kp-site-card[data-status="3"] { border-left-color: var(--kp-warning); }
+.kp-site-card[data-status="4"] { border-left-color: var(--kp-danger); }
+
+.kp-site-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    gap: 10px;
+}
+.kp-site-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--kp-white);
+    font-family: 'Space Grotesk', sans-serif;
+    margin: 0;
+}
+.kp-site-meta {
+    font-size: 0.78rem;
+    color: var(--kp-text-dim);
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-family: 'JetBrains Mono', monospace;
+}
+.kp-site-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.kp-site-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid var(--kp-border);
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.kp-site-actions-break {
+    width: 100%;
+    height: 0;
+}
+
+.kp-site-name {
+    cursor: pointer;
+    transition: color var(--kp-transition);
+}
+.kp-site-name:hover { color: var(--kp-cyan); }
+
+.kp-card-footer-text {
+    color:var(--kp-text-dim);
+    font-size:.9rem;
+    margin:0;
+    font-family:'JetBrains Mono',monospace;
+    margin-top: 10px;
+}

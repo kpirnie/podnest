@@ -1,0 +1,289 @@
+package models
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"podnest/internal/logger"
+	"time"
+)
+
+// container image references — single source of truth for all image URLs
+const (
+	ImgNginx    = "docker.io/library/nginx:alpine"
+	ImgDB       = "docker.io/library/mariadb:lts"
+	ImgRedis    = "docker.io/library/redis:alpine"
+	ImgSFTP     = "ghcr.io/kpirnie/podnest-sftp:latest"
+	ImgPMA      = "docker.io/phpmyadmin/phpmyadmin:latest"
+	ImgPHPBase  = "docker.io/library/wordpress:php"
+	ImgPHPOnly  = "docker.io/library/php:"
+	ImgNode     = "docker.io/library/node:"
+	ImgDotNet   = "mcr.microsoft.com/dotnet/aspnet:"
+	ImgFail2Ban = "ghcr.io/kpirnie/podnest-fail2ban:latest"
+)
+
+// security rule list types
+const (
+	RuleBlacklist = 0
+	RuleWhitelist = 1
+)
+
+// user roles
+const (
+	RoleManager = 50
+	RoleAdmin   = 99
+)
+
+// php versions
+var PHPVersionMap = map[int]string{
+	3: "8.2",
+	4: "8.3",
+	5: "8.4",
+	6: "8.5",
+}
+
+// site statuses
+const (
+	StatusRunning    = 1
+	StatusStopped    = 2
+	StatusRestarting = 3
+	StatusError      = 4
+)
+
+var SiteStatusMap = map[int]string{
+	StatusRunning:    "running",
+	StatusStopped:    "stopped",
+	StatusRestarting: "restarting",
+	StatusError:      "error",
+}
+
+// site types
+const (
+	SiteTypeWordPress = 1
+	SiteTypePHP       = 2
+	SiteTypeStatic    = 3
+	SiteTypeNode      = 4
+	SiteTypeDotNet    = 5
+)
+
+var SiteTypeMap = map[int]string{
+	SiteTypeWordPress: "PHP",
+	SiteTypePHP:       "", // this was the PHP type
+	SiteTypeStatic:    "Static HTML",
+	SiteTypeNode:      "Node.js",
+	SiteTypeDotNet:    ".NET",
+}
+
+// config types
+const (
+	ConfigNginx   = 1
+	ConfigPHP     = 2
+	ConfigMariaDB = 3
+	ConfigRedis   = 4
+)
+
+// node versions
+var NodeVersionMap = map[int]string{
+	1: "20",
+	2: "22",
+	3: "23",
+	4: "24",
+}
+
+// .NET versions
+var DotNetVersionMap = map[int]string{
+	1: "8.0",
+	2: "9.0",
+	3: "10.0",
+}
+
+// internal service ports
+const (
+	NodeInternalPort   = 3000
+	DotNetInternalPort = 8080
+	PHPMyAdminPort     = 8082
+)
+
+// user data structure
+type User struct {
+	ID          int64
+	UName       string
+	PWord       string
+	UHash       string
+	FName       string
+	LName       string
+	Email       string
+	Phone       string
+	Role        int
+	TOTPSecret  string
+	TOTPEnabled bool
+	Created     time.Time
+	Updated     *time.Time
+}
+
+// TOTPPending holds a short-lived token issued between password validation and TOTP verification
+type TOTPPending struct {
+	Token     string
+	UID       int64
+	ExpiresAt time.Time
+}
+
+// session data structure
+type Session struct {
+	ID        string
+	UID       int64
+	ExpiresAt time.Time
+}
+
+// site data structure
+type Site struct {
+	ID             int64
+	UID            int64
+	Name           string
+	Port           int
+	PHPVersion     int
+	SiteStatus     int
+	SiteType       int
+	RuntimeVersion *int
+	StartCommand   string
+	PMAPort        int
+	Created        time.Time
+	Updated        *time.Time
+}
+
+// SFTPCred holds the global SFTP credentials for a site
+type SFTPCred struct {
+	ID       int64
+	SiteID   int64
+	Username string
+	Password string
+	UID      int
+	Created  time.Time
+	Updated  *time.Time
+}
+
+// PMA token data structure
+type PMAToken struct {
+	Token     string
+	SiteID    int64
+	ExpiresAt time.Time
+}
+
+// domain data structure
+type Domain struct {
+	ID      int64
+	SiteID  int64
+	Domain  string
+	Created time.Time
+	Updated *time.Time
+}
+
+// config data structure
+type Config struct {
+	ID      int64
+	SiteID  int64
+	Type    int
+	Config  string
+	Created time.Time
+	Updated *time.Time
+}
+
+// GenerateUHash produces a cryptographically random 64-char hex string
+func GenerateUHash() (string, error) {
+
+	// 32 bytes = 64 hex characters
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		logger.Error("Error generating user hash:%v ", err)
+		return "", err
+	}
+
+	// Log the generated hash for debugging purposes
+	logger.Info("Generated user hash")
+	return hex.EncodeToString(b), nil
+}
+
+// GenerateSessionID produces a cryptographically random session token
+func GenerateSessionID() (string, error) {
+
+	// 32 bytes = 64 hex characters
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		logger.Error("Error generating session ID:%v ", err)
+		return "", err
+	}
+
+	// Log the generated session ID for debugging purposes
+	logger.Info("Generated session ID")
+	return hex.EncodeToString(b), nil
+}
+
+// PHPImage returns the WordPress FPM Alpine image tag for a given php_version int
+func PHPImage(phpVersion int) string {
+	ver, ok := PHPVersionMap[phpVersion]
+	if !ok {
+		ver = "8.2"
+	}
+	logger.Info("Generated WordPress image tag")
+	return ImgPHPBase + ver + "-fpm-alpine"
+}
+
+// PHPOnlyImage returns the plain PHP FPM Alpine image (non-WordPress)
+func PHPOnlyImage(phpVersion int) string {
+	ver, ok := PHPVersionMap[phpVersion]
+	if !ok {
+		ver = "8.2"
+	}
+	logger.Info("Generated PHP image tag")
+	return ImgPHPOnly + ver + "-fpm-alpine"
+}
+
+// NodeImage returns the node alpine image for a given runtime_version int
+func NodeImage(version int) string {
+	ver, ok := NodeVersionMap[version]
+	if !ok {
+		ver = "22"
+	}
+	logger.Info("Generated Node.js image tag")
+	return ImgNode + ver + "-alpine"
+}
+
+// DotNetImage returns the aspnet image for a given runtime_version int
+func DotNetImage(version int) string {
+	ver, ok := DotNetVersionMap[version]
+	if !ok {
+		ver = "8.0"
+	}
+	logger.Info("Generated .NET image tag")
+	return ImgDotNet + ver
+}
+
+// StatusLabel returns the string label for a site_status int
+func StatusLabel(status int) string {
+	if label, ok := SiteStatusMap[status]; ok {
+		return label
+	}
+	return "unknown"
+}
+
+// RuntimeImage returns the appropriate runtime image for a site type
+func RuntimeImage(site *Site) string {
+
+	// Determine the image based on the site type and runtime version
+	switch site.SiteType {
+	case SiteTypeWordPress:
+		return PHPImage(site.PHPVersion)
+	case SiteTypePHP:
+		return PHPOnlyImage(site.PHPVersion)
+	case SiteTypeNode:
+		if site.RuntimeVersion != nil {
+			return NodeImage(*site.RuntimeVersion)
+		}
+		return NodeImage(2)
+	case SiteTypeDotNet:
+		if site.RuntimeVersion != nil {
+			return DotNetImage(*site.RuntimeVersion)
+		}
+		return DotNetImage(1)
+	}
+	return ""
+}

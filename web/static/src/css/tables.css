@@ -1,0 +1,12 @@
+.kp-table-wrap {
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-border);
+    border-radius: var(--kp-radius-lg);
+    overflow: hidden;
+    border-top: 2px solid var(--kp-blue);
+}
+.kp-table-wrap .uk-table { margin: 0; }
+.kp-table-wrap tbody tr {
+    transition: background var(--kp-transition);
+}
+.kp-table-wrap tbody tr:hover { background: rgba(43,142,255,0.04); }

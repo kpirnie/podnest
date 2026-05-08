@@ -1,0 +1,47 @@
+.kp-toasts {
+    position: fixed;
+    bottom: 24px;
+    right: 16px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: min(360px, calc(100vw - 32px));
+}
+@media (min-width: 640px) {
+    .kp-toasts { right: 24px; }
+}
+
+.kp-toast {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-radius: var(--kp-radius);
+    font-size: 0.85rem;
+    font-weight: 500;
+    font-family: 'Space Grotesk', sans-serif;
+    animation: kp-slide-in 0.2s ease;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    backdrop-filter: blur(8px);
+}
+.kp-toast-success {
+    background: rgba(0,229,160,0.1);
+    border: 1px solid rgba(0,229,160,0.3);
+    color: var(--kp-success);
+}
+.kp-toast-error {
+    background: rgba(255,69,96,0.1);
+    border: 1px solid rgba(255,69,96,0.3);
+    color: var(--kp-danger);
+}
+.kp-toast-info {
+    background: rgba(43,142,255,0.1);
+    border: 1px solid rgba(43,142,255,0.3);
+    color: var(--kp-cyan);
+}
+
+@keyframes kp-slide-in {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}

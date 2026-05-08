@@ -1,0 +1,100 @@
+/* ── offcanvas close ──────────────────────────────────────────────────────── */
+.uk-offcanvas-bar .uk-offcanvas-close {
+    top: 18px; right: 16px;
+    color: var(--kp-text-dim);
+    transition: color var(--kp-transition);
+}
+.uk-offcanvas-bar .uk-offcanvas-close:hover { color: var(--kp-danger); }
+
+/* ── tooltips ─────────────────────────────────────────────────────────────── */
+.uk-tooltip {
+    background: var(--kp-navy);
+    color: var(--kp-cyan);
+    border: 1px solid var(--kp-border-bright);
+    border-radius: var(--kp-radius);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 6px 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(43,142,255,0.15);
+}
+
+.uk-tooltip.uk-active { opacity: 1; }
+
+/* -- ssl status icons ------------------------------------------------------- */
+.kp-ssl-valid       { color: var(--kp-success); }
+.kp-ssl-self-signed { color: var(--kp-warning); }
+.kp-ssl-none        { color: var(--kp-danger); }
+.kp-ssl-pending     { color: var(--kp-text-dim); }
+
+/* -- domain row ------------------------------------------------------------- */
+.kp-domain-row-inner  { gap: 8px; }
+.kp-domain-add-wrap   { gap: 8px; }
+
+/* -- sftp password display -------------------------------------------------- */
+.kp-sftp-pass         { user-select: all; font-size: 0.8rem; }
+
+/* -- settings input height override ----------------------------------------- */
+.kp-input-sm          { height: 38px; }
+
+/* -- settings view ---------------------------------------------------------- */
+.kp-settings-wrap         { max-width: 600px; }
+.kp-settings-domain-wrap  { align-items: center; gap: 10px; }
+
+/* -- brand heading ---------------------------------------------------------- */
+.kp-brand-heading {
+    font-family: var(--kp-font-brand);
+    font-weight: 900;
+    font-size: 2rem;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    margin: 0;
+}
+.kp-brand-heading .kp-brand-pod  { color: var(--kp-blue); }
+.kp-brand-heading .kp-brand-nest { color: var(--kp-cyan); }
+.kp-brand-tagline {
+    font-family: var(--kp-font-brand);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    color: var(--kp-text-dim);
+    margin-top: 6px;
+}
+.kp-brand-sidebar .kp-brand-heading { font-size: 1rem; }
+
+/* -- backup codes grid ------------------------------------------------------ */
+.kp-backup-codes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.kp-backup-code {
+    display: block;
+    background: var(--kp-navy);
+    border: 1px solid var(--kp-border-bright);
+    border-radius: var(--kp-radius);
+    padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    letter-spacing: 0.12em;
+    color: var(--kp-cyan);
+    text-align: center;
+    user-select: all;
+}
+
+/* -- footer ----------------------------------------------------------------- */
+.kp-footer {
+    margin-top: auto;
+    padding-top: 20px;
+    border-top: 1px solid var(--kp-border);
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--kp-text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 2;
+}
+.kp-footer a {
+    color: var(--kp-text-dim);
+    transition: color var(--kp-transition);
+}
+.kp-footer a:hover { color: var(--kp-cyan); }

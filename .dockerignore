@@ -1,0 +1,5 @@
+web/static/src/
+node_modules/
+package.json
+package-lock.json
+postcss.config.js

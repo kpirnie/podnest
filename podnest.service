@@ -1,0 +1,23 @@
+[Unit]
+Description=PodNest Management UI
+After=network.target podman.socket
+Requires=podman.socket
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStartPre=-/usr/bin/podman rm -f podnest
+ExecStart=/usr/bin/podman run \
+    --name podnest \
+    --hostname podnest \
+    --network host \
+    -v /run/podman/podman.sock:/run/podman/podman.sock:rw \
+    -v /home/sites:/opt/podnest:z \
+    --tmpfs /tmp \
+    -e TZ=America/New_York \
+    -e LOG_LEVEL=INFO \
+    ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 9000 --socket /run/podman/podman.sock
+ExecStop=/usr/bin/podman stop podnest
+
+[Install]
+WantedBy=multi-user.target

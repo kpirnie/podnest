@@ -1,0 +1,25 @@
+.kp-login-wrap {
+    min-height: 100vh;
+    padding: 24px 16px;
+    position: relative;
+    z-index: 1;
+}
+
+.kp-login-card {
+    border: 1px solid var(--kp-border-bright);
+    border-radius: var(--kp-radius-xl);
+    max-width: 500px;
+    width: 100%;
+    border-top: 2px solid var(--kp-blue);
+    box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(43,142,255,0.1);
+    backdrop-filter: blur(10px);
+}
+.kp-login-card .uk-card-header {
+    padding: 36px;
+    border-bottom: 1px solid var(--kp-border);
+}
+.kp-login-card .uk-card-body  { padding: 32px 36px; }
+.kp-login-card .uk-card-footer {
+    padding: 18px 36px 28px;
+    border-top: 1px solid var(--kp-border);
+}

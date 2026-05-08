@@ -1,0 +1,20 @@
+{
+  "name": "podnest-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm run build:css && npm run build:js",
+    "build:css": "postcss web/static/src/css/index.css -o web/static/css/app.css --no-map",
+    "build:js": "esbuild web/static/src/js/app.js --bundle --minify --outfile=web/static/js/app.js",
+    "watch": "npm run watch:css & npm run watch:js",
+    "watch:css": "postcss web/static/src/css/index.css -o web/static/css/app.css --watch --no-map",
+    "watch:js": "esbuild web/static/src/js/app.js --bundle --outfile=web/static/js/app.js --watch"
+  },
+  "devDependencies": {
+    "cssnano": "^7.0.0",
+    "esbuild": "^0.21.0",
+    "postcss": "^8.4.0",
+    "postcss-cli": "^11.0.0",
+    "postcss-import": "^16.0.0"
+  }
+}

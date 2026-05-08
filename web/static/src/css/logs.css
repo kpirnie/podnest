@@ -1,0 +1,44 @@
+.kp-log-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 14px;
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-border);
+    border-bottom: none;
+    border-radius: var(--kp-radius) var(--kp-radius) 0 0;
+}
+.kp-log-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+}
+.kp-log-dot-red    { background: var(--kp-danger); }
+.kp-log-dot-yellow { background: var(--kp-warning); }
+.kp-log-dot-green  { background: var(--kp-success); }
+
+.kp-log-wrap {
+    background: #020510;
+    border: 1px solid var(--kp-border);
+    border-radius: 0 0 var(--kp-radius) var(--kp-radius);
+    height: 440px;
+    overflow-y: auto;
+    padding: 16px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.9;
+    color: #7b9cc8;
+    scroll-behavior: smooth;
+}
+
+.kp-log-line-err  { color: var(--kp-danger); }
+.kp-log-line-warn { color: var(--kp-warning); }
+.kp-log-line-info { color: var(--kp-cyan); }
+
+.kp-log-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}

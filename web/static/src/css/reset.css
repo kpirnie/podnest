@@ -1,0 +1,25 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+    font-size: 15px;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    background: var(--kp-bg);
+    color: var(--kp-text);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+}
+
+a { color: var(--kp-cyan); text-decoration: none; }
+a:hover { color: var(--kp-blue); }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--kp-bg); }
+::-webkit-scrollbar-thumb { background: var(--kp-border-bright); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--kp-blue); }

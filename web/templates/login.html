@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PodNest ~ Secure. Manage. Deploy.</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@latest/dist/css/uikit.min.css">
+        <link rel="stylesheet" href="/static/css/app.css">
+        <link rel="icon" type="image/svg+xml" href="https://cdn.kcp.im/logos/podnest.svg">
+        <link rel="alternate icon" type="image/svg+xml" href="https://cdn.kcp.im/logos/podnest.svg">
+        <link rel="apple-touch-icon" href="https://cdn.kcp.im/logos/podnest.svg">
+    </head>
+    <body class="kp-login-body">
+
+        <div class="uk-flex uk-flex-center uk-flex-middle kp-login-wrap">
+            <div class="uk-card kp-card kp-login-card uk-width-1-1">
+
+                <div class="uk-card-header uk-text-center">
+                    <img src="https://cdn.kcp.im/logos/podnest.svg" alt="PodNest" class="kp-logo-img-sm">
+                    <h1 class="kp-brand-heading uk-margin-small-top">
+                        <span class="kp-brand-pod">POD</span><span class="kp-brand-nest">NEST</span>
+                    </h1>
+                    <p class="kp-brand-tagline">SECURE. MANAGE. DEPLOY.</p>
+                </div>
+
+                <div class="uk-card-body">
+                    {{if .Error}}
+                    <div class="kp-alert-error uk-margin-bottom">
+                        <span uk-icon="icon: warning; ratio: 0.85"></span>
+                        &nbsp;{{.Error}}
+                    </div>
+                    {{end}}
+
+                    <form method="POST" action="/login" class="uk-form-stacked">
+                        <div class="uk-margin">
+                            <label class="kp-label" for="username">Username</label>
+                            <div class="uk-inline uk-width-1-1">
+                                <span class="uk-form-icon" uk-icon="user"></span>
+                                <input
+                                    class="uk-input kp-input"
+                                    id="username"
+                                    name="username"
+                                    type="text"
+                                    placeholder="Username"
+                                    autocomplete="username"
+                                    required
+                                    style="padding-left:40px !important"
+                                >
+                            </div>
+                        </div>
+
+                        <div class="uk-margin">
+                            <label class="kp-label" for="password">Password</label>
+                            <div class="uk-inline uk-width-1-1">
+                                <span class="uk-form-icon" uk-icon="lock"></span>
+                                <input
+                                    class="uk-input kp-input"
+                                    id="password"
+                                    name="password"
+                                    type="password"
+                                    placeholder="Password"
+                                    autocomplete="current-password"
+                                    required
+                                    style="padding-left:40px !important"
+                                >
+                            </div>
+                        </div>
+
+                        <div class="uk-margin-top">
+                            <button class="uk-button kp-btn-primary uk-width-1-1" type="submit" style="justify-content:center;height:48px">
+                                <span uk-icon="sign-in"></span>
+                                Sign In
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="uk-card-footer uk-text-center">
+                    <p class="kp-card-footer-text">
+                        Authorized access only!
+                    </p>
+                    <p class="kp-card-footer-text uk-margin-remove-bottom">Copyright &copy; <script>document.write(new Date().getFullYear())</script>, Kevin Pirnie. All Rights Reserved.</p>
+                    <p class="kp-card-footer-text uk-margin-remove-top">
+                        <a href="#">Terms of Use</a> | 
+                        <a href="#">Getting Support</a> | 
+                        <a href="#">Shameless Plug</a>
+                    </p>
+                </div>
+
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit-icons.min.js" defer></script>
+    </body>
+</html>

@@ -1,0 +1,79 @@
+/* ── uikit overrides ──────────────────────────────────────────────────────── */
+.uk-card            { background: var(--kp-bg-card); color: var(--kp-text); }
+.uk-modal-dialog    { background: var(--kp-bg-card); color: var(--kp-text); }
+.uk-offcanvas-bar   { background: var(--kp-bg-card); }
+.uk-form-label      { color: var(--kp-text-dim); }
+.uk-text-muted      { color: var(--kp-text-dim) !important; }
+.uk-alert           { border-radius: var(--kp-radius); border: none; }
+
+.uk-table th {
+    color: var(--kp-text-dim);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 14px 16px;
+}
+.uk-table td { padding: 14px 16px; vertical-align: middle; }
+.uk-table td,
+.uk-table th { border-color: var(--kp-border); }
+.uk-table-striped > tr:nth-of-type(odd),
+.uk-table-striped tbody tr:nth-of-type(odd) { background: rgba(21,32,64,0.5); }
+
+.uk-tab > .uk-active > a {
+    color: var(--kp-cyan) !important;
+    border-color: var(--kp-cyan) !important;
+    font-weight: 600;
+}
+.uk-tab > * > a {
+    color: var(--kp-text-dim);
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    padding: 12px 18px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+}
+.uk-tab > * > a:hover { color: var(--kp-text); }
+.uk-tab::before      { border-color: var(--kp-border); }
+.uk-modal-title      { color: var(--kp-white); font-family: 'Space Grotesk', sans-serif; font-weight: 700; }
+
+/* ── helpers ──────────────────────────────────────────────────────────────── */
+.kp-mono   { font-family: 'JetBrains Mono', monospace; }
+.kp-accent { color: var(--kp-blue); }
+.kp-cyan   { color: var(--kp-cyan); }
+.kp-muted  { color: var(--kp-text-dim); }
+
+.kp-title {
+    color: var(--kp-white);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-family: 'Space Grotesk', sans-serif;
+}
+
+.kp-cursor::after {
+    content: '_';
+    color: var(--kp-cyan);
+    animation: kp-blink 1.1s step-end infinite;
+    font-weight: 700;
+}
+@keyframes kp-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+}
+
+.kp-view-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--kp-white);
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.02em;
+}
+.kp-view-title::before {
+    content: '// ';
+    color: var(--kp-blue);
+    font-weight: 400;
+    opacity: 0.6;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85em;
+}

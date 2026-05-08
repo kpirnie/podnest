@@ -1,0 +1,175 @@
+.kp-sidebar {
+    width: var(--kp-sidebar-w);
+    background: rgba(12,21,48,0.98);
+    border-right: 1px solid var(--kp-border);
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    display: none;
+    flex-direction: column;
+    z-index: 100;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+@media (min-width: 960px) {
+    .kp-sidebar { display: flex; }
+}
+
+.kp-sidebar-inner {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.kp-sidebar-brand {
+    padding: 24px 20px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--kp-border);
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+.kp-sidebar-brand-name {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--kp-white);
+    font-family: 'Space Grotesk', sans-serif;
+    margin-top:5px;
+    margin-bottom: -15px;
+}
+
+.kp-user-badge {
+    margin: 4px 14px 12px;
+    padding: 14px 16px;
+    background: rgba(43,142,255,0.06);
+    border: 1px solid var(--kp-border);
+    border-radius: var(--kp-radius);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.kp-user-avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--kp-blue), var(--kp-cyan));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--kp-white);
+    flex-shrink: 0;
+    font-family: 'Space Grotesk', sans-serif;
+}
+.kp-user-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--kp-text);
+    font-family: 'Space Grotesk', sans-serif;
+    line-height: 1.2;
+}
+.kp-user-role { margin-top: 4px; }
+
+.kp-nav { padding: 0 14px; flex: 1; }
+
+.kp-nav-section {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--kp-text-dim);
+    padding: 16px 8px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    opacity: 0.6;
+}
+
+.kp-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--kp-radius);
+    color: var(--kp-text-dim) !important;
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: 'Space Grotesk', sans-serif;
+    text-decoration: none;
+    position: relative;
+    margin-bottom: 2px;
+    transition: background var(--kp-transition), color var(--kp-transition);
+    min-height: 48px;
+}
+.kp-nav-link:hover {
+    background: rgba(43,142,255,0.08);
+    color: var(--kp-text) !important;
+}
+.kp-nav-link.kp-active {
+    background: rgba(43,142,255,0.12);
+    color: var(--kp-cyan) !important;
+    font-weight: 600;
+}
+.kp-nav-link.kp-active::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 20%; bottom: 20%;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: linear-gradient(180deg, var(--kp-blue), var(--kp-cyan));
+}
+
+.kp-nav-icon {
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+.kp-nav-link.kp-active .kp-nav-icon,
+.kp-nav-link:hover .kp-nav-icon { opacity: 1; }
+
+.kp-logout { color: var(--kp-text-dim) !important; margin-top: 4px; }
+.kp-logout:hover {
+    color: var(--kp-danger) !important;
+    background: rgba(255,69,96,0.06) !important;
+}
+
+.kp-sidebar-footer {
+    padding: 12px 14px 20px;
+    border-top: 1px solid var(--kp-border);
+    margin-top: auto;
+}
+
+/* offcanvas */
+.uk-offcanvas-bar {
+    width: var(--kp-sidebar-w) !important;
+    max-width: 90vw;
+    padding: 0 !important;
+}
+.uk-offcanvas-bar .uk-offcanvas-close {
+    top: 18px; right: 16px;
+    color: var(--kp-text-dim);
+}
+.uk-offcanvas-bar .uk-offcanvas-close:hover { color: var(--kp-danger); }
+
+/* logo images */
+.kp-logo-img-sm {
+    width: 128px;
+    height: 128px;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(43,142,255,0.3));
+}
+.kp-logo-img-xs {
+    width: 75px;
+    height: 75px;
+    object-fit: contain;    
+    filter: drop-shadow(0 0 8px rgba(43,142,255,0.3));
+}
+
+.uk-offcanvas-overlay::before {
+    background: rgba(0, 0, 0, .65) !important;
+}

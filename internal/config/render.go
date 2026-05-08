@@ -1,0 +1,722 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"podnest/internal/logger"
+	"podnest/internal/models"
+)
+
+// RenderNginxMain renders the nginx.conf from a config JSON blob
+func RenderNginxMain(configJSON string) (string, error) {
+
+	// The main nginx.conf is rendered with all possible directives
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for nginx.conf: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultNginx) }
+
+	logger.Debug("rendering nginx.conf with config: %v", cfg)
+
+	// Render the nginx.conf with the values from the config JSON
+	return fmt.Sprintf(`user nginx;
+worker_processes     %s;
+worker_rlimit_nofile %s;
+error_log /dev/stderr warn;
+pid       /var/run/nginx.pid;
+
+events {
+    worker_connections %s;
+    multi_accept       %s;
+    use                epoll;
+}
+
+http {
+    include      /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   %s;
+    keepalive_requests  %s;
+    types_hash_max_size 2048;
+    server_tokens       off;
+
+    client_body_buffer_size     %s;
+    client_header_buffer_size   %s;
+    client_max_body_size        %s;
+    large_client_header_buffers %s;
+
+    open_file_cache          %s;
+    open_file_cache_valid    %s;
+    open_file_cache_min_uses %s;
+    open_file_cache_errors   on;
+
+    gzip              %s;
+    gzip_vary         on;
+    gzip_proxied      any;
+    gzip_comp_level   %s;
+    gzip_min_length   %s;
+    gzip_buffers      16 8k;
+    gzip_http_version 1.1;
+    gzip_types
+        application/atom+xml application/javascript application/json
+        application/ld+json application/manifest+json application/rss+xml
+        application/vnd.ms-fontobject application/x-font-ttf
+        application/xhtml+xml application/xml font/opentype
+        image/svg+xml image/x-icon text/css text/plain;
+
+    fastcgi_cache_path  /var/cache/nginx/wp
+                        levels=1:2
+                        keys_zone=wp_cache:100m
+                        inactive=%s
+                        max_size=%s
+                        use_temp_path=off;
+    fastcgi_cache_key          "$scheme$request_method$host$request_uri";
+    fastcgi_cache_use_stale    error timeout invalid_header http_500;
+    fastcgi_ignore_headers     Cache-Control Expires Set-Cookie;
+
+    limit_req_zone  $binary_remote_addr zone=wp_login:10m rate=%s;
+    limit_req_zone  $binary_remote_addr zone=xmlrpc:10m   rate=%s;
+    limit_req_zone  $binary_remote_addr zone=general:10m  rate=%s;
+    limit_conn_zone $binary_remote_addr zone=addr:10m;
+
+    set_real_ip_from  10.0.0.0/8;
+    set_real_ip_from  172.16.0.0/12;
+    set_real_ip_from  192.168.0.0/16;
+    real_ip_header    %s;
+    real_ip_recursive on;
+
+    log_format main '$remote_addr - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent" '
+                    'cache=$upstream_cache_status rt=$request_time';
+    access_log /dev/stdout main;
+
+    include /etc/nginx/conf.d/*.conf;
+}
+`,
+		v("worker_processes"),
+		v("worker_rlimit_nofile"),
+		v("worker_connections"),
+		v("multi_accept"),
+		v("keepalive_timeout"),
+		v("keepalive_requests"),
+		v("client_body_buffer_size"),
+		v("client_header_buffer_size"),
+		v("client_max_body_size"),
+		v("large_client_header_buffers"),
+		v("open_file_cache"),
+		v("open_file_cache_valid"),
+		v("open_file_cache_min_uses"),
+		v("gzip"),
+		v("gzip_comp_level"),
+		v("gzip_min_length"),
+		v("fastcgi_cache_inactive"),
+		v("fastcgi_cache_size"),
+		v("rate_limit_login"),
+		v("rate_limit_xmlrpc"),
+		v("rate_limit_general"),
+		v("real_ip_header"),
+	), nil
+}
+
+// RenderNginxSite renders the per-site server block (conf.d/site.conf)
+func RenderNginxSite(configJSON string, siteType int) (string, error) {
+
+	// The site.conf is rendered differently based on the site type (PHP, Node.js, .NET, or static)
+	switch siteType {
+	case models.SiteTypeNode:
+		logger.Debug("rendering nginx.conf for Node.js site")
+		return renderNginxProxy(configJSON, models.NodeInternalPort)
+	case models.SiteTypeDotNet:
+		logger.Debug("rendering nginx.conf for .NET site")
+		return renderNginxProxy(configJSON, models.DotNetInternalPort)
+	case models.SiteTypeStatic:
+		logger.Debug("rendering nginx.conf for static site")
+		return renderNginxStatic(configJSON)
+	default:
+		logger.Debug("rendering nginx.conf for PHP site")
+		return renderNginxPHP(configJSON)
+	}
+}
+
+// RenderPHPFPM renders the www.conf for php-fpm.
+// siteUID is the numeric UID of the SFTP user so that PHP-created files
+// are owned by the same account the SFTP user authenticates as.
+func RenderPHPFPM(configJSON string, siteUID int) (string, error) {
+
+	// The www.conf is only rendered for PHP sites, and contains the process manager settings
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for php-fpm: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultPHP) }
+
+	logger.Debug("rendering php-fpm.conf with config: %v", cfg)
+
+	return fmt.Sprintf(`[www]
+user  = %d
+group = %d
+
+listen              = 127.0.0.1:9000
+listen.allowed_clients = 127.0.0.1
+
+pm                      = %s
+pm.max_children         = %s
+pm.start_servers        = %s
+pm.min_spare_servers    = %s
+pm.max_spare_servers    = %s
+pm.max_requests         = %s
+pm.process_idle_timeout = %s
+
+request_terminate_timeout = 300
+request_slowlog_timeout   = 5s
+slowlog                   = /proc/self/fd/2
+
+pm.status_path = /fpm-status
+ping.path      = /fpm-ping
+
+clear_env = no
+`,
+		siteUID,
+		siteUID,
+		v("pm"),
+		v("pm_max_children"),
+		v("pm_start_servers"),
+		v("pm_min_spare_servers"),
+		v("pm_max_spare_servers"),
+		v("pm_max_requests"),
+		v("pm_process_idle_timeout"),
+	), nil
+}
+
+// RenderPHPIni renders the php.ini override file
+func RenderPHPIni(configJSON string) (string, error) {
+
+	// The php.ini override file is only rendered for PHP sites, and contains the PHP settings
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for php.ini: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultPHP) }
+
+	logger.Debug("rendering php.ini with config: %v", cfg)
+
+	return fmt.Sprintf(`expose_php             = %s
+display_errors         = %s
+display_startup_errors = Off
+log_errors             = %s
+error_log              = /proc/self/fd/2
+error_reporting        = E_ALL & ~E_DEPRECATED & ~E_STRICT
+disable_functions      = exec,passthru,shell_exec,system,popen,parse_ini_file,show_source,symlink
+
+memory_limit        = %s
+max_execution_time  = %s
+max_input_time      = %s
+post_max_size       = %s
+upload_max_filesize = %s
+max_input_vars      = %s
+
+session.use_strict_mode  = %s
+session.cookie_httponly  = %s
+session.cookie_secure    = %s
+session.cookie_samesite  = %s
+session.use_only_cookies = 1
+
+opcache.enable                  = %s
+opcache.memory_consumption      = %s
+opcache.interned_strings_buffer = %s
+opcache.max_accelerated_files   = %s
+opcache.revalidate_freq         = %s
+opcache.validate_timestamps     = %s
+opcache.fast_shutdown           = %s
+opcache.save_comments           = 1
+opcache.enable_file_override    = 1
+`,
+		v("expose_php"),
+		v("display_errors"),
+		v("log_errors"),
+		v("memory_limit"),
+		v("max_execution_time"),
+		v("max_input_time"),
+		v("post_max_size"),
+		v("upload_max_filesize"),
+		v("max_input_vars"),
+		v("session_use_strict_mode"),
+		v("session_cookie_httponly"),
+		v("session_cookie_secure"),
+		v("session_cookie_samesite"),
+		v("opcache_enable"),
+		v("opcache_memory_consumption"),
+		v("opcache_interned_strings_buffer"),
+		v("opcache_max_accelerated_files"),
+		v("opcache_revalidate_freq"),
+		v("opcache_validate_timestamps"),
+		v("opcache_fast_shutdown"),
+	), nil
+}
+
+// RenderMariaDB renders the my.cnf
+func RenderMariaDB(configJSON string) (string, error) {
+
+	// The my.cnf is only rendered for MariaDB sites, and contains the database settings
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for MariaDB: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultMariaDB) }
+
+	logger.Debug("rendering my.cnf with config: %v", cfg)
+
+	return fmt.Sprintf(`[mysqld]
+bind-address        = 127.0.0.1
+skip-name-resolve   = %s
+local_infile        = %s
+
+max_connections     = %s
+max_connect_errors  = %s
+wait_timeout        = %s
+interactive_timeout = %s
+max_allowed_packet  = %s
+
+innodb_buffer_pool_size       = %s
+innodb_buffer_pool_instances  = %s
+innodb_log_file_size          = %s
+innodb_log_buffer_size        = %s
+innodb_flush_log_at_trx_commit = %s
+innodb_flush_method           = %s
+innodb_file_per_table         = %s
+innodb_stats_on_metadata      = 0
+innodb_read_io_threads        = %s
+innodb_write_io_threads       = %s
+innodb_io_capacity            = %s
+innodb_io_capacity_max        = %s
+innodb_autoinc_lock_mode      = 2
+
+table_open_cache       = %s
+table_definition_cache = %s
+thread_cache_size      = %s
+tmp_table_size         = %s
+max_heap_table_size    = %s
+join_buffer_size       = %s
+sort_buffer_size       = %s
+
+slow_query_log                 = %s
+slow_query_log_file            = /var/lib/mysql/slow.log
+long_query_time                = %s
+log_queries_not_using_indexes  = %s
+
+read_buffer_size               = %s
+read_rnd_buffer_size           = %s
+bulk_insert_buffer_size        = %s
+
+query_cache_type               = %s
+performance_schema             = %s
+`,
+		v("skip_name_resolve"),
+		v("local_infile"),
+		v("max_connections"),
+		v("max_connect_errors"),
+		v("wait_timeout"),
+		v("interactive_timeout"),
+		v("max_allowed_packet"),
+		v("innodb_buffer_pool_size"),
+		v("innodb_buffer_pool_instances"),
+		v("innodb_log_file_size"),
+		v("innodb_log_buffer_size"),
+		v("innodb_flush_log_at_trx_commit"),
+		v("innodb_flush_method"),
+		v("innodb_file_per_table"),
+		v("innodb_read_io_threads"),
+		v("innodb_write_io_threads"),
+		v("innodb_io_capacity"),
+		v("innodb_io_capacity_max"),
+		v("table_open_cache"),
+		v("table_definition_cache"),
+		v("thread_cache_size"),
+		v("tmp_table_size"),
+		v("max_heap_table_size"),
+		v("join_buffer_size"),
+		v("sort_buffer_size"),
+		v("slow_query_log"),
+		v("long_query_time"),
+		v("log_queries_not_using_indexes"),
+		v("read_buffer_size"),
+		v("read_rnd_buffer_size"),
+		v("bulk_insert_buffer_size"),
+		v("query_cache_type"),
+		v("performance_schema"),
+	), nil
+}
+
+// RenderRedis renders the redis.conf
+func RenderRedis(configJSON, redisPassword string) (string, error) {
+
+	// The redis.conf is only rendered for Redis sites, and contains the Redis settings
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for Redis: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultRedis) }
+
+	logger.Debug("rendering redis.conf with config: %v", cfg)
+
+	return fmt.Sprintf(`bind 127.0.0.1
+requirepass %s
+
+maxmemory        %s
+maxmemory-policy %s
+
+save %s
+appendonly %s
+
+tcp-keepalive %s
+hz            %s
+dynamic-hz    %s
+
+lazyfree-lazy-eviction   %s
+lazyfree-lazy-expire     %s
+
+io-threads          %s
+io-threads-do-reads %s
+`,
+		redisPassword,
+		v("maxmemory"),
+		v("maxmemory_policy"),
+		v("save"),
+		v("appendonly"),
+		v("tcp_keepalive"),
+		v("hz"),
+		v("dynamic_hz"),
+		v("lazyfree_lazy_eviction"),
+		v("lazyfree_lazy_expire"),
+		v("io_threads"),
+		v("io_threads_do_reads"),
+	), nil
+}
+
+// -- internal ----------------------------------------------------------------
+
+// renderNginxPHP renders the server block for WordPress and PHP sites
+func renderNginxPHP(configJSON string) (string, error) {
+
+	// The PHP server block is rendered with the PHP-specific directives, including the FastCGI cache settings
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for Nginx PHP: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultNginx) }
+
+	logger.Debug("rendering Nginx PHP server block with config: %v", cfg)
+
+	return fmt.Sprintf(`server {
+    listen 80;
+    server_name _;
+
+    root  /var/www/html;
+    index index.php index.html;
+
+	access_log /dev/stdout main;
+    error_log  /dev/stderr warn;
+
+	# block common SQLi and XSS patterns in URI and args
+	if ($request_uri ~* "(union.*select|insert.*into|drop.*table|<script|javascript:|eval\()") {
+		return 403;
+	}
+	# block directory traversal and null byte injection
+	if ($request_uri ~* "(\.\./|\.\.\\|\x00)") {
+		return 403;
+	}
+	# only allow standard HTTP methods
+	if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH)$) {
+		return 405;
+	}
+	# block requests with no or malformed host header
+	if ($host !~* "^[a-z0-9\.\-]+$") {
+		return 400;
+	}
+
+    limit_conn addr %s;
+    limit_req  zone=general burst=100 nodelay;
+
+    set $skip_cache 0;
+    if ($request_method = POST)  { set $skip_cache 1; }
+    if ($query_string != "")     { set $skip_cache 1; }
+    if ($request_uri ~* "/wp-admin/|/wp-login\.php|/xmlrpc\.php|/feed/") {
+        set $skip_cache 1;
+    }
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") {
+        set $skip_cache 1;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        try_files              $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass           127.0.0.1:9000;
+        fastcgi_index          index.php;
+        include                fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO       $fastcgi_path_info;
+		fastcgi_param HTTPS                    $http_x_forwarded_proto if_not_empty;
+		fastcgi_param HTTP_X_FORWARDED_PROTO   $http_x_forwarded_proto;
+        fastcgi_read_timeout    300;
+        fastcgi_connect_timeout 60;
+        fastcgi_send_timeout    300;
+        fastcgi_buffer_size     32k;
+        fastcgi_buffers         16 16k;
+        fastcgi_busy_buffers_size 32k;
+
+        fastcgi_cache        wp_cache;
+        fastcgi_cache_valid  %s;
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache     $skip_cache;
+        add_header           X-Cache $upstream_cache_status always;
+    }
+
+    location = /wp-login.php {
+        limit_req  zone=wp_login burst=3 nodelay;
+        fastcgi_pass  127.0.0.1:9000;
+        include       fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_read_timeout 60;
+    }
+
+    location = /xmlrpc.php {
+        # deny all;
+        limit_req  zone=xmlrpc burst=2 nodelay;
+        fastcgi_pass  127.0.0.1:9000;
+        include       fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+
+    location ~* \.(css|gif|ico|jpe?g|js|png|svg|webp|woff2?)$ {
+        expires    max;
+        add_header Cache-Control "public, immutable";
+        log_not_found off;
+    }
+
+    location = /favicon.ico { log_not_found off; access_log off; }
+    location = /robots.txt  { log_not_found off; access_log off; allow all; }
+
+    location ~ /\.                          { deny all; }
+    location ~* /(?:uploads|files)/.*\.php$ { deny all; }
+    location ~* \.(engine|inc|info|install|make|module|profile|po|sh|sql|tpl|xtmpl)$ { deny all; }
+
+	# block direct HTTP access to nginx and PHP ini override files
+    location = /.nginx.conf { deny all; return 403; }
+    location = /.user.ini   { deny all; return 403; }
+
+    # include per-site nginx rules if present
+    include /var/www/html/.nginx.conf*;
+}
+`,
+		v("limit_conn_addr"),
+		v("fastcgi_cache_valid"),
+	), nil
+}
+
+// renderNginxProxy renders the server block for Node.js and .NET sites
+func renderNginxProxy(configJSON string, upstreamPort int) (string, error) {
+
+	// The proxy server block is rendered with the proxy_pass directive pointing to the appropriate upstream port
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for Nginx proxy: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultNginx) }
+
+	logger.Debug("rendering Nginx proxy server block with config: %v", cfg)
+
+	return fmt.Sprintf(`server {
+    listen 80;
+    server_name _;
+
+	access_log /dev/stdout main;
+    error_log  /dev/stderr warn;
+
+	# block common SQLi and XSS patterns in URI and args
+	if ($request_uri ~* "(union.*select|insert.*into|drop.*table|<script|javascript:|eval\()") {
+		return 403;
+	}
+	# block directory traversal and null byte injection
+	if ($request_uri ~* "(\.\./|\.\.\\|\x00)") {
+		return 403;
+	}
+	# only allow standard HTTP methods
+	if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH)$) {
+		return 405;
+	}
+	# block requests with no or malformed host header
+	if ($host !~* "^[a-z0-9\.\-]+$") {
+		return 400;
+	}
+
+    limit_conn addr %s;
+    limit_req  zone=general burst=100 nodelay;
+
+    location / {
+        proxy_pass         http://127.0.0.1:%d;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade $http_upgrade;
+        proxy_set_header   Connection 'upgrade';
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 300;
+        proxy_connect_timeout 60;
+        proxy_send_timeout 300;
+    }
+
+    location ~* \.(css|gif|ico|jpe?g|js|png|svg|webp|woff2?)$ {
+        proxy_pass         http://127.0.0.1:%d;
+        expires    max;
+        add_header Cache-Control "public, immutable";
+        log_not_found off;
+    }
+
+    location = /favicon.ico { log_not_found off; access_log off; }
+    location = /robots.txt  { log_not_found off; access_log off; allow all; }
+    location ~ /\. { deny all; }
+}
+`,
+		v("limit_conn_addr"),
+		upstreamPort,
+		upstreamPort,
+	), nil
+}
+
+// renderNginxStatic renders the server block for static HTML sites
+func renderNginxStatic(configJSON string) (string, error) {
+
+	// The static server block is rendered with the try_files directive and no PHP handling
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for Nginx static: %v", err)
+		return "", err
+	}
+
+	// Helper function to get a value from the config, falling back to defaults
+	v := func(key string) string { return get(cfg, key, DefaultNginx) }
+
+	logger.Debug("rendering Nginx static server block with config: %v", cfg)
+
+	return fmt.Sprintf(`server {
+    listen 80;
+    server_name _;
+
+    root  /var/www/html;
+    index index.html index.htm;
+
+	access_log /dev/stdout main;
+    error_log  /dev/stderr warn;
+
+	# block common SQLi and XSS patterns in URI and args
+	if ($request_uri ~* "(union.*select|insert.*into|drop.*table|<script|javascript:|eval\()") {
+		return 403;
+	}
+	# block directory traversal and null byte injection
+	if ($request_uri ~* "(\.\./|\.\.\\|\x00)") {
+		return 403;
+	}
+	# only allow standard HTTP methods
+	if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH)$) {
+		return 405;
+	}
+	# block requests with no or malformed host header
+	if ($host !~* "^[a-z0-9\.\-]+$") {
+		return 400;
+	}
+
+    limit_conn addr %s;
+    limit_req  zone=general burst=100 nodelay;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~* \.(css|gif|ico|jpe?g|js|png|svg|webp|woff2?)$ {
+        expires    max;
+        add_header Cache-Control "public, immutable";
+        log_not_found off;
+    }
+
+    location = /favicon.ico { log_not_found off; access_log off; }
+    location = /robots.txt  { log_not_found off; access_log off; allow all; }
+    location ~ /\. { deny all; }
+
+	# block direct HTTP access to nginx and PHP ini override files
+    location = /.nginx.conf { deny all; return 403; }
+
+    # include per-site nginx rules if present
+    include /var/www/html/.nginx.conf*;
+}
+`,
+		v("limit_conn_addr"),
+	), nil
+}
+
+// unmarshal takes the config JSON and unmarshals it into a simple map[string]string for easy access in the templates
+func unmarshal(configJSON string) (map[string]string, error) {
+
+	// hold the config values in a simple map[string]string for easy access in the templates
+	var cfg map[string]string
+
+	// Unmarshal the config JSON into the cfg map
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		logger.Error("failed to unmarshal config JSON: %v", err)
+		return nil, err
+	}
+
+	// Log the config values at debug level
+	logger.Debug("unmarshaled config JSON: %v", cfg)
+	return cfg, nil
+}
+
+// get returns the value from cfg, falling back to the defaults map
+func get(cfg map[string]string, key string, defaults map[string]string) string {
+
+	logger.Debug("getting config value for key '%s'", key)
+
+	// Return the value from cfg if it exists and is not empty, otherwise return the default value from defaults
+	if v, ok := cfg[key]; ok && v != "" {
+		return v
+	}
+
+	// If the value is not set in cfg, return the default value from defaults if it exists, otherwise return an empty string
+	if v, ok := defaults[key]; ok {
+		return v
+	}
+
+	// If the value is not set in either cfg or defaults, return an empty string
+	return ""
+}
