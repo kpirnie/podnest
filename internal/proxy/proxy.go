@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -50,6 +51,24 @@ func (sw *statusWriter) Write(b []byte) (int, error) {
 	n, err := sw.ResponseWriter.Write(b)
 	sw.bytes += n
 	return n, err
+}
+
+// Hijack delegates to the underlying ResponseWriter's Hijacker implementation,
+// allowing WebSocket upgrades to succeed through the proxy's status wrapper.
+func (sw *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := sw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+	}
+	return h.Hijack()
+}
+
+// Flush delegates to the underlying ResponseWriter's Flusher implementation,
+// allowing chunked/streaming responses to be flushed through the proxy's status wrapper.
+func (sw *statusWriter) Flush() {
+	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // Proxy is the built-in TLS-terminating reverse proxy

@@ -38,7 +38,6 @@ export async function showEditSiteModal(site) {
                         <div class="uk-width-1-2@s uk-hidden" id="es-node-version-wrap">
                             <label class="kp-label">Node.js Version</label>
                             <select class="uk-select kp-select" name="node_version">
-                                <option value="1" ${site.RuntimeVersion===1?"selected":""}>Node 20 (LTS)</option>
                                 <option value="2" ${site.RuntimeVersion===2?"selected":""}>Node 22 (LTS)</option>
                                 <option value="3" ${site.RuntimeVersion===3?"selected":""}>Node 23</option>
                                 <option value="4" ${site.RuntimeVersion===4?"selected":""}>Node 24</option>

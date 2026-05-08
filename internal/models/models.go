@@ -83,7 +83,6 @@ const (
 
 // node versions
 var NodeVersionMap = map[int]string{
-	1: "20",
 	2: "22",
 	3: "23",
 	4: "24",

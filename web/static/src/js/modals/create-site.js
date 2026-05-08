@@ -38,7 +38,6 @@ export function showCreateSiteModal() {
                         <div class="uk-width-1-2@s uk-hidden" id="cs-node-version-wrap">
                             <label class="kp-label">Node.js Version</label>
                             <select class="uk-select kp-select" name="node_version">
-                                <option value="1">Node 20 (LTS)</option>
                                 <option value="2" selected>Node 22 (LTS)</option>
                                 <option value="3">Node 23</option>
                                 <option value="4">Node 24</option>

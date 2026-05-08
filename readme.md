@@ -29,10 +29,10 @@ PodNest provisions and manages isolated web hosting environments using Podman. E
 
 | Type | Runtimes Available |
 |---|---|
-| WordPress | PHP 8.0, 8.1, 8.2, 8.3, 8.4, 8.5 |
-| PHP | PHP 8.0, 8.1, 8.2, 8.3, 8.4, 8.5 |
+| WordPress | PHP 8.2, 8.3, 8.4, 8.5 |
+| PHP | PHP 8.2, 8.3, 8.4, 8.5 |
 | Static HTML | nginx only |
-| Node.js | Node 20, 22, 23 |
+| Node.js | Node 22, 23, 24 |
 | .NET | .NET 8.0, 9.0, 10.0 |
 
 Each pod is provisioned with nginx as the reverse proxy. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx only.
@@ -870,9 +870,9 @@ POST /api/sites
 
 **Site type values:** `1` = WordPress, `2` = PHP, `3` = Static HTML, `4` = Node.js, `5` = .NET
 
-**PHP version values:** `1` = 8.0, `2` = 8.1, `3` = 8.2 *(default)*, `4` = 8.3, `5` = 8.4, `6` = 8.5
+**PHP version values:** `3` = 8.2 *(default)*, `4` = 8.3, `5` = 8.4, `6` = 8.5
 
-**Node runtime version values:** `1` = 20, `2` = 22 *(default)*, `3` = 23
+**Node runtime version values:** `2` = 22 *(default)*, `3` = 23, `4` = 24
 
 **.NET runtime version values:** `1` = 8.0 *(default)*, `2` = 9.0, `3` = 10.0
 
