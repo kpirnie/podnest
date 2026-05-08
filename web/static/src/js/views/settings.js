@@ -57,6 +57,16 @@ export async function viewSettings(root) {
                         <span uk-icon="check"></span> Save Settings
                     </button>
                 </div>
+                <hr class="kp-divider uk-margin-top">
+                <div class="uk-flex uk-flex-middle" style="gap:10px;flex-wrap:wrap">
+                    <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/export" download="podnest-settings.csv" uk-tooltip="Export settings as CSV">
+                        <span uk-icon="download"></span> Export CSV
+                    </a>
+                    <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import settings from CSV">
+                        <span uk-icon="upload"></span> Import CSV
+                        <input type="file" id="settings-import-file" accept=".csv" style="display:none">
+                    </label>
+                </div>
             </form>
         </div>
         `;
@@ -90,6 +100,30 @@ export async function viewSettings(root) {
         } finally {
             btn.disabled = false;
             btn.innerHTML = orig;
+        }
+    });
+
+    // handle settings csv import
+    document.getElementById("settings-import-file").addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const fd = new FormData();
+        fd.append("file", file);
+
+        try {
+            const res = await fetch("/api/settings/import", { method: "POST", body: fd });
+            const data = res.status === 204 ? null : await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+            toast.success("Settings imported — reloading");
+
+            // reload the view to reflect the imported values
+            viewSettings(root);
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            // reset so the same file can be re-selected if needed
+            e.target.value = "";
         }
     });
 }

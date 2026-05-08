@@ -1,9 +1,13 @@
 package server
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"podnest/internal/config"
 	"podnest/internal/db"
@@ -321,4 +325,174 @@ func resolveConfigType(w http.ResponseWriter, r *http.Request) (int, error) {
 	// if we got here, the type is valid — return it
 	logger.Debug("resolved config type from path: %d", t)
 	return t, nil
+}
+
+// apiExportConfig streams a single config type as a CSV download
+func (s *Server) apiExportConfig(w http.ResponseWriter, r *http.Request) {
+
+	// grab the site and config type from the path
+	site, ok := s.resolveSite(w, r)
+	if !ok {
+		logger.Error("apiExportConfig: failed to resolve site")
+		return
+	}
+
+	configType, err := resolveConfigType(w, r)
+	if err != nil {
+		logger.Error("apiExportConfig: failed to resolve config type")
+		return
+	}
+
+	// fetch the config blob from the DB
+	existing, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, configType)
+	if err != nil {
+		logger.Error("apiExportConfig: failed to fetch config for site %d type %d: %v", site.ID, configType, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// unmarshal the blob into a KV map
+	var cfg map[string]string
+	if existing != nil {
+		if err := json.Unmarshal([]byte(existing.Config), &cfg); err != nil {
+			logger.Error("apiExportConfig: failed to unmarshal config: %v", err)
+			apiError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// stream as a CSV attachment
+	filename := fmt.Sprintf("%s-config-%d.csv", site.Name, configType)
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"key", "value"})
+	for k, v := range cfg {
+		_ = cw.Write([]string{k, v})
+	}
+	cw.Flush()
+
+	logger.Debug("apiExportConfig: exported config for site %d type %d", site.ID, configType)
+}
+
+// apiImportConfig reads a CSV file upload and merges it over the existing config for a site+type
+func (s *Server) apiImportConfig(w http.ResponseWriter, r *http.Request) {
+
+	// grab the site and config type from the path
+	site, ok := s.resolveSite(w, r)
+	if !ok {
+		logger.Error("apiImportConfig: failed to resolve site")
+		return
+	}
+
+	configType, err := resolveConfigType(w, r)
+	if err != nil {
+		logger.Error("apiImportConfig: failed to resolve config type")
+		return
+	}
+
+	// parse the multipart form — limit to 1MB
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		logger.Error("apiImportConfig: failed to parse multipart form: %v", err)
+		apiError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// pull the uploaded file from the "file" field
+	f, _, err := r.FormFile("file")
+	if err != nil {
+		logger.Error("apiImportConfig: missing file field: %v", err)
+		apiErrorMsg(w, http.StatusBadRequest, "file field is required")
+		return
+	}
+	defer f.Close()
+
+	// fetch the existing config blob and unmarshal it as the merge base
+	base := make(map[string]string)
+	existing, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, configType)
+	if err != nil {
+		logger.Error("apiImportConfig: failed to fetch existing config: %v", err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if existing != nil {
+		if err := json.Unmarshal([]byte(existing.Config), &base); err != nil {
+			logger.Error("apiImportConfig: failed to unmarshal existing config: %v", err)
+			apiError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// parse the CSV and merge rows into the base map
+	cr := csv.NewReader(io.LimitReader(f, 1<<20))
+	cr.FieldsPerRecord = 2
+	cr.Comment = '#'
+
+	// read and discard the header row if present
+	header, err := cr.Read()
+	if err != nil {
+		logger.Error("apiImportConfig: failed to read CSV: %v", err)
+		apiErrorMsg(w, http.StatusBadRequest, "invalid CSV")
+		return
+	}
+	if strings.ToLower(header[0]) != "key" {
+		// not a header row — treat as data
+		if header[1] == "" {
+			delete(base, header[0])
+		} else {
+			base[header[0]] = header[1]
+		}
+	}
+
+	// process remaining rows
+	for {
+		rec, err := cr.Read()
+		if err != nil {
+			break
+		}
+		if rec[1] == "" {
+			delete(base, rec[0])
+		} else {
+			base[rec[0]] = rec[1]
+		}
+	}
+
+	// marshal the merged result back to a blob
+	blob, err := json.Marshal(base)
+	if err != nil {
+		logger.Error("apiImportConfig: failed to marshal merged config: %v", err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// upsert the merged config to the DB
+	cfg := &models.Config{
+		SiteID: site.ID,
+		Type:   configType,
+		Config: string(blob),
+	}
+	if err := db.UpsertConfig(s.cfg.DB, cfg); err != nil {
+		logger.Error("apiImportConfig: failed to upsert config for site %d type %d: %v", site.ID, configType, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// rewrite the config file on disk
+	if err := s.rewriteConfigFile(site, configType, string(blob)); err != nil {
+		logger.Error("apiImportConfig: failed to rewrite config file for site %d type %d: %v", site.ID, configType, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// return the merged config as confirmation
+	var out map[string]string
+	if err := json.Unmarshal(blob, &out); err != nil {
+		logger.Error("apiImportConfig: failed to unmarshal response: %v", err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	logger.Debug("apiImportConfig: imported config for site %d type %d", site.ID, configType)
+	apiJSON(w, http.StatusOK, out)
 }

@@ -59,6 +59,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /sites/{id}/configs", s.apiGetConfigs)
 	api.HandleFunc("PUT /sites/{id}/configs/{type}", s.apiUpdateConfig)
 	api.HandleFunc("POST /sites/{id}/configs/{type}/reset", s.apiResetConfig)
+	api.HandleFunc("GET /sites/{id}/configs/{type}/export", s.apiExportConfig)
+	api.HandleFunc("POST /sites/{id}/configs/{type}/import", s.apiImportConfig)
 
 	// user management — admin only
 	api.HandleFunc("GET /users", s.apiListUsers)
@@ -75,6 +77,8 @@ func (s *Server) routes() http.Handler {
 	// settings management — admin only
 	api.Handle("GET /settings", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetSettings)))
 	api.Handle("PUT /settings", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateSettings)))
+	api.Handle("GET /settings/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportSettings)))
+	api.Handle("POST /settings/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportSettings)))
 
 	// global security rules — admin only
 	api.Handle("GET /security/ip", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetGlobalIPRules)))
