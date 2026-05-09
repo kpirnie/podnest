@@ -26,6 +26,7 @@ const (
 // SiteConfig holds everything needed to create a full WordPress pod
 type SiteConfig struct {
 	Site        *models.Site
+	SiteUID     int
 	SiteDir     string
 	DBName      string
 	DBUser      string
@@ -359,7 +360,12 @@ func (c *Client) createPHP(ctx context.Context, cfg SiteConfig) error {
 
 	// log the successful creation of the php-fpm container for this site and start the container, returning any errors that occur during startup
 	logger.Debug("Created php-fpm container for pod %s with image %s", podName, phpImage)
-	return c.StartContainer(ctx, ContainerName(cfg.Site.Name, "php"))
+	if err := c.StartContainer(ctx, ContainerName(cfg.Site.Name, "php")); err != nil {
+		logger.Error("Failed to start php-fpm in pod %s: %v", podName, err)
+		return err
+	}
+	// re-chown html back to siteUID after the WordPress entrypoint sets it to www-data
+	return c.fixPHPOwnership(ctx, cfg)
 }
 
 // createPHPOnly provisions the PHP-FPM container with the appropriate environment variables to connect to the internal MariaDB and Redis containers, and mounts for the site html directory and custom PHP configuration overrides; it uses a slimmer PHP image without extra extensions suitable for non-WordPress PHP sites
@@ -406,7 +412,12 @@ func (c *Client) createPHPOnly(ctx context.Context, cfg SiteConfig) error {
 
 	// log the successful creation of the php-fpm container for this site and start the container, returning any errors that occur during startup
 	logger.Debug("Created php-fpm container for pod %s with image %s (plain PHP)", podName, models.PHPImage(cfg.Site.PHPVersion))
-	return c.StartContainer(ctx, ContainerName(cfg.Site.Name, "php"))
+	if err := c.StartContainer(ctx, ContainerName(cfg.Site.Name, "php")); err != nil {
+		logger.Error("Failed to start php-fpm in pod %s: %v", podName, err)
+		return err
+	}
+	// re-chown html back to siteUID after the WordPress entrypoint sets it to www-data
+	return c.fixPHPOwnership(ctx, cfg)
 }
 
 // createNode provisions the Node.js container with the appropriate environment variables to connect to the internal MariaDB and Redis containers, and mounts for the site html directory; it uses the runtime image specified in the site configuration, which should be a Node.js image with the necessary dependencies for the application
@@ -705,5 +716,33 @@ func (c *Client) ensureMariaDBUser(ctx context.Context, cfg SiteConfig) error {
 	}
 
 	logger.Debug("ensureMariaDBUser: user '%s' and database '%s' ensured in pod %s", cfg.DBUser, cfg.DBName, PodName(cfg.Site.Name))
+	return nil
+}
+
+// fixPHPOwnership corrects /var/www/html ownership after the WordPress entrypoint
+// chowns everything to www-data, which blocks PHP-FPM (running as siteUID) from writing
+func (c *Client) fixPHPOwnership(ctx context.Context, cfg SiteConfig) error {
+	containerName := ContainerName(cfg.Site.Name, "php")
+	spec := map[string]any{
+		"AttachStdout": false,
+		"AttachStderr": false,
+		"Detach":       true,
+		"Cmd": []string{
+			"sh", "-c",
+			fmt.Sprintf("chown -R %d:%d /var/www/html", cfg.SiteUID, cfg.SiteUID),
+		},
+	}
+	var execResp struct {
+		ID string `json:"Id"`
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+containerName+"/exec", spec, &execResp); err != nil {
+		logger.Error("fixPHPOwnership: failed to create exec in %s: %v", containerName, err)
+		return err
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
+		logger.Error("fixPHPOwnership: failed to start exec in %s: %v", containerName, err)
+		return err
+	}
+	logger.Debug("fixPHPOwnership: chowned /var/www/html to uid %d in %s", cfg.SiteUID, containerName)
 	return nil
 }

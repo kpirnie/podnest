@@ -284,6 +284,7 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	// provision the Podman pod with all required containers
 	podCfg := podman.SiteConfig{
 		Site:       site,
+		SiteUID:    sftpUID,
 		SiteDir:    hostSiteDir,
 		DBName:     site.Name,
 		DBUser:     dbUser,
@@ -831,6 +832,7 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	// build the pod config using the existing credentials and recreate the pod
 	podCfg := podman.SiteConfig{
 		Site:       site,
+		SiteUID:    sftp.UIDForSite(site.ID),
 		SiteDir:    hostSiteDir,
 		DBName:     site.Name,
 		DBUser:     dbUser,
