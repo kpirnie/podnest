@@ -15,9 +15,18 @@ export function renderSecurityPanel(siteId = null) {
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">IP Rules</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save">
-                        <span uk-icon="check"></span> Save IP Rules
-                    </button>
+                    <div class="uk-flex" style="gap:8px">
+                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api${ipBase}/export" download="${siteId ? `site-${siteId}-ip-rules.csv` : `podnest-global-ip-rules.csv`}" uk-tooltip="Export IP rules as CSV">
+                            <span uk-icon="download"></span>
+                        </a>
+                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import IP rules from CSV">
+                            <span uk-icon="upload"></span>
+                            <input type="file" id="sec-ip-import" accept=".csv" style="display:none">
+                        </label>
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save">
+                            <span uk-icon="check"></span> Save IP Rules
+                        </button>
+                    </div>
                 </div>
                 <p class="kp-muted uk-text-small uk-margin-small-bottom">
                     One IP address or CIDR block per line (e.g. <span class="kp-mono">1.2.3.4</span>
@@ -48,9 +57,18 @@ export function renderSecurityPanel(siteId = null) {
             <div class="kp-card uk-padding-small">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">User-Agent Rules</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save">
-                        <span uk-icon="check"></span> Save UA Rules
-                    </button>
+                    <div class="uk-flex" style="gap:8px">
+                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api${uaBase}/export" download="${siteId ? `site-${siteId}-ua-rules.csv` : `podnest-global-ua-rules.csv`}" uk-tooltip="Export UA rules as CSV">
+                            <span uk-icon="download"></span>
+                        </a>
+                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import UA rules from CSV">
+                            <span uk-icon="upload"></span>
+                            <input type="file" id="sec-ua-import" accept=".csv" style="display:none">
+                        </label>
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save">
+                            <span uk-icon="check"></span> Save UA Rules
+                        </button>
+                    </div>
                 </div>
                 <p class="kp-muted uk-text-small uk-margin-small-bottom">
                     One substring per line — matched case-insensitively against the full User-Agent header.
@@ -150,6 +168,48 @@ export function wireSecurityPanel(root) {
         } finally {
             btn.disabled  = false;
             btn.innerHTML = orig;
+        }
+    });
+
+    // handle IP rules CSV import
+    root.querySelector("#sec-ip-import")?.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+            const res = await fetch(ipBase + "/import", { method: "POST", body: fd });
+            const data = res.status === 204 ? null : await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+            // reload the textareas to reflect the imported rules
+            await loadSecurityPanel(root);
+            toast.success("IP rules imported");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            e.target.value = "";
+        }
+    });
+
+    // handle UA rules CSV import
+    root.querySelector("#sec-ua-import")?.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+            const res = await fetch(uaBase + "/import", { method: "POST", body: fd });
+            const data = res.status === 204 ? null : await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+            // reload the textareas to reflect the imported rules
+            await loadSecurityPanel(root);
+            toast.success("UA rules imported");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            e.target.value = "";
         }
     });
 }

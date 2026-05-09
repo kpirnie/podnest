@@ -633,10 +633,15 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 	}
 
 	// set ownership on all content directories to the SFTP user
-	for _, d := range []string{"html", "php-fpm", "redis", "db"} {
+	for _, d := range []string{"html", "php-fpm", "redis"} {
 		if err := os.Chown(siteDir+"/"+d, siteUID, siteUID); err != nil {
 			logger.Warn("could not chown %s to sftp uid %d: %v", d, siteUID, err)
 		}
+	}
+
+	// db directory must be owned by the mysql user (uid 999) inside the MariaDB container
+	if err := os.Chown(siteDir+"/db", 999, 999); err != nil {
+		logger.Warn("could not chown db dir to mysql uid: %v", err)
 	}
 
 	// html: setgid + group-writable so PHP (running as siteUID) and SFTP share ownership

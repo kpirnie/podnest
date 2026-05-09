@@ -276,11 +276,15 @@ func (s *Server) permissionReaper() {
 			os.Chown(siteDir+"/nginx/logs", 101, 101)
 			os.Chmod(siteDir+"/nginx/logs", 0750)
 
-			// php-fpm, redis, db — sftp user
-			for _, d := range []string{"php-fpm", "redis", "db"} {
+			// php-fpm, redis, -- sftp user
+			for _, d := range []string{"php-fpm", "redis"} {
 				os.Chown(siteDir+"/"+d, sftpUID, sftpUID)
 				os.Chmod(siteDir+"/"+d, 0755)
 			}
+
+			// db must be owned by mysql uid (999) so MariaDB can initialize its data directory
+			os.Chown(siteDir+"/db", 999, 999)
+			os.Chmod(siteDir+"/db", 0755)
 		}
 	}
 

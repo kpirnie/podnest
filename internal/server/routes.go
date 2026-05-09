@@ -85,12 +85,20 @@ func (s *Server) routes() http.Handler {
 	api.Handle("PUT /security/ip", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSaveGlobalIPRules)))
 	api.Handle("GET /security/ua", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetGlobalUARules)))
 	api.Handle("PUT /security/ua", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSaveGlobalUARules)))
+	api.Handle("GET /security/ip/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportGlobalIPRules)))
+	api.Handle("POST /security/ip/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportGlobalIPRules)))
+	api.Handle("GET /security/ua/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportGlobalUARules)))
+	api.Handle("POST /security/ua/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportGlobalUARules)))
 
 	// per-site security rules
 	api.HandleFunc("GET /sites/{id}/security/ip", s.apiGetSiteIPRules)
 	api.HandleFunc("PUT /sites/{id}/security/ip", s.apiSaveSiteIPRules)
 	api.HandleFunc("GET /sites/{id}/security/ua", s.apiGetSiteUARules)
 	api.HandleFunc("PUT /sites/{id}/security/ua", s.apiSaveSiteUARules)
+	api.HandleFunc("GET /sites/{id}/security/ip/export", s.apiExportSiteIPRules)
+	api.HandleFunc("POST /sites/{id}/security/ip/import", s.apiImportSiteIPRules)
+	api.HandleFunc("GET /sites/{id}/security/ua/export", s.apiExportSiteUARules)
+	api.HandleFunc("POST /sites/{id}/security/ua/import", s.apiImportSiteUARules)
 
 	// WebSocket log tail
 	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)
