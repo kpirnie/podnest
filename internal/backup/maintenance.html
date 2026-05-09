@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30">
+    <title>PodNest &mdash; Restore In Progress</title>
+    <link rel="icon" type="image/svg+xml" href="https://c.pnst.us/logos/podnest.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --kp-bg:           #070e20;
+            --kp-bg-card:      #0c1530;
+            --kp-blue:         #2B8EFF;
+            --kp-blue-glow:    rgba(43,142,255,0.25);
+            --kp-cyan:         #00D4FF;
+            --kp-cyan-dim:     rgba(0,212,255,0.15);
+            --kp-text:         #dde8f5;
+            --kp-text-dim:     #6b8cae;
+            --kp-border:       #1a2a4a;
+            --kp-border-bright:#2a3f6a;
+            --kp-dot-color:    rgba(43,142,255,0.08);
+            --kp-font-brand:   'Orbitron', sans-serif;
+        }
+
+        html, body {
+            height: 100%;
+            background: var(--kp-bg);
+            color: var(--kp-text);
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 15px;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* dot-grid background matching app layout */
+        body {
+            background-image: radial-gradient(var(--kp-dot-color) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+
+        .kp-wrap {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            gap: 2rem;
+        }
+
+        /* -- logo / brand -------------------------------------------------- */
+        .kp-brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .kp-logo {
+            width: 72px;
+            height: 72px;
+            /* subtle pulse to signal activity */
+            animation: kp-pulse 2.4s ease-in-out infinite;
+        }
+
+        @keyframes kp-pulse {
+            0%, 100% { filter: drop-shadow(0 0 8px rgba(43,142,255,0.4)); }
+            50%       { filter: drop-shadow(0 0 20px rgba(0,212,255,0.7)); }
+        }
+
+        .kp-brand-heading {
+            font-family: var(--kp-font-brand);
+            font-weight: 900;
+            font-size: 2rem;
+            letter-spacing: 0.08em;
+            line-height: 1;
+        }
+
+        .kp-brand-pod  { color: var(--kp-blue); }
+        .kp-brand-nest { color: var(--kp-cyan); }
+
+        .kp-brand-tagline {
+            font-family: var(--kp-font-brand);
+            font-size: 0.65rem;
+            letter-spacing: 0.12em;
+            color: var(--kp-text-dim);
+            margin-top: 4px;
+        }
+
+        /* -- card ---------------------------------------------------------- */
+        .kp-card {
+            background: var(--kp-bg-card);
+            border: 1px solid var(--kp-border-bright);
+            border-radius: 14px;
+            padding: 2.5rem 3rem;
+            text-align: center;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 0 40px rgba(43,142,255,0.08);
+        }
+
+        /* -- spinner ------------------------------------------------------- */
+        .kp-spinner-wrap {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .kp-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--kp-border);
+            border-top-color: var(--kp-cyan);
+            border-radius: 50%;
+            animation: kp-spin 0.9s linear infinite;
+        }
+
+        @keyframes kp-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* -- text ---------------------------------------------------------- */
+        .kp-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 1.35rem;
+            color: #ffffff;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.6rem;
+        }
+
+        .kp-title::before {
+            content: '// ';
+            color: var(--kp-blue);
+            font-weight: 400;
+            opacity: 0.6;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85em;
+        }
+
+        .kp-desc {
+            color: var(--kp-text-dim);
+            font-size: 0.9rem;
+            line-height: 1.7;
+        }
+
+        /* -- refresh notice ------------------------------------------------ */
+        .kp-refresh {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: var(--kp-text-dim);
+            margin-top: 1.75rem;
+            padding-top: 1.25rem;
+            border-top: 1px solid var(--kp-border);
+            opacity: 0.7;
+        }
+
+        .kp-dot {
+            display: inline-block;
+            color: var(--kp-cyan);
+            animation: kp-blink 1.1s step-end infinite;
+        }
+
+        @keyframes kp-blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="kp-wrap">
+
+        <!-- brand -->
+        <div class="kp-brand">
+            <img src="https://c.pnst.us/logos/podnest.svg" alt="PodNest" class="kp-logo">
+            <h1 class="kp-brand-heading">
+                <span class="kp-brand-pod">POD</span><span class="kp-brand-nest">NEST</span>
+            </h1>
+            <p class="kp-brand-tagline">SECURE. MANAGE. DEPLOY.</p>
+        </div>
+
+        <!-- status card -->
+        <div class="kp-card">
+            <div class="kp-spinner-wrap">
+                <div class="kp-spinner"></div>
+            </div>
+            <p class="kp-title">Restore In Progress</p>
+            <p class="kp-desc">
+                This site is currently being restored from a backup.<br>
+                It will return automatically once the process is complete.
+            </p>
+            <p class="kp-refresh">
+                auto-refresh in 30s<span class="kp-dot">_</span>
+            </p>
+        </div>
+
+    </div>
+</body>
+</html>

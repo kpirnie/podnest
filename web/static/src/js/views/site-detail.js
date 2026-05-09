@@ -5,6 +5,7 @@ import { hideProgressModal, showProgressModal, statusBadge } from '../helpers.js
 import { showEditSiteModal } from '../modals/edit-site.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
+import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-backups.js';
 import { renderConfigTab, wireConfigTabs } from './site-configs.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
@@ -43,6 +44,7 @@ export async function viewSiteDetail(root, { id }) {
             <li><a href="#">Logs</a></li>
             <li><a href="#">Security</a></li>
             ${site.SiteType === 1 ? `<li><a href="#">WP-CLI</a></li>` : ""}
+            <li><a href="#">Backups</a></li>
         </ul>
 
         <ul class="uk-switcher">
@@ -54,6 +56,7 @@ export async function viewSiteDetail(root, { id }) {
             <li>${renderLogsTab(id, site.SiteType)}</li>
             <li>${renderSecurityPanel(id)}</li>
             ${site.SiteType === 1 ? `<li>${renderWPCLITab(id)}</li>` : ""}            
+            <li>${renderBackupsTab(id)}</li>
         </ul>`;
 
     document.getElementById("sd-back").addEventListener("click", () => router.go("sites"));
@@ -78,6 +81,8 @@ export async function viewSiteDetail(root, { id }) {
     if (site.SiteType === 1) wireWPCLITab(root, id);
     loadSecurityPanel(root);
     wireOverviewTab(root, id);
+    wireBackupsPanel(root, id);
+    loadBackupsPanel(root, id);
 
     // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);

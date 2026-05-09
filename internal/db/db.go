@@ -72,6 +72,10 @@ func migrateColumns(db *sql.DB) error {
 		// TOTP support
 		`ALTER TABLE kppn_users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE kppn_users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+		// Backup support
+		`ALTER TABLE kppn_settings ADD COLUMN key TEXT`, // no-op guard; settings added via upsert
+		`ALTER TABLE kppn_backup_repos ADD COLUMN local_enabled INTEGER NOT NULL DEFAULT 1`,
+		`ALTER TABLE kppn_backup_repos ADD COLUMN s3_enabled INTEGER NOT NULL DEFAULT 0`,
 	}
 
 	for _, m := range migrations {
@@ -271,4 +275,30 @@ CREATE TABLE IF NOT EXISTS kppn_totp_backup_codes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_totp_backup_uid ON kppn_totp_backup_codes (uid);
+
+CREATE TABLE IF NOT EXISTS kppn_backup_repos (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id       INTEGER NOT NULL UNIQUE REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    repo_password TEXT    NOT NULL,
+	local_path    TEXT    NOT NULL DEFAULT '',
+    local_enabled INTEGER NOT NULL DEFAULT 1,
+    s3_enabled    INTEGER NOT NULL DEFAULT 0,
+	created       DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated       DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_backup_repos_site ON kppn_backup_repos (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_backups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id     INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    snapshot_id TEXT    NOT NULL,
+    label       TEXT    NOT NULL DEFAULT '',
+    backup_type INTEGER NOT NULL DEFAULT 1,
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    created     DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_backups_site    ON kppn_backups (site_id);
+CREATE INDEX IF NOT EXISTS idx_backups_created ON kppn_backups (created);
 `

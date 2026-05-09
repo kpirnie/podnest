@@ -186,6 +186,35 @@ type Config struct {
 	Updated *time.Time
 }
 
+// backup destination types
+const (
+	BackupTypeLocal = 1
+	BackupTypeS3    = 2
+)
+
+// BackupRepo holds the restic repository configuration for a site
+type BackupRepo struct {
+	ID           int64
+	SiteID       int64
+	RepoPassword string
+	LocalPath    string
+	LocalEnabled bool
+	S3Enabled    bool
+	Created      time.Time
+	Updated      *time.Time
+}
+
+// Backup represents a recorded restic snapshot for a site
+type Backup struct {
+	ID         int64
+	SiteID     int64
+	SnapshotID string // restic snapshot ID
+	Label      string // human-readable label (e.g. "pre-update")
+	BackupType int    // BackupTypeLocal or BackupTypeS3
+	SizeBytes  int64
+	Created    time.Time
+}
+
 // GenerateUHash produces a cryptographically random 64-char hex string
 func GenerateUHash() (string, error) {
 

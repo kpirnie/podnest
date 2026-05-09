@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -623,6 +625,11 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 			return err
 		}
 		logger.Debug("Created dir: %s", d)
+	}
+
+	// backups — root-owned, site group readable for SFTP download access
+	if err := os.MkdirAll(filepath.Join(siteDir, "backups"), 0755); err != nil {
+		return fmt.Errorf("create backups dir: %w", err)
 	}
 
 	// chroot directory must be owned by root for sshd to accept it

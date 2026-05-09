@@ -17,7 +17,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
 # -- stage 2: final -----------------------------------------------------------
 FROM docker.io/library/alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata podman
+RUN apk add --no-cache ca-certificates tzdata podman restic
 
 RUN mkdir -p /opt/podnest/sites /opt/podnest/data
 

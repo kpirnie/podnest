@@ -1,10 +1,10 @@
-"use strict";(()=>{var d={async _req(e,t,s,a=6e4){let n=new AbortController,i=setTimeout(()=>n.abort(),a),l={method:e,headers:{"Content-Type":"application/json"},signal:n.signal};s!==void 0&&(l.body=JSON.stringify(s));try{let c=await fetch("/api"+t,l);clearTimeout(i);let r=c.status===204?null:await c.json().catch(()=>null);if(c.status===401)return window.location.href="/login?msg=Your+session+has+expired+%E2%80%94+please+log+in+again",null;if(!c.ok)throw new Error(r?.error||`HTTP ${c.status}`);return r}catch(c){throw clearTimeout(i),c}},get:e=>d._req("GET",e),post:(e,t)=>d._req("POST",e,t),put:(e,t)=>d._req("PUT",e,t),delete:e=>d._req("DELETE",e)};var z=()=>'<div class="kp-spinner"><div uk-spinner="ratio: 1.25"></div></div>',x=e=>`<div class="kp-empty">
+"use strict";(()=>{var d={async _req(e,t,s,a=6e4){let n=new AbortController,i=setTimeout(()=>n.abort(),a),l={method:e,headers:{"Content-Type":"application/json"},signal:n.signal};s!==void 0&&(l.body=JSON.stringify(s));try{let r=await fetch("/api"+t,l);clearTimeout(i);let c=r.status===204?null:await r.json().catch(()=>null);if(r.status===401)return window.location.href="/login?msg=Your+session+has+expired+%E2%80%94+please+log+in+again",null;if(!r.ok)throw new Error(c?.error||`HTTP ${r.status}`);return c}catch(r){throw clearTimeout(i),r}},get:e=>d._req("GET",e),post:(e,t)=>d._req("POST",e,t),put:(e,t)=>d._req("PUT",e,t),delete:e=>d._req("DELETE",e)};var K=()=>'<div class="kp-spinner"><div uk-spinner="ratio: 1.25"></div></div>',S=e=>`<div class="kp-empty">
         <div class="kp-empty-icon" uk-icon="icon: warning; ratio: 2.5"></div>
         <div class="kp-empty-text">${e}</div>
-    </div>`,C=(e,t)=>`<div class="kp-empty">
+    </div>`,D=(e,t)=>`<div class="kp-empty">
         <div class="kp-empty-icon" uk-icon="icon: ${e}; ratio: 2.5"></div>
         <div class="kp-empty-text">${t}</div>
-    </div>`,$=e=>{let t={1:["running","Running"],2:["stopped","Stopped"],3:["restarting","Restarting"],4:["error","Error"]},[s,a]=t[e]||["stopped","Unknown"];return`<span class="kp-status kp-status-${s}">${a}</span>`},me=e=>({3:"8.2",4:"8.3",5:"8.4",6:"8.5"})[e]||"?",M=e=>({1:"WordPress",2:"PHP",3:"Static",4:"Node.js",5:".NET"})[e]||"?",E=()=>window.KP.user.role===window.KP.roles.admin,P=e=>{switch(e.SiteType){case 1:case 2:return`PHP ${me(e.PHPVersion)}`;case 4:return`Node ${{1:"20",2:"22",3:"23"}[e.RuntimeVersion]||"?"}`;case 5:return`.NET ${{1:"8.0",2:"9.0",3:"10.0"}[e.RuntimeVersion]||"?"}`;default:return""}},T=e=>({id:e.id??e.ID,uname:e.uname??e.UName,uhash:e.uhash??e.UHash,fname:e.fname??e.FName,lname:e.lname??e.LName,email:e.email??e.Email,phone:e.phone??e.Phone,role:e.role??e.Role,totp_enabled:e.totp_enabled??!1,created:e.created??e.Created});function S(e,t){return new Promise(s=>{document.getElementById("kp-confirm-title").textContent=e,document.getElementById("kp-confirm-message").textContent=t;let a=UIkit.modal("#kp-confirm-modal");document.getElementById("kp-confirm-ok").addEventListener("click",()=>{a.hide(),s(!0)},{once:!0}),a.show(),document.getElementById("kp-confirm-modal").addEventListener("hidden",()=>s(!1),{once:!0})})}function w(e,t){let s=`
+    </div>`,$=e=>{let t={1:["running","Running"],2:["stopped","Stopped"],3:["restarting","Restarting"],4:["error","Error"]},[s,a]=t[e]||["stopped","Unknown"];return`<span class="kp-status kp-status-${s}">${a}</span>`},ge=e=>({3:"8.2",4:"8.3",5:"8.4",6:"8.5"})[e]||"?",M=e=>({1:"WordPress",2:"PHP",3:"Static",4:"Node.js",5:".NET"})[e]||"?",E=()=>window.KP.user.role===window.KP.roles.admin,P=e=>{switch(e.SiteType){case 1:case 2:return`PHP ${ge(e.PHPVersion)}`;case 4:return`Node ${{1:"20",2:"22",3:"23"}[e.RuntimeVersion]||"?"}`;case 5:return`.NET ${{1:"8.0",2:"9.0",3:"10.0"}[e.RuntimeVersion]||"?"}`;default:return""}},T=e=>({id:e.id??e.ID,uname:e.uname??e.UName,uhash:e.uhash??e.UHash,fname:e.fname??e.FName,lname:e.lname??e.LName,email:e.email??e.Email,phone:e.phone??e.Phone,role:e.role??e.Role,totp_enabled:e.totp_enabled??!1,created:e.created??e.Created});function w(e,t){return new Promise(s=>{document.getElementById("kp-confirm-title").textContent=e,document.getElementById("kp-confirm-message").textContent=t;let a=UIkit.modal("#kp-confirm-modal");document.getElementById("kp-confirm-ok").addEventListener("click",()=>{a.hide(),s(!0)},{once:!0}),a.show(),document.getElementById("kp-confirm-modal").addEventListener("hidden",()=>s(!1),{once:!0})})}function y(e,t){let s=`
         <div id="kp-progress-modal" uk-modal="bg-close: false; esc-close: false; keyboard: false">
             <div class="uk-modal-dialog kp-modal uk-modal-body uk-text-center" style="max-width:420px">
                 <div uk-spinner="ratio: 1.5" style="color:var(--kp-blue)"></div>
@@ -14,7 +14,7 @@
                     This may take several minutes while images are pulled and containers are initialized.
                 </p>
             </div>
-        </div>`;document.body.insertAdjacentHTML("beforeend",s),UIkit.modal("#kp-progress-modal").show()}function h(){let e=document.getElementById("kp-progress-modal");e&&(UIkit.modal(e).hide(),setTimeout(()=>e.remove(),300))}var u={routes:{},register(e,t){this.routes[e]=t},async go(e,t={}){let s=Object.keys(t).length?e+"/"+Object.values(t).join("/"):e;window.location.hash=s,document.querySelectorAll(".kp-nav-link").forEach(i=>{i.classList.toggle("kp-active",i.dataset.view===e)});let a=this.routes[e];if(!a)return;let n=document.getElementById("kp-view");n.innerHTML=z();try{await a(n,t)}catch(i){n.innerHTML=x(i.message)}}};function O(){let t=(window.location.hash.replace("#","")||"dashboard").split("/"),s=t[0],a={};return s==="site-detail"&&t[1]&&(a.id=t[1]),{view:s,params:a}}var o={show(e,t="info",s=7e3){let a={success:"check",error:"warning",info:"info"},n=document.createElement("div");n.className=`kp-toast kp-toast-${t}`,n.innerHTML=`<span uk-icon="${a[t]||"info"}"></span><span>${e}</span>`,document.getElementById("kp-toasts").appendChild(n),UIkit.icon(n.querySelector("[uk-icon]")),setTimeout(()=>n.remove(),s)},success:e=>o.show(e,"success"),error:e=>o.show(e,"error"),info:e=>o.show(e,"info")};async function H(e){let t=`
+        </div>`;document.body.insertAdjacentHTML("beforeend",s),UIkit.modal("#kp-progress-modal").show()}function f(){let e=document.getElementById("kp-progress-modal");e&&(UIkit.modal(e).hide(),setTimeout(()=>e.remove(),300))}var m={routes:{},register(e,t){this.routes[e]=t},async go(e,t={}){let s=Object.keys(t).length?e+"/"+Object.values(t).join("/"):e;window.location.hash=s,document.querySelectorAll(".kp-nav-link").forEach(i=>{i.classList.toggle("kp-active",i.dataset.view===e)});let a=this.routes[e];if(!a)return;let n=document.getElementById("kp-view");n.innerHTML=K();try{await a(n,t)}catch(i){n.innerHTML=S(i.message)}}};function F(){let t=(window.location.hash.replace("#","")||"dashboard").split("/"),s=t[0],a={};return s==="site-detail"&&t[1]&&(a.id=t[1]),{view:s,params:a}}var o={show(e,t="info",s=7e3){let a={success:"check",error:"warning",info:"info"},n=document.createElement("div");n.className=`kp-toast kp-toast-${t}`,n.innerHTML=`<span uk-icon="${a[t]||"info"}"></span><span>${e}</span>`,document.getElementById("kp-toasts").appendChild(n),UIkit.icon(n.querySelector("[uk-icon]")),setTimeout(()=>n.remove(),s)},success:e=>o.show(e,"success"),error:e=>o.show(e,"error"),info:e=>o.show(e,"info")};async function _(e){let t=`
         <div id="kp-edit-site-modal" uk-modal>
             <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
                 <button class="uk-modal-close-default" type="button" uk-close></button>
@@ -73,7 +73,7 @@
                     </div>
                 </form>
             </div>
-        </div>`;document.body.insertAdjacentHTML("beforeend",t);let s=UIkit.modal("#kp-edit-site-modal"),a=document.getElementById("es-site-type"),n=document.getElementById("es-php-version-wrap"),i=document.getElementById("es-node-version-wrap"),l=document.getElementById("es-dotnet-version-wrap"),c=document.getElementById("es-start-command-wrap"),r=document.getElementById("es-wordpress-wrap");s.show();let p=b=>{n.classList.toggle("uk-hidden",b!==1&&b!==2),i.classList.toggle("uk-hidden",b!==4),l.classList.toggle("uk-hidden",b!==5),c.classList.toggle("uk-hidden",b!==4&&b!==5),r.classList.toggle("uk-hidden",b!==1)};p(e.SiteType),a.addEventListener("change",()=>p(parseInt(a.value))),document.getElementById("edit-site-form").addEventListener("submit",async b=>{b.preventDefault();let v=b.target.querySelector('[type="submit"]'),m=v.innerHTML;v.disabled=!0,v.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let g=new FormData(b.target),k=parseInt(g.get("site_type")),f=null;k===4&&(f=parseInt(g.get("node_version"))),k===5&&(f=parseInt(g.get("dotnet_version")));let y={name:g.get("name").trim(),php_version:parseInt(g.get("php_version"))||3,site_type:k,runtime_version:f,start_command:g.get("start_command")?.trim()||""},ue=k===1?g.get("install_wordpress")==="on":!1;try{await d.put(`/sites/${e.ID}`,y),s.hide(),document.getElementById("kp-edit-site-modal")?.remove(),w("Applying Changes","Saving changes and recreating pod...");try{await d.post(`/sites/${e.ID}/recreate`,{install_wordpress:ue}),h(),o.success("Site updated and pod recreated")}catch(j){h(),o.error("Site saved but pod recreate failed: "+j.message)}u.go("site-detail",{id:String(e.ID)})}catch(j){o.error(j.message),v.disabled=!1,v.innerHTML=m}}),document.getElementById("kp-edit-site-modal").addEventListener("hidden",()=>document.getElementById("kp-edit-site-modal")?.remove())}function D(){document.body.insertAdjacentHTML("beforeend",`
+        </div>`;document.body.insertAdjacentHTML("beforeend",t);let s=UIkit.modal("#kp-edit-site-modal"),a=document.getElementById("es-site-type"),n=document.getElementById("es-php-version-wrap"),i=document.getElementById("es-node-version-wrap"),l=document.getElementById("es-dotnet-version-wrap"),r=document.getElementById("es-start-command-wrap"),c=document.getElementById("es-wordpress-wrap");s.show();let p=u=>{n.classList.toggle("uk-hidden",u!==1&&u!==2),i.classList.toggle("uk-hidden",u!==4),l.classList.toggle("uk-hidden",u!==5),r.classList.toggle("uk-hidden",u!==4&&u!==5),c.classList.toggle("uk-hidden",u!==1)};p(e.SiteType),a.addEventListener("change",()=>p(parseInt(a.value))),document.getElementById("edit-site-form").addEventListener("submit",async u=>{u.preventDefault();let v=u.target.querySelector('[type="submit"]'),k=v.innerHTML;v.disabled=!0,v.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let g=new FormData(u.target),b=parseInt(g.get("site_type")),h=null;b===4&&(h=parseInt(g.get("node_version"))),b===5&&(h=parseInt(g.get("dotnet_version")));let x={name:g.get("name").trim(),php_version:parseInt(g.get("php_version"))||3,site_type:b,runtime_version:h,start_command:g.get("start_command")?.trim()||""},be=b===1?g.get("install_wordpress")==="on":!1;try{await d.put(`/sites/${e.ID}`,x),s.hide(),document.getElementById("kp-edit-site-modal")?.remove(),y("Applying Changes","Saving changes and recreating pod...");try{await d.post(`/sites/${e.ID}/recreate`,{install_wordpress:be}),f(),o.success("Site updated and pod recreated")}catch(O){f(),o.error("Site saved but pod recreate failed: "+O.message)}m.go("site-detail",{id:String(e.ID)})}catch(O){o.error(O.message),v.disabled=!1,v.innerHTML=k}}),document.getElementById("kp-edit-site-modal").addEventListener("hidden",()=>document.getElementById("kp-edit-site-modal")?.remove())}function H(){document.body.insertAdjacentHTML("beforeend",`
         <div id="kp-create-site-modal" uk-modal>
             <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
                 <button class="uk-modal-close-default" type="button" uk-close></button>
@@ -138,8 +138,8 @@
                     </div>
                 </form>
             </div>
-        </div>`);let t=UIkit.modal("#kp-create-site-modal"),s=document.getElementById("cs-site-type"),a=document.getElementById("cs-php-version-wrap"),n=document.getElementById("cs-node-version-wrap"),i=document.getElementById("cs-dotnet-version-wrap"),l=document.getElementById("cs-start-command-wrap"),c=document.getElementById("cs-wordpress-wrap");t.show(),s.addEventListener("change",()=>{let r=parseInt(s.value);a.classList.toggle("uk-hidden",r!==1&&r!==2),n.classList.toggle("uk-hidden",r!==4),i.classList.toggle("uk-hidden",r!==5),l.classList.toggle("uk-hidden",r!==4&&r!==5),c.classList.toggle("uk-hidden",r!==1)}),document.getElementById("create-site-form").addEventListener("submit",async r=>{r.preventDefault();let p=r.target.querySelector('[type="submit"]'),b=p.innerHTML;p.disabled=!0,p.innerHTML='<div uk-spinner="ratio: 0.6"></div> Creating...';let v=new FormData(r.target),m=parseInt(v.get("site_type")),g=null;m===4&&(g=parseInt(v.get("node_version"))),m===5&&(g=parseInt(v.get("dotnet_version")));let k={name:v.get("name").trim(),php_version:parseInt(v.get("php_version"))||3,site_type:m,runtime_version:g,start_command:v.get("start_command")?.trim()||"",domains:v.get("domains").split(`
-`).map(f=>f.trim()).filter(Boolean),install_wordpress:m===1?v.get("install_wordpress")==="on":!1};t.hide(),document.getElementById("kp-create-site-modal")?.remove(),w("Creating Site",`Setting up '${k.name}' \u2014 pulling images and provisioning containers...`);try{await d.post("/sites",k),h(),o.success(`Site '${k.name}' created`),u.go("sites")}catch(f){h(),o.error(f.message),p.disabled=!1,p.innerHTML=b}}),document.getElementById("kp-create-site-modal").addEventListener("hidden",()=>document.getElementById("kp-create-site-modal")?.remove())}async function Q(e){let t=await d.get("/sites")??[];e.innerHTML=`
+        </div>`);let t=UIkit.modal("#kp-create-site-modal"),s=document.getElementById("cs-site-type"),a=document.getElementById("cs-php-version-wrap"),n=document.getElementById("cs-node-version-wrap"),i=document.getElementById("cs-dotnet-version-wrap"),l=document.getElementById("cs-start-command-wrap"),r=document.getElementById("cs-wordpress-wrap");t.show(),s.addEventListener("change",()=>{let c=parseInt(s.value);a.classList.toggle("uk-hidden",c!==1&&c!==2),n.classList.toggle("uk-hidden",c!==4),i.classList.toggle("uk-hidden",c!==5),l.classList.toggle("uk-hidden",c!==4&&c!==5),r.classList.toggle("uk-hidden",c!==1)}),document.getElementById("create-site-form").addEventListener("submit",async c=>{c.preventDefault();let p=c.target.querySelector('[type="submit"]'),u=p.innerHTML;p.disabled=!0,p.innerHTML='<div uk-spinner="ratio: 0.6"></div> Creating...';let v=new FormData(c.target),k=parseInt(v.get("site_type")),g=null;k===4&&(g=parseInt(v.get("node_version"))),k===5&&(g=parseInt(v.get("dotnet_version")));let b={name:v.get("name").trim(),php_version:parseInt(v.get("php_version"))||3,site_type:k,runtime_version:g,start_command:v.get("start_command")?.trim()||"",domains:v.get("domains").split(`
+`).map(h=>h.trim()).filter(Boolean),install_wordpress:k===1?v.get("install_wordpress")==="on":!1};t.hide(),document.getElementById("kp-create-site-modal")?.remove(),y("Creating Site",`Setting up '${b.name}' \u2014 pulling images and provisioning containers...`);try{await d.post("/sites",b),f(),o.success(`Site '${b.name}' created`),m.go("sites")}catch(h){f(),o.error(h.message),p.disabled=!1,p.innerHTML=u}}),document.getElementById("kp-create-site-modal").addEventListener("hidden",()=>document.getElementById("kp-create-site-modal")?.remove())}async function Q(e){let t=await d.get("/sites")??[];e.innerHTML=`
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Sites</h1>
             <button class="uk-button kp-btn-primary" id="sites-new-btn">
@@ -147,8 +147,8 @@
             </button>
         </div>
         <div class="kp-site-grid">
-            ${t.length===0?C("world","No sites yet \u2014 create one to get started"):t.map(V).join("")}
-        </div>`,document.getElementById("sites-new-btn").addEventListener("click",()=>D())}function V(e){let t=e.Domains?.[0]??null;return`
+            ${t.length===0?D("world","No sites yet \u2014 create one to get started"):t.map(V).join("")}
+        </div>`,document.getElementById("sites-new-btn").addEventListener("click",()=>H())}function V(e){let t=e.Domains?.[0]??null;return`
         <div class="kp-site-card" data-site-id="${e.ID}" data-status="${e.SiteStatus}">
             <div class="kp-site-card-header">
                 <div>
@@ -228,8 +228,8 @@
             </button>
         </div>
         <div class="kp-site-grid">
-            ${t.length===0?C("world","No sites yet"):t.slice(0,6).map(V).join("")}
-        </div>`,document.getElementById("dash-new-site")?.addEventListener("click",()=>D())}function q(e=null){let t=e?`/sites/${e}/security/ip`:"/security/ip",s=e?`/sites/${e}/security/ua`:"/security/ua";return`
+            ${t.length===0?D("world","No sites yet"):t.slice(0,6).map(V).join("")}
+        </div>`,document.getElementById("dash-new-site")?.addEventListener("click",()=>H())}function q(e=null){let t=e?`/sites/${e}/security/ip`:"/security/ip",s=e?`/sites/${e}/security/ua`:"/security/ua";return`
         <div id="security-panel" data-ip-base="${t}" data-ua-base="${s}">
 
             <div class="kp-card uk-padding-small uk-margin-bottom">
@@ -314,7 +314,7 @@
                 </div>
             </div>
 
-        </div>`}async function L(e){let t=e.querySelector("#security-panel");if(!t)return;let s=t.dataset.ipBase,a=t.dataset.uaBase;try{let[n,i]=await Promise.all([d.get(s),d.get(a)]);e.querySelector("#sec-ip-whitelist").value=n.whitelist??"",e.querySelector("#sec-ip-blacklist").value=n.blacklist??"",e.querySelector("#sec-ua-whitelist").value=i.whitelist??"",e.querySelector("#sec-ua-blacklist").value=i.blacklist??""}catch(n){o.error("Failed to load security rules: "+n.message)}}function R(e){let t=e.querySelector("#security-panel");if(!t)return;let s=t.dataset.ipBase,a=t.dataset.uaBase;e.querySelector("#sec-ip-save")?.addEventListener("click",async()=>{let n=e.querySelector("#sec-ip-save"),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.5"></div>';try{await d.put(s,{whitelist:e.querySelector("#sec-ip-whitelist").value,blacklist:e.querySelector("#sec-ip-blacklist").value}),o.success("IP rules saved")}catch(l){o.error(l.message)}finally{n.disabled=!1,n.innerHTML=i}}),e.querySelector("#sec-ua-save")?.addEventListener("click",async()=>{let n=e.querySelector("#sec-ua-save"),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.5"></div>';try{await d.put(a,{whitelist:e.querySelector("#sec-ua-whitelist").value,blacklist:e.querySelector("#sec-ua-blacklist").value}),o.success("UA rules saved")}catch(l){o.error(l.message)}finally{n.disabled=!1,n.innerHTML=i}}),e.querySelector("#sec-ip-import")?.addEventListener("change",async n=>{let i=n.target.files[0];if(!i)return;let l=new FormData;l.append("file",i);try{let c=await fetch(s+"/import",{method:"POST",body:l}),r=c.status===204?null:await c.json().catch(()=>null);if(!c.ok)throw new Error(r?.error||`HTTP ${c.status}`);await L(e),o.success("IP rules imported")}catch(c){o.error(c.message)}finally{n.target.value=""}}),e.querySelector("#sec-ua-import")?.addEventListener("change",async n=>{let i=n.target.files[0];if(!i)return;let l=new FormData;l.append("file",i);try{let c=await fetch(a+"/import",{method:"POST",body:l}),r=c.status===204?null:await c.json().catch(()=>null);if(!c.ok)throw new Error(r?.error||`HTTP ${c.status}`);await L(e),o.success("UA rules imported")}catch(c){o.error(c.message)}finally{n.target.value=""}})}async function K(e){if(!E()){e.innerHTML=x("Access denied");return}e.innerHTML=`
+        </div>`}async function L(e){let t=e.querySelector("#security-panel");if(!t)return;let s=t.dataset.ipBase,a=t.dataset.uaBase;try{let[n,i]=await Promise.all([d.get(s),d.get(a)]);e.querySelector("#sec-ip-whitelist").value=n.whitelist??"",e.querySelector("#sec-ip-blacklist").value=n.blacklist??"",e.querySelector("#sec-ua-whitelist").value=i.whitelist??"",e.querySelector("#sec-ua-blacklist").value=i.blacklist??""}catch(n){o.error("Failed to load security rules: "+n.message)}}function R(e){let t=e.querySelector("#security-panel");if(!t)return;let s=t.dataset.ipBase,a=t.dataset.uaBase;e.querySelector("#sec-ip-save")?.addEventListener("click",async()=>{let n=e.querySelector("#sec-ip-save"),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.5"></div>';try{await d.put(s,{whitelist:e.querySelector("#sec-ip-whitelist").value,blacklist:e.querySelector("#sec-ip-blacklist").value}),o.success("IP rules saved")}catch(l){o.error(l.message)}finally{n.disabled=!1,n.innerHTML=i}}),e.querySelector("#sec-ua-save")?.addEventListener("click",async()=>{let n=e.querySelector("#sec-ua-save"),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.5"></div>';try{await d.put(a,{whitelist:e.querySelector("#sec-ua-whitelist").value,blacklist:e.querySelector("#sec-ua-blacklist").value}),o.success("UA rules saved")}catch(l){o.error(l.message)}finally{n.disabled=!1,n.innerHTML=i}}),e.querySelector("#sec-ip-import")?.addEventListener("change",async n=>{let i=n.target.files[0];if(!i)return;let l=new FormData;l.append("file",i);try{let r=await fetch(s+"/import",{method:"POST",body:l}),c=r.status===204?null:await r.json().catch(()=>null);if(!r.ok)throw new Error(c?.error||`HTTP ${r.status}`);await L(e),o.success("IP rules imported")}catch(r){o.error(r.message)}finally{n.target.value=""}}),e.querySelector("#sec-ua-import")?.addEventListener("change",async n=>{let i=n.target.files[0];if(!i)return;let l=new FormData;l.append("file",i);try{let r=await fetch(a+"/import",{method:"POST",body:l}),c=r.status===204?null:await r.json().catch(()=>null);if(!r.ok)throw new Error(c?.error||`HTTP ${r.status}`);await L(e),o.success("UA rules imported")}catch(r){o.error(r.message)}finally{n.target.value=""}})}async function J(e){if(!E()){e.innerHTML=S("Access denied");return}e.innerHTML=`
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Global Security</h1>
         </div>
@@ -322,10 +322,12 @@
             Global rules apply to all sites before per-site rules are evaluated.
             Blacklist always wins \u2014 a blacklisted entry cannot be overridden by any whitelist.
         </p>
-        ${q(null)}`,R(e),L(e)}function ke(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function J(e){let t=document.getElementById("admin-domain-ssl");if(!(!t||!e))try{let s=await d.get(`/ssl-status?domain=${encodeURIComponent(e)}`);t.outerHTML=ke(s.status)}catch{}}async function W(e){if(!E()){e.innerHTML=x("Access denied");return}let t=await d.get("/settings");e.innerHTML=`
+        ${q(null)}`,R(e),L(e)}function ve(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function Y(e){let t=document.getElementById("admin-domain-ssl");if(!(!t||!e))try{let s=await d.get(`/ssl-status?domain=${encodeURIComponent(e)}`);t.outerHTML=ve(s.status)}catch{}}async function W(e){if(!E()){e.innerHTML=S("Access denied");return}let[t,s]=await Promise.all([d.get("/settings"),d.get("/settings/backup")]);e.innerHTML=`
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Settings</h1>
         </div>
+
+        <!-- panel configuration -->
         <div class="kp-card uk-padding kp-settings-wrap">
             <h3 class="kp-view-title uk-margin-bottom">Panel Configuration</h3>
             <form id="settings-form" class="uk-form-stacked">
@@ -363,7 +365,190 @@
                 </div>
             </form>
         </div>
-        `,t.admin_domain&&J(t.admin_domain),document.getElementById("settings-form").addEventListener("submit",async s=>{s.preventDefault();let a=s.target.querySelector('[type="submit"]'),n=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l={admin_domain:new FormData(s.target).get("admin_domain").trim()};try{await d.put("/settings",l),o.success("Settings saved"),J(l.admin_domain)}catch(c){o.error(c.message)}finally{a.disabled=!1,a.innerHTML=n}}),document.getElementById("settings-import-file").addEventListener("change",async s=>{let a=s.target.files[0];if(!a)return;let n=new FormData;n.append("file",a);try{let i=await fetch("/api/settings/import",{method:"POST",body:n}),l=i.status===204?null:await i.json().catch(()=>null);if(!i.ok)throw new Error(l?.error||`HTTP ${i.status}`);o.success("Settings imported \u2014 reloading"),W(e)}catch(i){o.error(i.message)}finally{s.target.value=""}})}var N={1:"Nginx",2:"PHP",3:"MariaDB",4:"Redis"};function I(e,t,s){let a=s?Object.entries(s):[];return`
+
+        <!-- backup schedule / retention -->
+        <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+            <h3 class="kp-view-title uk-margin-bottom">Backup Schedule</h3>
+            <form id="backup-form" class="uk-form-stacked">
+                <div class="uk-margin">
+                    <label class="kp-label" for="backup-schedule">Cron Schedule</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="backup-schedule"
+                        name="backup_schedule"
+                        type="text"
+                        placeholder="0 2 * * *"
+                        value="${s.backup_schedule??""}">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Standard 5-field cron expression. Leave blank to disable automatic backups.<br>
+                        Examples: <span class="kp-mono">0 2 * * *</span> (daily at 2am) &nbsp;
+                        <span class="kp-mono">0 */6 * * *</span> (every 6 hours)
+                    </p>
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="backup-retain-days">Retain Backups (days)</label>
+                    <input
+                        class="uk-input kp-input"
+                        id="backup-retain-days"
+                        name="backup_retain_days"
+                        type="number"
+                        min="1"
+                        max="365"
+                        placeholder="30"
+                        value="${s.backup_retain_days??"30"}">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Snapshots older than this many days will be pruned automatically after each backup run.
+                    </p>
+                </div>
+                <div class="uk-flex uk-flex-right uk-margin-top">
+                    <button type="submit" class="uk-button kp-btn-primary">
+                        <span uk-icon="check"></span> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- S3 backup storage -->
+        <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+            <h3 class="kp-view-title uk-margin-bottom">S3 Backup Storage</h3>
+            <form id="s3-form" class="uk-form-stacked">
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-endpoint">Endpoint URL</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-endpoint"
+                        name="s3_endpoint"
+                        type="url"
+                        placeholder="https://s3.amazonaws.com"
+                        value="${s.s3_endpoint??""}">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        AWS S3 or any S3-compatible endpoint (Backblaze B2, MinIO, Wasabi, etc.)
+                    </p>
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-bucket">Bucket</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-bucket"
+                        name="s3_bucket"
+                        type="text"
+                        placeholder="my-podnest-backups"
+                        value="${s.s3_bucket??""}">
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-region">Region</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-region"
+                        name="s3_region"
+                        type="text"
+                        placeholder="us-east-1"
+                        value="${s.s3_region??""}">
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-access-key">Access Key ID</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-access-key"
+                        name="s3_access_key"
+                        type="text"
+                        placeholder="AKIAIOSFODNN7EXAMPLE"
+                        value="${s.s3_access_key??""}">
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-secret-key">Secret Access Key</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-secret-key"
+                        name="s3_secret_key"
+                        type="password"
+                        placeholder="${s.s3_secret_key?"saved \u2014 enter new value to change":"enter secret key"}"
+                        value="">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Leave blank to keep the existing key.
+                    </p>
+                </div>
+                <div class="uk-flex uk-flex-right uk-margin-top">
+                    <button type="submit" class="uk-button kp-btn-primary">
+                        <span uk-icon="check"></span> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+        `,t.admin_domain&&Y(t.admin_domain),document.getElementById("settings-form").addEventListener("submit",async a=>{a.preventDefault();let n=a.target.querySelector('[type="submit"]'),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let r={admin_domain:new FormData(a.target).get("admin_domain").trim()};try{await d.put("/settings",r),o.success("Settings saved"),Y(r.admin_domain)}catch(c){o.error(c.message)}finally{n.disabled=!1,n.innerHTML=i}}),document.getElementById("settings-import-file").addEventListener("change",async a=>{let n=a.target.files[0];if(!n)return;let i=new FormData;i.append("file",n);try{let l=await fetch("/api/settings/import",{method:"POST",body:i}),r=l.status===204?null:await l.json().catch(()=>null);if(!l.ok)throw new Error(r?.error||`HTTP ${l.status}`);o.success("Settings imported \u2014 reloading"),W(e)}catch(l){o.error(l.message)}finally{a.target.value=""}}),document.getElementById("backup-form").addEventListener("submit",async a=>{a.preventDefault();let n=a.target.querySelector('[type="submit"]'),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l=new FormData(a.target),r={backup_schedule:l.get("backup_schedule").trim(),backup_retain_days:l.get("backup_retain_days").trim()};try{await d.put("/settings/backup",r),o.success("Backup settings saved")}catch(c){o.error(c.message)}finally{n.disabled=!1,n.innerHTML=i}}),document.getElementById("s3-form").addEventListener("submit",async a=>{a.preventDefault();let n=a.target.querySelector('[type="submit"]'),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l=new FormData(a.target),r={s3_endpoint:l.get("s3_endpoint").trim(),s3_bucket:l.get("s3_bucket").trim(),s3_region:l.get("s3_region").trim(),s3_access_key:l.get("s3_access_key").trim()},c=l.get("s3_secret_key").trim();c&&(r.s3_secret_key=c);try{await d.put("/settings/backup",r),o.success("S3 settings saved")}catch(p){o.error(p.message)}finally{n.disabled=!1,n.innerHTML=i}})}function X(e){return`
+        <div id="backups-panel" data-site-id="${e}">
+
+            <!-- repo config card -->
+            <div class="kp-card uk-padding-small uk-margin-bottom">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Backup Destinations</h3>
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-repo-save">
+                        <span uk-icon="check"></span> Save
+                    </button>
+                </div>
+                <div class="uk-flex" style="gap:24px;flex-wrap:wrap" id="backup-repo-toggles">
+                    <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
+                        <input type="checkbox" class="uk-checkbox" id="backup-local-enabled">
+                        <span class="kp-text">Local (SFTP accessible)</span>
+                    </label>
+                    <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
+                        <input type="checkbox" class="uk-checkbox" id="backup-s3-enabled">
+                        <span class="kp-text">S3</span>
+                    </label>
+                </div>
+                <p class="kp-muted uk-text-small uk-margin-small-top">
+                    Local backups are stored under the site's SFTP home directory and are accessible
+                    over SFTP as <span class="kp-mono">backups/local/</span>. S3 requires global S3
+                    credentials to be configured under Settings.
+                </p>
+            </div>
+
+            <!-- backup list card -->
+            <div class="kp-card uk-padding-small">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Snapshots</h3>
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn">
+                        <span uk-icon="cloud-upload"></span> Back Up Now
+                    </button>
+                </div>
+                <div id="backup-list-wrap">
+                    <div uk-spinner="ratio: 0.8" style="color:var(--kp-blue)"></div>
+                </div>
+            </div>
+
+        </div>`}function he(e){if(!e||e.length===0)return'<p class="kp-muted uk-text-small uk-margin-remove">No snapshots yet.</p>';let t=n=>n===2?'<span class="kp-mono" style="color:var(--kp-cyan)">S3</span>':'<span class="kp-mono" style="color:var(--kp-blue)">Local</span>',s=n=>n<1024?`${n} B`:n<1048576?`${(n/1024).toFixed(1)} KB`:n<1073741824?`${(n/1048576).toFixed(1)} MB`:`${(n/1073741824).toFixed(2)} GB`;return`
+        <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+            <thead>
+                <tr>
+                    <th>Snapshot ID</th>
+                    <th>Label</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>${e.map(n=>`
+        <tr>
+            <td class="kp-mono" style="font-size:0.8rem">${n.SnapshotID}</td>
+            <td>${n.Label||"\u2014"}</td>
+            <td>${t(n.BackupType)}</td>
+            <td>${s(n.SizeBytes)}</td>
+            <td>${new Date(n.Created).toLocaleString()}</td>
+            <td>
+                <div class="uk-flex" style="gap:6px">
+                    <button class="uk-button kp-btn-secondary kp-btn-sm backup-restore-btn"
+                        data-id="${n.ID}" uk-tooltip="Restore from this snapshot">
+                        <span uk-icon="history"></span>
+                    </button>
+                    <button class="uk-button kp-btn-danger kp-btn-sm backup-delete-btn"
+                        data-id="${n.ID}" uk-tooltip="Delete this snapshot">
+                        <span uk-icon="trash"></span>
+                    </button>
+                </div>
+            </td>
+        </tr>`).join("")}</tbody>
+        </table>`}async function B(e,t){try{let[s,a]=await Promise.all([d.get(`/sites/${t}/backup-repo`),d.get(`/sites/${t}/backups`)]),n=e.querySelector("#backup-local-enabled"),i=e.querySelector("#backup-s3-enabled");n&&(n.checked=!!s.LocalEnabled),i&&(i.checked=!!s.S3Enabled);let l=e.querySelector("#backup-list-wrap");l&&(l.innerHTML=he(a))}catch(s){let a=e.querySelector("#backup-list-wrap");a&&(a.innerHTML=`<p class="kp-muted uk-text-small">Failed to load backups: ${s.message}</p>`)}}function Z(e,t){e.querySelector("#backup-repo-save")?.addEventListener("click",async()=>{let s={local_enabled:e.querySelector("#backup-local-enabled")?.checked??!1,s3_enabled:e.querySelector("#backup-s3-enabled")?.checked??!1};try{await d.put(`/sites/${t}/backup-repo`,s),o.success("Backup destinations saved")}catch(a){o.error(a.message)}}),e.querySelector("#backup-run-btn")?.addEventListener("click",async()=>{let s=0;try{s=(await d.get(`/sites/${t}/backups`))?.length??0}catch{}try{await d.post(`/sites/${t}/backups`,{label:"manual"})}catch(i){o.error(i.message);return}y("Backup Running","Snapshotting files and database \u2014 this may take a few minutes.");let a=Date.now()+10*60*1e3,n=setInterval(async()=>{try{(((await d.get(`/sites/${t}/backups`))?.length??0)>s||Date.now()>a)&&(clearInterval(n),f(),await B(e,t),Date.now()<=a&&o.success("Backup complete"))}catch{}},4e3)}),e.querySelector("#backup-list-wrap")?.addEventListener("click",async s=>{let a=s.target.closest(".backup-restore-btn");if(a){let i=a.dataset.id;if(!await w("Restore Site","This will restore the site from the selected snapshot. The site will show a maintenance page during the restore. Continue?"))return;try{await d.post(`/sites/${t}/backups/${i}/restore`)}catch(u){o.error(u.message);return}y("Restore Running","Restoring files and database \u2014 the site will return automatically when complete.");let r=Date.now(),c=Date.now()+15*60*1e3,p=setInterval(async()=>{try{let u=await d.get(`/sites/${t}/backups/restore-status`);(!u?.active||Date.now()>c)&&(clearInterval(p),f(),u?.active?o.error("Restore timed out"):o.success("Restore complete"),await B(e,t))}catch{}},3e3);return}let n=s.target.closest(".backup-delete-btn");if(n){let i=n.dataset.id;if(!await w("Delete Snapshot","This will permanently remove the snapshot from all configured repositories. This cannot be undone."))return;y("Deleting Snapshot","Removing snapshot data from repositories \u2014 this may take a moment.");try{await d.delete(`/sites/${t}/backups/${i}`),f(),o.success("Snapshot deleted"),await B(e,t)}catch(r){f(),o.error(r.message)}}})}var N={1:"Nginx",2:"PHP",3:"MariaDB",4:"Redis"};function I(e,t,s){let a=s?Object.entries(s):[];return`
         <div>
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                 <span class="kp-muted uk-text-small">${a.length} configuration keys</span>
@@ -387,9 +572,9 @@
                 </div>
             </div>
             <div class="kp-config-grid cfg-rows" data-type="${t}">
-                ${a.map(([n,i])=>U(n,i)).join("")}
+                ${a.map(([n,i])=>A(n,i)).join("")}
             </div>
-        </div>`}function U(e="",t=""){return`<div class="kp-config-row">
+        </div>`}function A(e="",t=""){return`<div class="kp-config-row">
         <div class="kp-config-key">
             <input class="cfg-key" type="text" value="${e}" placeholder="key">
         </div>
@@ -399,7 +584,7 @@
         <button class="kp-config-del cfg-del-row" title="Remove">
             <span uk-icon="icon: close; ratio: 0.8"></span>
         </button>
-    </div>`}function Y(e,t){e.addEventListener("click",s=>{if(s.target.closest(".cfg-add-row")){let a=s.target.closest(".cfg-add-row");e.querySelector(`.cfg-rows[data-type="${a.dataset.type}"]`).insertAdjacentHTML("beforeend",U())}}),e.addEventListener("click",s=>{s.target.closest(".cfg-del-row")&&s.target.closest(".kp-config-row").remove()}),e.addEventListener("click",async s=>{let a=s.target.closest(".cfg-save");if(!a)return;let{type:n,site:i}=a.dataset,l=e.querySelectorAll(`.cfg-rows[data-type="${n}"] .kp-config-row`),c={};l.forEach(r=>{let p=r.querySelector(".cfg-key").value.trim(),b=r.querySelector(".cfg-val").value.trim();p&&(c[p]=b)});try{await d.put(`/sites/${i}/configs/${n}`,c),o.success(`${N[n]} config saved`)}catch(r){o.error(r.message)}}),e.addEventListener("click",async s=>{let a=s.target.closest(".cfg-reset");if(!a)return;let{type:n,site:i}=a.dataset;if(await S("Reset Config",`Reset ${N[n]} config to defaults?`))try{let c=await d.post(`/sites/${i}/configs/${n}/reset`),r=e.querySelector(`.cfg-rows[data-type="${n}"]`);r.innerHTML=Object.entries(c).map(([p,b])=>U(p,b)).join(""),o.success(`${N[n]} reset to defaults`)}catch(c){o.error(c.message)}}),e.addEventListener("change",async s=>{let a=s.target.closest(".cfg-import-input");if(!a)return;let{type:n,site:i}=a.dataset,l=a.files[0];if(!l)return;let c=new FormData;c.append("file",l);try{let r=await fetch(`/api/sites/${i}/configs/${n}/import`,{method:"POST",body:c}),p=r.status===204?null:await r.json().catch(()=>null);if(!r.ok)throw new Error(p?.error||`HTTP ${r.status}`);let b=e.querySelector(`.cfg-rows[data-type="${n}"]`);b.innerHTML=Object.entries(p).map(([v,m])=>U(v,m)).join(""),o.success(`${N[n]} config imported`)}catch(r){o.error(r.message)}finally{a.value=""}})}function X(e,t){return`
+    </div>`}function ee(e,t){e.addEventListener("click",s=>{if(s.target.closest(".cfg-add-row")){let a=s.target.closest(".cfg-add-row");e.querySelector(`.cfg-rows[data-type="${a.dataset.type}"]`).insertAdjacentHTML("beforeend",A())}}),e.addEventListener("click",s=>{s.target.closest(".cfg-del-row")&&s.target.closest(".kp-config-row").remove()}),e.addEventListener("click",async s=>{let a=s.target.closest(".cfg-save");if(!a)return;let{type:n,site:i}=a.dataset,l=e.querySelectorAll(`.cfg-rows[data-type="${n}"] .kp-config-row`),r={};l.forEach(c=>{let p=c.querySelector(".cfg-key").value.trim(),u=c.querySelector(".cfg-val").value.trim();p&&(r[p]=u)});try{await d.put(`/sites/${i}/configs/${n}`,r),o.success(`${N[n]} config saved`)}catch(c){o.error(c.message)}}),e.addEventListener("click",async s=>{let a=s.target.closest(".cfg-reset");if(!a)return;let{type:n,site:i}=a.dataset;if(await w("Reset Config",`Reset ${N[n]} config to defaults?`))try{let r=await d.post(`/sites/${i}/configs/${n}/reset`),c=e.querySelector(`.cfg-rows[data-type="${n}"]`);c.innerHTML=Object.entries(r).map(([p,u])=>A(p,u)).join(""),o.success(`${N[n]} reset to defaults`)}catch(r){o.error(r.message)}}),e.addEventListener("change",async s=>{let a=s.target.closest(".cfg-import-input");if(!a)return;let{type:n,site:i}=a.dataset,l=a.files[0];if(!l)return;let r=new FormData;r.append("file",l);try{let c=await fetch(`/api/sites/${i}/configs/${n}/import`,{method:"POST",body:r}),p=c.status===204?null:await c.json().catch(()=>null);if(!c.ok)throw new Error(p?.error||`HTTP ${c.status}`);let u=e.querySelector(`.cfg-rows[data-type="${n}"]`);u.innerHTML=Object.entries(p).map(([v,k])=>A(v,k)).join(""),o.success(`${N[n]} config imported`)}catch(c){o.error(c.message)}finally{a.value=""}})}function te(e,t){return`
         <div>
             <div class="kp-log-controls">
                 <select class="uk-select kp-select" id="log-container" style="width:140px;height:38px">
@@ -435,8 +620,8 @@
                 <span style="font-size:0.72rem;color:var(--kp-text-dim);margin-left:8px" id="log-status">Disconnected</span>
             </div>
             <div class="kp-log-wrap" id="log-output"></div>
-        </div>`}function Z(e,t){let s=null,a=!1,n=e.querySelector("#log-output"),i=e.querySelector("#log-connect"),l=e.querySelector("#log-disconnect"),c=e.querySelector("#log-clear"),r=e.querySelector("#log-autoscroll"),p=e.querySelector("#log-status");function b(g){g.split(`
-`).forEach(k=>{if(!k)return;let f=document.createElement("div");f.className=k.match(/error|crit|emerg/i)?"kp-log-line-err":k.match(/warn/i)?"kp-log-line-warn":k.match(/info|notice/i)?"kp-log-line-info":"",f.textContent=k,n.appendChild(f)}),r.checked&&(n.scrollTop=n.scrollHeight)}function v(){s&&(s.close(),s=null),a=!1,i.disabled=!1,l.disabled=!0,p&&(p.textContent="Disconnected")}i.addEventListener("click",()=>{v();let g=e.querySelector("#log-container").value,k=e.querySelector("#log-tail").value,f=location.protocol==="https:"?"wss":"ws";s=new WebSocket(`${f}://${location.host}/api/sites/${t}/logs?container=${g}&tail=${k}`),s.onopen=()=>{a=!0,i.disabled=!0,l.disabled=!1,p&&(p.textContent=`Connected \u2014 ${g}`)},s.onmessage=y=>b(y.data),s.onerror=()=>{},s.onclose=()=>{a=!1,i.disabled=!1,l.disabled=!0,p&&(p.textContent="Disconnected")}}),l.addEventListener("click",v),c.addEventListener("click",()=>{n.innerHTML=""}),e.querySelector("#log-container").addEventListener("change",()=>{s&&s.readyState===WebSocket.OPEN&&(v(),i.click())});let m=u.go.bind(u);u.go=function(g,k={}){return s&&v(),m(g,k)}}function be(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function ee(e,t){try{let s=await d.get(`/ssl-status?domain=${encodeURIComponent(e)}`),a=document.getElementById(`ssl-icon-${t}`);a&&(a.outerHTML=be(s.status))}catch{}}function te(e){e.forEach(t=>ee(t.Domain,t.ID))}function se(e,t,s){let a=e.SiteType!==3&&e.PMAPort>0;return`
+        </div>`}function se(e,t){let s=null,a=!1,n=e.querySelector("#log-output"),i=e.querySelector("#log-connect"),l=e.querySelector("#log-disconnect"),r=e.querySelector("#log-clear"),c=e.querySelector("#log-autoscroll"),p=e.querySelector("#log-status");function u(g){g.split(`
+`).forEach(b=>{if(!b)return;let h=document.createElement("div");h.className=b.match(/error|crit|emerg/i)?"kp-log-line-err":b.match(/warn/i)?"kp-log-line-warn":b.match(/info|notice/i)?"kp-log-line-info":"",h.textContent=b,n.appendChild(h)}),c.checked&&(n.scrollTop=n.scrollHeight)}function v(){s&&(s.close(),s=null),a=!1,i.disabled=!1,l.disabled=!0,p&&(p.textContent="Disconnected")}i.addEventListener("click",()=>{v();let g=e.querySelector("#log-container").value,b=e.querySelector("#log-tail").value,h=location.protocol==="https:"?"wss":"ws";s=new WebSocket(`${h}://${location.host}/api/sites/${t}/logs?container=${g}&tail=${b}`),s.onopen=()=>{a=!0,i.disabled=!0,l.disabled=!1,p&&(p.textContent=`Connected \u2014 ${g}`)},s.onmessage=x=>u(x.data),s.onerror=()=>{},s.onclose=()=>{a=!1,i.disabled=!1,l.disabled=!0,p&&(p.textContent="Disconnected")}}),l.addEventListener("click",v),r.addEventListener("click",()=>{n.innerHTML=""}),e.querySelector("#log-container").addEventListener("change",()=>{s&&s.readyState===WebSocket.OPEN&&(v(),i.click())});let k=m.go.bind(m);m.go=function(g,b={}){return s&&v(),k(g,b)}}function fe(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function ae(e,t){try{let s=await d.get(`/ssl-status?domain=${encodeURIComponent(e)}`),a=document.getElementById(`ssl-icon-${t}`);a&&(a.outerHTML=fe(s.status))}catch{}}function ne(e){e.forEach(t=>ae(t.Domain,t.ID))}function ie(e,t,s){let a=e.SiteType!==3&&e.PMAPort>0;return`
         <div class="uk-grid-medium" uk-grid>
             <div class="uk-width-1-2@m">
                 <div class="kp-card uk-padding-small">
@@ -477,7 +662,7 @@
                         </button>
                     </div>
                     <div id="domain-list">
-                        ${t.length?t.map(ae).join(""):'<p class="kp-muted uk-text-small">No domains configured</p>'}
+                        ${t.length?t.map(oe).join(""):'<p class="kp-muted uk-text-small">No domains configured</p>'}
                     </div>
                     <div id="domain-add-form" class="uk-hidden uk-margin-small-top">
                         <div class="uk-flex kp-domain-add-wrap">
@@ -515,7 +700,7 @@
                 </div>
 
             </div>
-        </div>`}function ae(e){return`<div class="uk-flex uk-flex-between uk-flex-middle kp-config-row" data-domain-id="${e.ID}">
+        </div>`}function oe(e){return`<div class="uk-flex uk-flex-between uk-flex-middle kp-config-row" data-domain-id="${e.ID}">
         <div class="uk-flex uk-flex-middle kp-domain-row-inner">
             <span id="ssl-icon-${e.ID}" class="kp-ssl-pending" uk-icon="icon: more; ratio: 0.85"></span>
             <span class="uk-text-small kp-mono">${e.Domain}</span>
@@ -523,10 +708,10 @@
         <button class="kp-config-del" data-action="delete-domain" data-did="${e.ID}" title="Remove">
             <span uk-icon="icon: close; ratio: 0.8"></span>
         </button>
-    </div>`}function ne(e,t){e.querySelector("#domain-add-btn")?.addEventListener("click",()=>{e.querySelector("#domain-add-form").classList.remove("uk-hidden")}),e.querySelector("#domain-cancel-btn")?.addEventListener("click",()=>{e.querySelector("#domain-add-form").classList.add("uk-hidden")}),e.querySelector("#domain-save-btn")?.addEventListener("click",async()=>{let s=e.querySelector("#domain-add-input").value.trim();if(s)try{let a=await d.post(`/sites/${t}/domains`,{domain:s});e.querySelector("#domain-list").insertAdjacentHTML("beforeend",ae(a)),ee(a.Domain,a.ID),e.querySelector("#domain-add-form").classList.add("uk-hidden"),e.querySelector("#domain-add-input").value="",o.success("Domain added")}catch(a){o.error(a.message)}}),e.querySelector("#domain-list")?.addEventListener("click",async s=>{let a=s.target.closest('[data-action="delete-domain"]');if(!(!a||!await S("Remove Domain","Remove this domain from the site?")))try{await d.delete(`/sites/${t}/domains/${a.dataset.did}`),a.closest("[data-domain-id]").remove(),o.success("Domain removed")}catch(i){o.error(i.message)}})}function ie(e,t){e.querySelector("#sftp-regen-btn")?.addEventListener("click",async()=>{let s=e.querySelector("#sftp-regen-btn"),a=s.innerHTML;s.disabled=!0,s.innerHTML='<div uk-spinner="ratio: 0.5"></div>';try{await d.post(`/sites/${t}/sftp-regen`),o.success("SFTP password regenerated"),u.go("site-detail",{id:String(t)})}catch(n){o.error(n.message),s.disabled=!1,s.innerHTML=a}}),e.querySelector("#sftp-copy-btn")?.addEventListener("click",()=>{let s=e.querySelector("#sftp-pass-display")?.textContent;if(s)if(navigator.clipboard)navigator.clipboard.writeText(s).then(()=>o.success("Password copied to clipboard")).catch(()=>o.error("Failed to copy password"));else{let a=document.createElement("textarea");a.value=s,a.style.cssText="position:fixed;opacity:0",document.body.appendChild(a),a.select(),document.execCommand("copy"),document.body.removeChild(a),o.success("Password copied to clipboard")}}),e.querySelector("#pma-open-btn")?.addEventListener("click",async()=>{let s=e.querySelector("#pma-open-btn"),a=s.innerHTML;s.disabled=!0,s.innerHTML='<div uk-spinner="ratio: 0.5"></div> Opening...';try{let n=await d.post(`/sites/${t}/pma-token`);window.open(n.url,"_blank")}catch(n){o.error(n.message)}finally{s.disabled=!1,s.innerHTML=a}})}var ge=[{label:"Cache Flush",cmd:"cache flush"},{label:"Plugin List",cmd:"plugin list"},{label:"Theme List",cmd:"theme list"},{label:"User List",cmd:"user list"},{label:"Core Check",cmd:"core check-update"},{label:"Core Update",cmd:"core update"},{label:"Plugin Updates",cmd:"plugin update --all"},{label:"Theme Updates",cmd:"theme update --all"},{label:"Rewrite Flush",cmd:"rewrite flush"},{label:"Transient Delete",cmd:"transient delete --all"},{label:"Search Replace",cmd:"search-replace '' ''"}];function oe(e){return`
+    </div>`}function le(e,t){e.querySelector("#domain-add-btn")?.addEventListener("click",()=>{e.querySelector("#domain-add-form").classList.remove("uk-hidden")}),e.querySelector("#domain-cancel-btn")?.addEventListener("click",()=>{e.querySelector("#domain-add-form").classList.add("uk-hidden")}),e.querySelector("#domain-save-btn")?.addEventListener("click",async()=>{let s=e.querySelector("#domain-add-input").value.trim();if(s)try{let a=await d.post(`/sites/${t}/domains`,{domain:s});e.querySelector("#domain-list").insertAdjacentHTML("beforeend",oe(a)),ae(a.Domain,a.ID),e.querySelector("#domain-add-form").classList.add("uk-hidden"),e.querySelector("#domain-add-input").value="",o.success("Domain added")}catch(a){o.error(a.message)}}),e.querySelector("#domain-list")?.addEventListener("click",async s=>{let a=s.target.closest('[data-action="delete-domain"]');if(!(!a||!await w("Remove Domain","Remove this domain from the site?")))try{await d.delete(`/sites/${t}/domains/${a.dataset.did}`),a.closest("[data-domain-id]").remove(),o.success("Domain removed")}catch(i){o.error(i.message)}})}function re(e,t){e.querySelector("#sftp-regen-btn")?.addEventListener("click",async()=>{let s=e.querySelector("#sftp-regen-btn"),a=s.innerHTML;s.disabled=!0,s.innerHTML='<div uk-spinner="ratio: 0.5"></div>';try{await d.post(`/sites/${t}/sftp-regen`),o.success("SFTP password regenerated"),m.go("site-detail",{id:String(t)})}catch(n){o.error(n.message),s.disabled=!1,s.innerHTML=a}}),e.querySelector("#sftp-copy-btn")?.addEventListener("click",()=>{let s=e.querySelector("#sftp-pass-display")?.textContent;if(s)if(navigator.clipboard)navigator.clipboard.writeText(s).then(()=>o.success("Password copied to clipboard")).catch(()=>o.error("Failed to copy password"));else{let a=document.createElement("textarea");a.value=s,a.style.cssText="position:fixed;opacity:0",document.body.appendChild(a),a.select(),document.execCommand("copy"),document.body.removeChild(a),o.success("Password copied to clipboard")}}),e.querySelector("#pma-open-btn")?.addEventListener("click",async()=>{let s=e.querySelector("#pma-open-btn"),a=s.innerHTML;s.disabled=!0,s.innerHTML='<div uk-spinner="ratio: 0.5"></div> Opening...';try{let n=await d.post(`/sites/${t}/pma-token`);window.open(n.url,"_blank")}catch(n){o.error(n.message)}finally{s.disabled=!1,s.innerHTML=a}})}var ye=[{label:"Cache Flush",cmd:"cache flush"},{label:"Plugin List",cmd:"plugin list"},{label:"Theme List",cmd:"theme list"},{label:"User List",cmd:"user list"},{label:"Core Check",cmd:"core check-update"},{label:"Core Update",cmd:"core update"},{label:"Plugin Updates",cmd:"plugin update --all"},{label:"Theme Updates",cmd:"theme update --all"},{label:"Rewrite Flush",cmd:"rewrite flush"},{label:"Transient Delete",cmd:"transient delete --all"},{label:"Search Replace",cmd:"search-replace '' ''"}];function ce(e){return`
         <div>
             <div class="kp-log-controls" style="flex-wrap:wrap;gap:6px">
-                ${ge.map(t=>`
+                ${ye.map(t=>`
                    <button class="uk-button kp-btn-ghost kp-btn-sm"
                         data-action="wpcli-quick"
                         data-cmd="${t.cmd}">
@@ -564,8 +749,8 @@
                 <span style="font-size:0.72rem;color:var(--kp-text-dim);margin-left:8px" id="wpcli-status">Ready</span>
             </div>
             <div class="kp-log-wrap" id="wpcli-output" style="height:500px"></div>
-        </div>`}function le(e,t){let s=e.querySelector("#wpcli-output"),a=e.querySelector("#wpcli-input"),n=e.querySelector("#wpcli-run"),i=e.querySelector("#wpcli-clear"),l=e.querySelector("#wpcli-status"),c=[],r=-1;function p(m,g=""){m.split(`
-`).forEach(k=>{if(!k)return;let f=document.createElement("div");g?f.className=g:f.className=k.match(/error|fatal|critical/i)?"kp-log-line-err":k.match(/warning|warn/i)?"kp-log-line-warn":k.match(/success|done\]/i)?"kp-log-line-info":"",f.textContent=k,s.appendChild(f)}),s.scrollTop=s.scrollHeight}function b(m){if(m=m.trim(),!m)return;c.unshift(m),r=-1,p(`wp> ${m}`,"kp-log-line-info"),a.disabled=!0,n.disabled=!0,l&&(l.textContent="Running...");let g=location.protocol==="https:"?"wss":"ws",k=new WebSocket(`${g}://${location.host}/api/sites/${t}/wpcli`);k.onopen=()=>{k.send(JSON.stringify({command:m}))},k.onmessage=f=>{let y=f.data;if(y.trim()==="[done]"){k.close();return}if(y.startsWith("[info]")){p(y,"kp-muted");return}if(y.startsWith("[error]")){p(y,"kp-log-line-err");return}p(y)},k.onerror=()=>{p("[error] WebSocket connection failed","kp-log-line-err")},k.onclose=()=>{a.disabled=!1,n.disabled=!1,l&&(l.textContent="Ready"),a.focus()}}n.addEventListener("click",()=>{b(a.value),a.value=""}),a.addEventListener("keydown",m=>{if(m.key==="Enter"){b(a.value),a.value="",r=-1;return}if(m.key==="ArrowUp"){m.preventDefault(),r<c.length-1&&(r++,a.value=c[r]);return}m.key==="ArrowDown"&&(m.preventDefault(),r>0?(r--,a.value=c[r]):(r=-1,a.value=""))}),e.querySelectorAll('[data-action="wpcli-quick"]').forEach(m=>{m.addEventListener("click",()=>{let g=m.dataset.cmd;if(g.startsWith("search-replace")){a.value=g,a.focus();let k=g.indexOf("''")+1;a.setSelectionRange(k,k);return}b(g)})}),i.addEventListener("click",()=>{s.innerHTML=""});let v=u.go.bind(u);u.go=function(m,g={}){return v(m,g)},a.focus()}async function re(e,{id:t}){let{site:s,domains:a,sftp:n}=await d.get(`/sites/${t}`),i=await d.get(`/sites/${t}/configs`),l=s.SiteType===1||s.SiteType===2;e.innerHTML=`
+        </div>`}function de(e,t){let s=e.querySelector("#wpcli-output"),a=e.querySelector("#wpcli-input"),n=e.querySelector("#wpcli-run"),i=e.querySelector("#wpcli-clear"),l=e.querySelector("#wpcli-status"),r=[],c=-1;function p(k,g=""){k.split(`
+`).forEach(b=>{if(!b)return;let h=document.createElement("div");g?h.className=g:h.className=b.match(/error|fatal|critical/i)?"kp-log-line-err":b.match(/warning|warn/i)?"kp-log-line-warn":b.match(/success|done\]/i)?"kp-log-line-info":"",h.textContent=b,s.appendChild(h)}),s.scrollTop=s.scrollHeight}function u(k){if(k=k.trim(),!k)return;r.unshift(k),c=-1,p(`wp> ${k}`,"kp-log-line-info"),a.disabled=!0,n.disabled=!0,l&&(l.textContent="Running...");let g=location.protocol==="https:"?"wss":"ws",b=new WebSocket(`${g}://${location.host}/api/sites/${t}/wpcli`);b.onopen=()=>{b.send(JSON.stringify({command:k}))},b.onmessage=h=>{let x=h.data;if(x.trim()==="[done]"){b.close();return}if(x.startsWith("[info]")){p(x,"kp-muted");return}if(x.startsWith("[error]")){p(x,"kp-log-line-err");return}p(x)},b.onerror=()=>{p("[error] WebSocket connection failed","kp-log-line-err")},b.onclose=()=>{a.disabled=!1,n.disabled=!1,l&&(l.textContent="Ready"),a.focus()}}n.addEventListener("click",()=>{u(a.value),a.value=""}),a.addEventListener("keydown",k=>{if(k.key==="Enter"){u(a.value),a.value="",c=-1;return}if(k.key==="ArrowUp"){k.preventDefault(),c<r.length-1&&(c++,a.value=r[c]);return}k.key==="ArrowDown"&&(k.preventDefault(),c>0?(c--,a.value=r[c]):(c=-1,a.value=""))}),e.querySelectorAll('[data-action="wpcli-quick"]').forEach(k=>{k.addEventListener("click",()=>{let g=k.dataset.cmd;if(g.startsWith("search-replace")){a.value=g,a.focus();let b=g.indexOf("''")+1;a.setSelectionRange(b,b);return}u(g)})}),i.addEventListener("click",()=>{s.innerHTML=""});let v=m.go.bind(m);m.go=function(k,g={}){return v(k,g)},a.focus()}async function pe(e,{id:t}){let{site:s,domains:a,sftp:n}=await d.get(`/sites/${t}`),i=await d.get(`/sites/${t}/configs`),l=s.SiteType===1||s.SiteType===2;e.innerHTML=`
         <div class="kp-view-header">
             <div class="uk-flex uk-flex-middle" style="gap:12px">
                 <button class="kp-btn-icon" id="sd-back"><span uk-icon="arrow-left"></span></button>
@@ -592,18 +777,20 @@
             <li><a href="#">Logs</a></li>
             <li><a href="#">Security</a></li>
             ${s.SiteType===1?'<li><a href="#">WP-CLI</a></li>':""}
+            <li><a href="#">Backups</a></li>
         </ul>
 
         <ul class="uk-switcher">
-            <li>${se(s,a??[],n)}</li>
+            <li>${ie(s,a??[],n)}</li>
             <li>${I(t,1,i[1])}</li>
             ${l?`<li>${I(t,2,i[2])}</li>`:""}
             <li>${I(t,3,i[3])}</li>
             <li>${I(t,4,i[4])}</li>
-            <li>${X(t,s.SiteType)}</li>
+            <li>${te(t,s.SiteType)}</li>
             <li>${q(t)}</li>
-            ${s.SiteType===1?`<li>${oe(t)}</li>`:""}            
-        </ul>`,document.getElementById("sd-back").addEventListener("click",()=>u.go("sites")),document.getElementById("sd-edit").addEventListener("click",()=>H(s)),document.getElementById("sd-recreate").addEventListener("click",async()=>{w("Recreating Pod","Recreating containers for this site...");try{await d.post(`/sites/${t}/recreate`),h(),o.success("Pod recreated"),u.go("site-detail",{id:t})}catch(c){h(),o.error(c.message)}}),Y(e,t),ne(e,t),Z(e,t),R(e),s.SiteType===1&&le(e,t),L(e),ie(e,t),te(a??[])}async function _(e){let t=document.getElementById("totp-qr-img"),s=document.getElementById("totp-qr-wrap");if(!t||!s)return;if(s.querySelectorAll(".totp-uri-text").forEach(n=>n.remove()),typeof QRCode<"u")try{let n=await new Promise((i,l)=>{QRCode.toDataURL(e,{width:220,margin:2},(c,r)=>{c?l(c):i(r)})});t.src=n,t.style.display="";return}catch{}let a=document.createElement("p");a.className="totp-uri-text kp-muted uk-text-small",a.style.wordBreak="break-all",a.textContent=e,s.appendChild(a)}function A(e){document.getElementById("kp-backup-codes-modal")?.remove();let s=`
+            ${s.SiteType===1?`<li>${ce(t)}</li>`:""}            
+            <li>${X(t)}</li>
+        </ul>`,document.getElementById("sd-back").addEventListener("click",()=>m.go("sites")),document.getElementById("sd-edit").addEventListener("click",()=>_(s)),document.getElementById("sd-recreate").addEventListener("click",async()=>{y("Recreating Pod","Recreating containers for this site...");try{await d.post(`/sites/${t}/recreate`),f(),o.success("Pod recreated"),m.go("site-detail",{id:t})}catch(r){f(),o.error(r.message)}}),ee(e,t),le(e,t),se(e,t),R(e),s.SiteType===1&&de(e,t),L(e),re(e,t),Z(e,t),B(e,t),ne(a??[])}async function U(e){let t=document.getElementById("totp-qr-img"),s=document.getElementById("totp-qr-wrap");if(!t||!s)return;if(s.querySelectorAll(".totp-uri-text").forEach(n=>n.remove()),typeof QRCode<"u")try{let n=await new Promise((i,l)=>{QRCode.toDataURL(e,{width:220,margin:2},(r,c)=>{r?l(r):i(c)})});t.src=n,t.style.display="";return}catch{}let a=document.createElement("p");a.className="totp-uri-text kp-muted uk-text-small",a.style.wordBreak="break-all",a.textContent=e,s.appendChild(a)}function j(e){document.getElementById("kp-backup-codes-modal")?.remove();let s=`
         <div id="kp-backup-codes-modal" uk-modal="bg-close:false;esc-close:false">
             <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:480px">
                 <h3 class="uk-modal-title" style="color:var(--kp-yellow,#f0b429)">
@@ -623,7 +810,7 @@
                 </div>
             </div>
         </div>`;document.body.insertAdjacentHTML("beforeend",s);let a=UIkit.modal("#kp-backup-codes-modal");a.show(),document.getElementById("kp-backup-copy-btn").addEventListener("click",()=>{let n=e.join(`
-`),i=document.getElementById("kp-backup-copy-btn");if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>{i.textContent="Copied!"});else{let l=document.createElement("textarea");l.value=n,l.style.cssText="position:fixed;opacity:0",document.body.appendChild(l),l.select();try{document.execCommand("copy"),i.textContent="Copied!"}catch{}l.remove()}}),document.getElementById("kp-backup-done-btn").addEventListener("click",()=>{a.hide(),document.getElementById("kp-backup-codes-modal")?.remove(),u.go("users")})}function ce(e){document.body.insertAdjacentHTML("beforeend",`
+`),i=document.getElementById("kp-backup-copy-btn");if(navigator.clipboard)navigator.clipboard.writeText(n).then(()=>{i.textContent="Copied!"});else{let l=document.createElement("textarea");l.value=n,l.style.cssText="position:fixed;opacity:0",document.body.appendChild(l),l.select();try{document.execCommand("copy"),i.textContent="Copied!"}catch{}l.remove()}}),document.getElementById("kp-backup-done-btn").addEventListener("click",()=>{a.hide(),document.getElementById("kp-backup-codes-modal")?.remove(),m.go("users")})}function ue(e){document.body.insertAdjacentHTML("beforeend",`
         <div id="kp-create-user-modal" uk-modal>
             <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
                 <button class="uk-modal-close-default" type="button" uk-close></button>
@@ -693,7 +880,7 @@
                     </div>
                 </div>
             </div>
-        </div>`);let s=UIkit.modal("#kp-create-user-modal");s.show(),document.getElementById("create-user-form").addEventListener("submit",async a=>{a.preventDefault();let n=a.target.querySelector('[type="submit"]'),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.6"></div> Creating...';let l=new FormData(a.target),c={fname:l.get("fname").trim(),lname:l.get("lname").trim(),uname:l.get("uname").trim(),email:l.get("email").trim(),phone:l.get("phone").trim(),password:l.get("password"),role:parseInt(l.get("role"))};try{let r=T(await d.post("/users",c));document.getElementById("users-table-body").insertAdjacentHTML("beforeend",F(r)),o.success(`User '${r.uname}' created`),document.getElementById("create-user-form").style.display="none",document.getElementById("cu-totp-section").style.display="",ve(r.id,s)}catch(r){o.error(r.message),n.disabled=!1,n.innerHTML=i}}),document.getElementById("kp-create-user-modal").addEventListener("hidden",()=>document.getElementById("kp-create-user-modal")?.remove())}function ve(e,t){let s=()=>{t.hide(),document.getElementById("kp-create-user-modal")?.remove(),u.go("users")};document.getElementById("cu-totp-skip-btn").addEventListener("click",s),document.getElementById("cu-totp-setup-btn").addEventListener("click",async()=>{let a=document.getElementById("cu-totp-setup-btn");a.disabled=!0,a.textContent="Setting up\u2026";try{let n=await d.post(`/users/${e}/totp/setup`,{});document.getElementById("totp-secret-text").textContent=n.secret,document.getElementById("totp-setup-area").style.display="",document.getElementById("cu-totp-skip-btn").style.display="none",await _(n.uri)}catch(n){o.error(n.message),a.disabled=!1,a.textContent="Enable TOTP"}}),document.getElementById("cu-totp-confirm-btn").addEventListener("click",async()=>{let a=document.getElementById("totp-confirm-code").value.trim();if(a.length!==6){o.error("Enter a 6-digit code");return}let n=document.getElementById("cu-totp-confirm-btn");n.disabled=!0;try{let i=await d.post(`/users/${e}/totp/confirm`,{code:a});t.hide(),document.getElementById("kp-create-user-modal")?.remove(),o.success("TOTP enabled"),i.backup_codes?.length?A(i.backup_codes):u.go("users")}catch(i){o.error(i.message),n.disabled=!1}})}async function de(e,t){document.getElementById("kp-edit-user-modal")?.remove();let s;try{s=T(await d.get(`/users/${t}`))}catch(p){o.error(p.message);return}let a=window.KP?.user?.role===99,n=`
+        </div>`);let s=UIkit.modal("#kp-create-user-modal");s.show(),document.getElementById("create-user-form").addEventListener("submit",async a=>{a.preventDefault();let n=a.target.querySelector('[type="submit"]'),i=n.innerHTML;n.disabled=!0,n.innerHTML='<div uk-spinner="ratio: 0.6"></div> Creating...';let l=new FormData(a.target),r={fname:l.get("fname").trim(),lname:l.get("lname").trim(),uname:l.get("uname").trim(),email:l.get("email").trim(),phone:l.get("phone").trim(),password:l.get("password"),role:parseInt(l.get("role"))};try{let c=T(await d.post("/users",r));document.getElementById("users-table-body").insertAdjacentHTML("beforeend",z(c)),o.success(`User '${c.uname}' created`),document.getElementById("create-user-form").style.display="none",document.getElementById("cu-totp-section").style.display="",we(c.id,s)}catch(c){o.error(c.message),n.disabled=!1,n.innerHTML=i}}),document.getElementById("kp-create-user-modal").addEventListener("hidden",()=>document.getElementById("kp-create-user-modal")?.remove())}function we(e,t){let s=()=>{t.hide(),document.getElementById("kp-create-user-modal")?.remove(),m.go("users")};document.getElementById("cu-totp-skip-btn").addEventListener("click",s),document.getElementById("cu-totp-setup-btn").addEventListener("click",async()=>{let a=document.getElementById("cu-totp-setup-btn");a.disabled=!0,a.textContent="Setting up\u2026";try{let n=await d.post(`/users/${e}/totp/setup`,{});document.getElementById("totp-secret-text").textContent=n.secret,document.getElementById("totp-setup-area").style.display="",document.getElementById("cu-totp-skip-btn").style.display="none",await U(n.uri)}catch(n){o.error(n.message),a.disabled=!1,a.textContent="Enable TOTP"}}),document.getElementById("cu-totp-confirm-btn").addEventListener("click",async()=>{let a=document.getElementById("totp-confirm-code").value.trim();if(a.length!==6){o.error("Enter a 6-digit code");return}let n=document.getElementById("cu-totp-confirm-btn");n.disabled=!0;try{let i=await d.post(`/users/${e}/totp/confirm`,{code:a});t.hide(),document.getElementById("kp-create-user-modal")?.remove(),o.success("TOTP enabled"),i.backup_codes?.length?j(i.backup_codes):m.go("users")}catch(i){o.error(i.message),n.disabled=!1}})}async function me(e,t){document.getElementById("kp-edit-user-modal")?.remove();let s;try{s=T(await d.get(`/users/${t}`))}catch(p){o.error(p.message);return}let a=window.KP?.user?.role===99,n=`
         <div id="kp-edit-user-modal" uk-modal>
             <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
                 <button class="uk-modal-close-default" type="button" uk-close></button>
@@ -766,7 +953,7 @@
                     </div>
                 </div>
             </div>
-        </div>`;document.body.insertAdjacentHTML("beforeend",n);let i=UIkit.modal("#kp-edit-user-modal");i.show(),document.getElementById("edit-user-form").addEventListener("submit",async p=>{p.preventDefault();let b=p.target.querySelector('[type="submit"]'),v=b.innerHTML;b.disabled=!0,b.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let m=new FormData(p.target),g={fname:m.get("fname").trim(),lname:m.get("lname").trim(),email:m.get("email").trim(),phone:m.get("phone").trim()};if(a){g.role=parseInt(m.get("role"));let f=m.get("uname");f&&(g.uname=f.trim())}let k=m.get("password");k&&(g.password=k);try{await d.put(`/users/${t}`,g),i.hide(),document.getElementById("kp-edit-user-modal")?.remove(),o.success("User updated"),u.go("users")}catch(f){o.error(f.message),b.disabled=!1,b.innerHTML=v}});let l=document.getElementById("totp-setup-btn");l&&l.addEventListener("click",async()=>{l.disabled=!0,l.textContent="Setting up\u2026";try{let p=await d.post(`/users/${t}/totp/setup`,{});document.getElementById("totp-secret-text").textContent=p.secret,document.getElementById("totp-setup-area").style.display="",await _(p.uri)}catch(p){o.error(p.message),l.disabled=!1,l.textContent="Enable TOTP"}});let c=document.getElementById("totp-confirm-btn");c&&c.addEventListener("click",async()=>{let p=document.getElementById("totp-confirm-code").value.trim();if(p.length!==6){o.error("Enter a 6-digit code");return}c.disabled=!0;try{let b=await d.post(`/users/${t}/totp/confirm`,{code:p});i.hide(),document.getElementById("kp-edit-user-modal")?.remove(),o.success("TOTP enabled"),b.backup_codes?.length?A(b.backup_codes):u.go("users")}catch(b){o.error(b.message),c.disabled=!1}});let r=document.getElementById("totp-disable-btn");r&&r.addEventListener("click",async()=>{r.disabled=!0;try{await d.delete(`/users/${t}/totp`),o.success("TOTP disabled"),i.hide(),document.getElementById("kp-edit-user-modal")?.remove(),u.go("users")}catch(p){o.error(p.message),r.disabled=!1}}),document.getElementById("kp-edit-user-modal").addEventListener("hidden",()=>document.getElementById("kp-edit-user-modal")?.remove())}async function pe(e){if(!E()){e.innerHTML=x("Access denied");return}let t=await d.get("/users");e.innerHTML=`
+        </div>`;document.body.insertAdjacentHTML("beforeend",n);let i=UIkit.modal("#kp-edit-user-modal");i.show(),document.getElementById("edit-user-form").addEventListener("submit",async p=>{p.preventDefault();let u=p.target.querySelector('[type="submit"]'),v=u.innerHTML;u.disabled=!0,u.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let k=new FormData(p.target),g={fname:k.get("fname").trim(),lname:k.get("lname").trim(),email:k.get("email").trim(),phone:k.get("phone").trim()};if(a){g.role=parseInt(k.get("role"));let h=k.get("uname");h&&(g.uname=h.trim())}let b=k.get("password");b&&(g.password=b);try{await d.put(`/users/${t}`,g),i.hide(),document.getElementById("kp-edit-user-modal")?.remove(),o.success("User updated"),m.go("users")}catch(h){o.error(h.message),u.disabled=!1,u.innerHTML=v}});let l=document.getElementById("totp-setup-btn");l&&l.addEventListener("click",async()=>{l.disabled=!0,l.textContent="Setting up\u2026";try{let p=await d.post(`/users/${t}/totp/setup`,{});document.getElementById("totp-secret-text").textContent=p.secret,document.getElementById("totp-setup-area").style.display="",await U(p.uri)}catch(p){o.error(p.message),l.disabled=!1,l.textContent="Enable TOTP"}});let r=document.getElementById("totp-confirm-btn");r&&r.addEventListener("click",async()=>{let p=document.getElementById("totp-confirm-code").value.trim();if(p.length!==6){o.error("Enter a 6-digit code");return}r.disabled=!0;try{let u=await d.post(`/users/${t}/totp/confirm`,{code:p});i.hide(),document.getElementById("kp-edit-user-modal")?.remove(),o.success("TOTP enabled"),u.backup_codes?.length?j(u.backup_codes):m.go("users")}catch(u){o.error(u.message),r.disabled=!1}});let c=document.getElementById("totp-disable-btn");c&&c.addEventListener("click",async()=>{c.disabled=!0;try{await d.delete(`/users/${t}/totp`),o.success("TOTP disabled"),i.hide(),document.getElementById("kp-edit-user-modal")?.remove(),m.go("users")}catch(p){o.error(p.message),c.disabled=!1}}),document.getElementById("kp-edit-user-modal").addEventListener("hidden",()=>document.getElementById("kp-edit-user-modal")?.remove())}async function ke(e){if(!E()){e.innerHTML=S("Access denied");return}let t=await d.get("/users");e.innerHTML=`
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Users</h1>
             <button class="uk-button kp-btn-primary" id="users-new-btn">
@@ -787,10 +974,10 @@
                     </tr>
                 </thead>
                 <tbody id="users-table-body">
-                    ${t.map(s=>F(T(s))).join("")}
+                    ${t.map(s=>z(T(s))).join("")}
                 </tbody>
             </table>
-        </div>`,document.getElementById("users-new-btn").addEventListener("click",()=>ce(e)),fe(e)}function F(e){let t=e.role===99?'<span class="kp-badge kp-badge-admin">Admin</span>':'<span class="kp-badge kp-badge-manager">Manager</span>';return`<tr data-user-id="${e.id}">
+        </div>`,document.getElementById("users-new-btn").addEventListener("click",()=>ue(e)),xe(e)}function z(e){let t=e.role===99?'<span class="kp-badge kp-badge-admin">Admin</span>':'<span class="kp-badge kp-badge-manager">Manager</span>';return`<tr data-user-id="${e.id}">
         <td><strong>${e.fname} ${e.lname}</strong></td>
         <td><span style="font-family:monospace">${e.uname}</span></td>
         <td>${e.email}</td>
@@ -807,4 +994,4 @@
                 </button>
             </div>
         </td>
-    </tr>`}function fe(e){e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="delete-user"]');if(!(!s||!await S("Delete User","Delete this user? This cannot be undone.")))try{await d.delete(`/users/${s.dataset.uid}`),s.closest("tr").remove(),o.success("User deleted")}catch(n){o.error(n.message)}}),e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="edit-user"]');s&&de(e,s.dataset.uid)})}u.register("dashboard",e=>G(e));u.register("sites",e=>Q(e));u.register("site-detail",(e,t)=>re(e,t));u.register("users",e=>pe(e));u.register("settings",e=>W(e));u.register("security",e=>K(e));document.addEventListener("click",e=>{let t=e.target.closest("[data-view]");if(!t)return;e.preventDefault(),u.go(t.dataset.view);let s=document.getElementById("kp-offcanvas");s&&UIkit.offcanvas(s).hide()});document.addEventListener("click",async e=>{let t=e.target.closest("[data-action]");if(!t)return;e.stopPropagation();let{action:s,id:a}=t.dataset;switch(s){case"manage":u.go("site-detail",{id:a});break;case"start":await B(a,"start","Starting Site","Starting all containers - please wait...");break;case"stop":await B(a,"stop","Stopping Site","Gracefully stopping all containers - please wait...");break;case"restart":await B(a,"restart","Restarting Site","Restarting all containers - please wait...");break;case"flush":await B(a,"flush","Flushing Caches","Clearing container caches - please wait...");break;case"edit":{let n=await d.get(`/sites/${a}`);H(n.site);break}case"delete":await he(a);break;case"update":await B(a,"update","Updating Images","Pulling latest container images - this may take a few minutes...");break;case"recreate":w("Recreating Pod","Recreating containers for this site - this may take a few minutes...");try{await d.post(`/sites/${a}/recreate`),h(),o.success("Pod recreated"),u.go("site-detail",{id:a})}catch(n){h(),o.error(n.message)}break}});async function B(e,t,s,a){w(s,a);try{await d.post(`/sites/${e}/${t}`),h(),o.success(s+" complete"),["start","stop","restart"].includes(t)&&u.go("sites")}catch(n){h(),o.error(n.message)}}async function he(e){if(!await S("Delete Site","This will stop and permanently remove the pod and all its data. Are you sure?"))return;w("Deleting Site","Stopping containers and removing the pod - please wait...");try{await d.delete(`/sites/${e}`)}catch{}let s=!1,a=0;for(;!s&&a<10;){try{await new Promise(i=>setTimeout(i,2e3)),s=!(await d.get("/sites")).find(i=>i.ID===parseInt(e))}catch{}a++}h(),s?(o.success("Site deleted"),u.go("sites")):o.error("Delete failed - site still exists after 20s")}window.addEventListener("hashchange",()=>{let{view:e,params:t}=O();u.go(e,t)});var{view:ye,params:we}=O();u.go(ye,we);})();
+    </tr>`}function xe(e){e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="delete-user"]');if(!(!s||!await w("Delete User","Delete this user? This cannot be undone.")))try{await d.delete(`/users/${s.dataset.uid}`),s.closest("tr").remove(),o.success("User deleted")}catch(n){o.error(n.message)}}),e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="edit-user"]');s&&me(e,s.dataset.uid)})}m.register("dashboard",e=>G(e));m.register("sites",e=>Q(e));m.register("site-detail",(e,t)=>pe(e,t));m.register("users",e=>ke(e));m.register("settings",e=>W(e));m.register("security",e=>J(e));document.addEventListener("click",e=>{let t=e.target.closest("[data-view]");if(!t)return;e.preventDefault(),m.go(t.dataset.view);let s=document.getElementById("kp-offcanvas");s&&UIkit.offcanvas(s).hide()});document.addEventListener("click",async e=>{let t=e.target.closest("[data-action]");if(!t)return;e.stopPropagation();let{action:s,id:a}=t.dataset;switch(s){case"manage":m.go("site-detail",{id:a});break;case"start":await C(a,"start","Starting Site","Starting all containers - please wait...");break;case"stop":await C(a,"stop","Stopping Site","Gracefully stopping all containers - please wait...");break;case"restart":await C(a,"restart","Restarting Site","Restarting all containers - please wait...");break;case"flush":await C(a,"flush","Flushing Caches","Clearing container caches - please wait...");break;case"edit":{let n=await d.get(`/sites/${a}`);_(n.site);break}case"delete":await Se(a);break;case"update":await C(a,"update","Updating Images","Pulling latest container images - this may take a few minutes...");break;case"recreate":y("Recreating Pod","Recreating containers for this site - this may take a few minutes...");try{await d.post(`/sites/${a}/recreate`),f(),o.success("Pod recreated"),m.go("site-detail",{id:a})}catch(n){f(),o.error(n.message)}break}});async function C(e,t,s,a){y(s,a);try{await d.post(`/sites/${e}/${t}`),f(),o.success(s+" complete"),["start","stop","restart"].includes(t)&&m.go("sites")}catch(n){f(),o.error(n.message)}}async function Se(e){if(!await w("Delete Site","This will stop and permanently remove the pod and all its data. Are you sure?"))return;y("Deleting Site","Stopping containers and removing the pod - please wait...");try{await d.delete(`/sites/${e}`)}catch{}let s=!1,a=0;for(;!s&&a<10;){try{await new Promise(i=>setTimeout(i,2e3)),s=!(await d.get("/sites")).find(i=>i.ID===parseInt(e))}catch{}a++}f(),s?(o.success("Site deleted"),m.go("sites")):o.error("Delete failed - site still exists after 20s")}window.addEventListener("hashchange",()=>{let{view:e,params:t}=F();m.go(e,t)});var{view:$e,params:Ee}=F();m.go($e,Ee);})();

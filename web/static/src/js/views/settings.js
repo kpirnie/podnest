@@ -25,13 +25,19 @@ async function loadAdminDomainSSL(domain) {
 
 export async function viewSettings(root) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
-    // fetch the current settings from the API
-    const settings = await api.get("/settings");
+
+    // fetch panel settings and backup/S3 settings in parallel
+    const [settings, backupSettings] = await Promise.all([
+        api.get("/settings"),
+        api.get("/settings/backup"),
+    ]);
 
     root.innerHTML = `
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Settings</h1>
         </div>
+
+        <!-- panel configuration -->
         <div class="kp-card uk-padding kp-settings-wrap">
             <h3 class="kp-view-title uk-margin-bottom">Panel Configuration</h3>
             <form id="settings-form" class="uk-form-stacked">
@@ -69,6 +75,116 @@ export async function viewSettings(root) {
                 </div>
             </form>
         </div>
+
+        <!-- backup schedule / retention -->
+        <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+            <h3 class="kp-view-title uk-margin-bottom">Backup Schedule</h3>
+            <form id="backup-form" class="uk-form-stacked">
+                <div class="uk-margin">
+                    <label class="kp-label" for="backup-schedule">Cron Schedule</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="backup-schedule"
+                        name="backup_schedule"
+                        type="text"
+                        placeholder="0 2 * * *"
+                        value="${backupSettings.backup_schedule ?? ''}">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Standard 5-field cron expression. Leave blank to disable automatic backups.<br>
+                        Examples: <span class="kp-mono">0 2 * * *</span> (daily at 2am) &nbsp;
+                        <span class="kp-mono">0 */6 * * *</span> (every 6 hours)
+                    </p>
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="backup-retain-days">Retain Backups (days)</label>
+                    <input
+                        class="uk-input kp-input"
+                        id="backup-retain-days"
+                        name="backup_retain_days"
+                        type="number"
+                        min="1"
+                        max="365"
+                        placeholder="30"
+                        value="${backupSettings.backup_retain_days ?? '30'}">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Snapshots older than this many days will be pruned automatically after each backup run.
+                    </p>
+                </div>
+                <div class="uk-flex uk-flex-right uk-margin-top">
+                    <button type="submit" class="uk-button kp-btn-primary">
+                        <span uk-icon="check"></span> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- S3 backup storage -->
+        <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+            <h3 class="kp-view-title uk-margin-bottom">S3 Backup Storage</h3>
+            <form id="s3-form" class="uk-form-stacked">
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-endpoint">Endpoint URL</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-endpoint"
+                        name="s3_endpoint"
+                        type="url"
+                        placeholder="https://s3.amazonaws.com"
+                        value="${backupSettings.s3_endpoint ?? ''}">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        AWS S3 or any S3-compatible endpoint (Backblaze B2, MinIO, Wasabi, etc.)
+                    </p>
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-bucket">Bucket</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-bucket"
+                        name="s3_bucket"
+                        type="text"
+                        placeholder="my-podnest-backups"
+                        value="${backupSettings.s3_bucket ?? ''}">
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-region">Region</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-region"
+                        name="s3_region"
+                        type="text"
+                        placeholder="us-east-1"
+                        value="${backupSettings.s3_region ?? ''}">
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-access-key">Access Key ID</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-access-key"
+                        name="s3_access_key"
+                        type="text"
+                        placeholder="AKIAIOSFODNN7EXAMPLE"
+                        value="${backupSettings.s3_access_key ?? ''}">
+                </div>
+                <div class="uk-margin">
+                    <label class="kp-label" for="s3-secret-key">Secret Access Key</label>
+                    <input
+                        class="uk-input kp-input kp-mono"
+                        id="s3-secret-key"
+                        name="s3_secret_key"
+                        type="password"
+                        placeholder="${backupSettings.s3_secret_key ? 'saved — enter new value to change' : 'enter secret key'}"
+                        value="">
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Leave blank to keep the existing key.
+                    </p>
+                </div>
+                <div class="uk-flex uk-flex-right uk-margin-top">
+                    <button type="submit" class="uk-button kp-btn-primary">
+                        <span uk-icon="check"></span> Save
+                    </button>
+                </div>
+            </form>
+        </div>
         `;
 
     // load the ssl status for the current admin domain if one is set
@@ -76,7 +192,7 @@ export async function viewSettings(root) {
         loadAdminDomainSSL(settings.admin_domain);
     }
 
-    // handle form submission
+    // -- panel configuration form --------------------------------------------
     document.getElementById("settings-form").addEventListener("submit", async (e) => {
         e.preventDefault();
         const btn  = e.target.querySelector('[type="submit"]');
@@ -92,8 +208,6 @@ export async function viewSettings(root) {
         try {
             await api.put("/settings", body);
             toast.success("Settings saved");
-
-            // refresh the ssl icon for the newly saved domain
             loadAdminDomainSSL(body.admin_domain);
         } catch (err) {
             toast.error(err.message);
@@ -103,7 +217,7 @@ export async function viewSettings(root) {
         }
     });
 
-    // handle settings csv import
+    // -- settings csv import -------------------------------------------------
     document.getElementById("settings-import-file").addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -112,18 +226,73 @@ export async function viewSettings(root) {
         fd.append("file", file);
 
         try {
-            const res = await fetch("/api/settings/import", { method: "POST", body: fd });
+            const res  = await fetch("/api/settings/import", { method: "POST", body: fd });
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
             toast.success("Settings imported — reloading");
-
-            // reload the view to reflect the imported values
             viewSettings(root);
         } catch (err) {
             toast.error(err.message);
         } finally {
-            // reset so the same file can be re-selected if needed
             e.target.value = "";
+        }
+    });
+
+    // -- backup schedule / retention form ------------------------------------
+    document.getElementById("backup-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn  = e.target.querySelector('[type="submit"]');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
+
+        const fd   = new FormData(e.target);
+        const body = {
+            backup_schedule:    fd.get("backup_schedule").trim(),
+            backup_retain_days: fd.get("backup_retain_days").trim(),
+        };
+
+        try {
+            await api.put("/settings/backup", body);
+            toast.success("Backup settings saved");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // -- S3 settings form ----------------------------------------------------
+    document.getElementById("s3-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn  = e.target.querySelector('[type="submit"]');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
+
+        const fd = new FormData(e.target);
+
+        // always send these fields
+        const body = {
+            s3_endpoint:   fd.get("s3_endpoint").trim(),
+            s3_bucket:     fd.get("s3_bucket").trim(),
+            s3_region:     fd.get("s3_region").trim(),
+            s3_access_key: fd.get("s3_access_key").trim(),
+        };
+
+        // only include the secret key if the user actually typed a new value
+        const secret = fd.get("s3_secret_key").trim();
+        if (secret) body.s3_secret_key = secret;
+
+        try {
+            await api.put("/settings/backup", body);
+            toast.success("S3 settings saved");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
         }
     });
 }

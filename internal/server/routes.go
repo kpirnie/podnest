@@ -100,6 +100,17 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /sites/{id}/security/ua/export", s.apiExportSiteUARules)
 	api.HandleFunc("POST /sites/{id}/security/ua/import", s.apiImportSiteUARules)
 
+	// backup management
+	api.HandleFunc("GET /sites/{id}/backup-repo", s.apiGetBackupRepo)
+	api.HandleFunc("PUT /sites/{id}/backup-repo", s.apiUpdateBackupRepo)
+	api.HandleFunc("GET /sites/{id}/backups", s.apiListBackups)
+	api.HandleFunc("POST /sites/{id}/backups", s.apiCreateBackup)
+	api.HandleFunc("POST /sites/{id}/backups/{bid}/restore", s.apiRestoreBackup)
+	api.HandleFunc("DELETE /sites/{id}/backups/{bid}", s.apiDeleteBackup)
+	api.Handle("GET /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetBackupSettings)))
+	api.Handle("PUT /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateBackupSettings)))
+	api.HandleFunc("GET /sites/{id}/backups/restore-status", s.apiRestoreStatus)
+
 	// WebSocket log tail
 	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)
 

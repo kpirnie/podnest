@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"podnest/internal/backup"
 	"podnest/internal/db"
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
@@ -80,6 +81,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// create the fail2ban manager
 	f2bMgr := fail2ban.New(podman.New(podmanSock), appPath, "")
 
+	// create the backup manager
+	backupMgr := backup.New(database, podman.New(podmanSock), podmanSock, appPath)
+
 	// create the server
 	srv := server.New(server.Config{
 		DB:              database,
@@ -88,6 +92,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		AppPath:         appPath,
 		SFTPManager:     sftpMgr,
 		Fail2BanManager: f2bMgr,
+		BackupManager:   backupMgr,
 		CertDir:         appPath + "/certs",
 		AdminDomain:     adminDomain,
 	})

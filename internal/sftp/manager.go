@@ -102,6 +102,9 @@ func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid in
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/redis"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/db"},
 		{"chmod", "2775", "/home/" + siteName + "/html"},
+		// backups dir — root:siteUID, read-only for the SFTP user
+		{"chown", fmt.Sprintf("root:%d", uid), "/home/" + siteName + "/backups"},
+		{"chmod", "0750", "/home/" + siteName + "/backups"},
 	} {
 		if err := m.exec(ctx, cmd); err != nil {
 			logger.Warn("sftp AddUser exec %v: %v", cmd, err)

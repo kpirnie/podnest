@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"podnest/internal/auth"
+	"podnest/internal/backup"
 	"podnest/internal/db"
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
@@ -29,6 +30,7 @@ type Config struct {
 	Fail2BanManager *fail2ban.Manager
 	CertDir         string
 	AdminDomain     string
+	BackupManager   *backup.Manager
 }
 
 // Server is the main HTTP server
@@ -39,6 +41,7 @@ type Server struct {
 	fail2ban *fail2ban.Manager
 	http     *http.Server
 	proxy    *proxy.Proxy
+	backup   *backup.Manager
 }
 
 // New initialises the server and registers all routes
@@ -48,6 +51,7 @@ func New(cfg Config) *Server {
 		podman:   podman.New(cfg.PodmanSock),
 		sftp:     cfg.SFTPManager,
 		fail2ban: cfg.Fail2BanManager,
+		backup:   cfg.BackupManager,
 	}
 
 	s.http = &http.Server{
@@ -109,6 +113,9 @@ func (s *Server) Start() error {
 
 	// background permission fixer
 	go s.permissionReaper()
+
+	// start the backup scheduler
+	s.backup.StartScheduler(context.Background())
 
 	// read the admin domain from the database, falling back to the flag value
 	adminDomain := s.cfg.AdminDomain
@@ -285,6 +292,10 @@ func (s *Server) permissionReaper() {
 			// db must be owned by mysql uid (999) so MariaDB can initialize its data directory
 			os.Chown(siteDir+"/db", 999, 999)
 			os.Chmod(siteDir+"/db", 0755)
+
+			// backups — root-owned, site group can read for SFTP download
+			os.Chown(siteDir+"/backups", 0, sftpUID)
+			os.Chmod(siteDir+"/backups", 0750)
 		}
 	}
 
