@@ -17,7 +17,7 @@ A hardened, high-performance web hosting pod manager built on Podman. Provision 
 
 ---
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ---
 
@@ -47,7 +47,7 @@ The recommended and fully supported deployment method is as a container. The bin
 
 ## Requirements
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 **For container deployment (recommended):**
 - Podman installed and running on the host
@@ -79,7 +79,7 @@ systemctl --user start podman.socket
 
 ## Running as a Container
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 This is the **recommended** way to run PodNest. A pre-built image is published to the GitHub Container Registry — no compilation required.
 
@@ -225,7 +225,7 @@ podman-compose -f /home/admin/podnest.yaml up -d
 
 ## Running the Binary
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 > Container deployment is the recommended approach. The binary path is here for advanced users who prefer it.
 
@@ -300,7 +300,7 @@ Both `init` and `serve` share the following persistent flags:
 
 ## First Login
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ### Container
 
@@ -323,7 +323,7 @@ If you used `podnest init`, log in with the credentials you provided during setu
 
 ## Directory Structure
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 Once PodNest is running with a persistent volume, the following structure is created at your mounted path (or at `--app-path` for binary deployments):
 
@@ -335,7 +335,7 @@ Once PodNest is running with a persistent volume, the following structure is cre
 │   ├── etc-ssh/
 │   │   └── sshd_config.d/
 │   │       └── chroot.conf
-│   └── users.conf      # SFTP user accounts — managed automatically; contains a placeholder entry on first run to allow the SFTP container to start before any sites are provisioned
+│   └── users.conf      # SFTP user accounts — managed automatically
 └── sites/
     └── <site-name>/
         ├── html/           # Web root — your site files go here
@@ -352,6 +352,8 @@ Once PodNest is running with a persistent volume, the following structure is cre
         │   └── my.cnf
         ├── redis/          # All sites except Static HTML
         │   └── redis.conf
+        ├── backups/        # Restic backup repositories
+        │   └── local/      # Local restic repo (SFTP accessible, read-only)
         └── .env            # Auto-generated credentials — do not delete
 ```
 
@@ -365,7 +367,7 @@ The `sftp/users.conf` file is managed automatically by PodNest. Do not edit it m
 
 ## Managing Sites
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 All site management is handled through the PodNest web UI or via the API. Access the UI at `http://your-host:PORT` after startup.
 
@@ -433,7 +435,7 @@ From the site detail view, select **Delete Site** and confirm. This will:
 
 ## SFTP Access
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 All sites share a single global SFTP container listening on port **2222**. Each site gets its own isolated user account automatically created when the site is provisioned.
 
@@ -462,6 +464,7 @@ Users are chrooted to their site directory and have read/write access to:
 | `php-fpm/` | PHP-FPM configuration files |
 | `redis/redis.conf` | Redis configuration |
 | `db/my.cnf` | MariaDB configuration |
+| `backups/local/` | Local restic backup repository — read-only |
 
 The following are **not** accessible via SFTP:
 
@@ -479,7 +482,7 @@ The following are **not** accessible via SFTP:
 
 ## Built-in Reverse Proxy
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest includes a built-in reverse proxy that routes incoming traffic by domain to the appropriate site pod — no separate nginx layer required.
 
@@ -520,7 +523,7 @@ ports:
 
 ## Site Configurations
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 Each site has up to four configuration sections, editable directly in the UI. Changes are saved to the database and written to disk immediately — no manual file editing required. A pod restart is needed for changes to take effect inside the running containers.
 
@@ -660,7 +663,7 @@ Any configuration section can be reset to its original defaults from the UI. Thi
 
 ## Live Logs
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest streams live container logs directly to the UI via WebSocket. From the site detail view, select the **Logs** tab and choose which container to tail:
 
@@ -680,7 +683,7 @@ The log stream defaults to the last 100 lines and follows in real time. The tail
 
 ## User Management
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest has two user roles:
 
@@ -750,9 +753,126 @@ Open the edit user modal and click **Disable TOTP** in the Two-Factor Authentica
 
 ---
 
+## Backup & Restore
+
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+PodNest includes a fully integrated backup and restore system powered by [restic](https://restic.net/). Backups are incremental, deduplicated, and encrypted at rest. Each site maintains its own isolated restic repository per destination.
+
+---
+
+### What Gets Backed Up
+
+Every backup snapshot contains a complete, self-contained copy of the site:
+
+| Content | Description |
+|---|---|
+| `html/` | Full web root |
+| `nginx/` | nginx configuration (excluding cache) |
+| `php-fpm/` | PHP-FPM configuration |
+| `redis/` | Redis configuration |
+| `.env` | Site credentials |
+| `db_dump.sql` | Full database dump via `mariadb-dump` |
+
+The MariaDB binary data directory (`db/`) and the nginx cache are explicitly excluded — the database is captured via a live dump instead, which is safe to run without stopping the site.
+
+---
+
+### Backup Destinations
+
+Each site can back up to one or both of the following destinations:
+
+**Local** — stored at `sites/<site-name>/backups/local/` inside the site directory. Accessible read-only via SFTP at `backups/local/` within the site's SFTP chroot.
+
+**S3** — stored in an S3-compatible object storage bucket. Supports AWS S3, Backblaze B2, MinIO, Wasabi, iDrive E2, and any S3-compatible endpoint. S3 credentials are configured globally under **Settings → S3 Backup Storage** and apply to all sites.
+
+Destinations are enabled or disabled per site from the **Backups** tab on the site detail view.
+
+---
+
+### Configuring Backup Settings
+
+Navigate to **Settings** and scroll to the **Backup Schedule** and **S3 Backup Storage** sections.
+
+**Backup Schedule**
+
+| Setting | Description |
+|---|---|
+| Cron Schedule | Standard 5-field cron expression (e.g. `0 2 * * *` for daily at 2am). Leave blank to disable automatic backups. |
+| Retain Backups (days) | Snapshots older than this many days are pruned automatically after each backup run. Default: `30`. |
+
+The schedule applies globally — all sites with at least one destination enabled are backed up on each scheduled run.
+
+**S3 Backup Storage**
+
+| Setting | Description |
+|---|---|
+| Endpoint URL | Full URL to the S3-compatible endpoint (e.g. `https://s3.amazonaws.com`) |
+| Bucket | The bucket name to store backups in. Each site uses a separate prefix within the bucket. |
+| Region | AWS region or equivalent (default: `us-east-1`) |
+| Access Key ID | S3 access key |
+| Secret Access Key | S3 secret key — stored encrypted, never returned in full after saving |
+
+---
+
+### Running a Manual Backup
+
+From the **Backups** tab on any site detail view, click **Back Up Now**. A progress modal will be displayed while the backup runs. The snapshot list updates automatically when the backup completes.
+
+---
+
+### Restoring from a Snapshot
+
+From the **Backups** tab, click the restore icon on any listed snapshot and confirm. During the restore:
+
+1. A maintenance page is displayed to site visitors
+2. The file tree is restored from the snapshot
+3. The database is restored from the embedded dump
+4. File permissions are corrected automatically
+5. The maintenance page is removed and nginx reloads
+
+The site remains live throughout — only the content is replaced. The restore typically completes in under a minute for small to medium sites.
+
+---
+
+### Downloading a Backup
+
+Click the download icon on any snapshot to export a complete, portable `.tar.gz` archive. The archive contains the full file tree and database dump and can be used to restore the site manually on any system without needing restic.
+
+The filename format is `{sitename}-{date}-{id}.tar.gz`.
+
+> Large sites with many uploaded files may take a moment to generate. A progress modal will be displayed and the download will start automatically.
+
+---
+
+### Deleting a Snapshot
+
+Click the delete icon on any snapshot and confirm. The snapshot is permanently removed from all configured repositories and the restic repos are pruned immediately. This action cannot be undone.
+
+---
+
+### Backup API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/sites/{id}/backup-repo` | Get the backup destination config for a site |
+| `PUT` | `/api/sites/{id}/backup-repo` | Update backup destination flags (local/S3 enabled) |
+| `GET` | `/api/sites/{id}/backups` | List all backup snapshots for a site |
+| `POST` | `/api/sites/{id}/backups` | Trigger an immediate backup |
+| `POST` | `/api/sites/{id}/backups/{bid}/restore` | Restore from a snapshot |
+| `GET` | `/api/sites/{id}/backups/{bid}/download` | Download snapshot as `.tar.gz` |
+| `DELETE` | `/api/sites/{id}/backups/{bid}` | Delete a snapshot |
+| `GET` | `/api/sites/{id}/backups/restore-status` | Check if a restore is currently in progress |
+| `GET` | `/api/settings/backup` | Get backup and S3 settings (admin only) |
+| `PUT` | `/api/settings/backup` | Update backup and S3 settings (admin only) |
+
+[▲ Back to Top](#PodNest)
+
+---
+
 ## API Reference
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest exposes a JSON REST API under `/api/`. All API endpoints require a valid session, obtained by logging in via the UI or the `/login` endpoint. The session is maintained via a cookie that must be included in all subsequent requests.
 
@@ -1204,7 +1324,7 @@ Upgrades to a WebSocket connection and streams live logs from the specified cont
 
 ## License
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest is licensed under the [MIT License](LICENSE). See the `LICENSE` file in the repository for the full license text.
 
