@@ -10,8 +10,10 @@ RUN go mod download
 
 COPY . .
 
+ARG VERSION=dev
+
 RUN CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-s -w -extldflags '-static'" \
+    -ldflags="-s -w -extldflags '-static' -X podnest/internal/version.AppVersion=${VERSION}" \
     -o podnest ./main.go
 
 # -- stage 2: final -----------------------------------------------------------

@@ -528,8 +528,8 @@ func renderNginxPHP(configJSON string) (string, error) {
     location ~* \.(engine|inc|info|install|make|module|profile|po|sh|sql|tpl|xtmpl)$ { deny all; }
 
 	# block direct HTTP access to nginx and PHP ini override files
-    location = /.nginx.conf { deny all; return 403; }
-    location = /.user.ini   { deny all; return 403; }
+    location ^~ /.nginx.conf { deny all; return 403; }
+    location ^~ /.user.ini   { deny all; return 403; }
 
     # include per-site nginx rules if present
     include /var/www/html/.nginx.conf*;
@@ -675,7 +675,8 @@ func renderNginxStatic(configJSON string) (string, error) {
     location ~ /\. { deny all; }
 
 	# block direct HTTP access to nginx and PHP ini override files
-    location = /.nginx.conf { deny all; return 403; }
+    location ^~ /.nginx.conf { deny all; return 403; }
+    location ^~ /.user.ini   { deny all; return 403; }
 
     # include per-site nginx rules if present
     include /var/www/html/.nginx.conf*;

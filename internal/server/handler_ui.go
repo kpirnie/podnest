@@ -7,6 +7,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/version"
 	"podnest/web"
 )
 
@@ -15,7 +16,19 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 
 	data := map[string]any{
-		"User": user,
+		"User":            user,
+		"AppVersion":      version.AppVersion,
+		"UpdateAvailable": false,
+		"LatestVersion":   "",
+		"ReleaseURL":      version.ReleaseURL,
+		"UpdateURL":       version.UpdateURL,
+	}
+
+	// check for updates only for admin users
+	if user != nil && user.Role == models.RoleAdmin {
+		latest, updateAvailable := version.CheckLatest()
+		data["UpdateAvailable"] = updateAvailable
+		data["LatestVersion"] = latest
 	}
 
 	// try to execute and load in the template

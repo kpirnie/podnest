@@ -48,6 +48,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.vars.outputs.TAGS }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

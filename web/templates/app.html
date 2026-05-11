@@ -45,6 +45,17 @@
 
             <!-- main content -->
             <main class="kp-main">
+                {{if and (eq .User.Role 99) .UpdateAvailable}}
+                <div uk-alert class="uk-alert-warning kp-update-banner">
+                    <a class="uk-alert-close" uk-close></a>
+                    <p>
+                        <span uk-icon="icon: bolt"></span>
+                        <strong>PodNest {{.LatestVersion}} is available</strong> &mdash; you are running {{.AppVersion}}.
+                        <a href="{{.ReleaseURL}}" target="_blank" rel="noopener">View release</a> &nbsp;|&nbsp;
+                        <a href="{{.UpdateURL}}" target="_blank" rel="noopener">Update instructions</a>
+                    </p>
+                </div>
+                {{end}}
                 <div id="kp-view"></div>
                 <footer class="kp-footer">
                     <span>Copyright &copy; <script>document.write(new Date().getFullYear())</script>, Kevin Pirnie. All Rights Reserved.</span>
