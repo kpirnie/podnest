@@ -183,7 +183,6 @@ export function wireBackupsPanel(root, siteId) {
     root.querySelector("#backup-list-wrap")?.addEventListener("click", async (e) => {
 
         // restore
-        // restore
         const restoreBtn = e.target.closest(".backup-restore-btn");
         if (restoreBtn) {
             const bid = restoreBtn.dataset.id;
@@ -207,7 +206,6 @@ export function wireBackupsPanel(root, siteId) {
             const poll = setInterval(async () => {
                 try {
                     const res = await api.get(`/sites/${siteId}/backups/restore-status`);
-                    // done when no longer restoring, or deadline hit
                     if (!res?.active || Date.now() > deadline) {
                         clearInterval(poll);
                         hideProgressModal();

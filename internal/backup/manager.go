@@ -436,10 +436,15 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 		}
 	}()
 
+	// restore the files
 	if err := m.restoreFiles(ctx, repoPath, env, backup.SnapshotID, siteDir); err != nil {
 		return fmt.Errorf("restore files: %w", err)
 	}
 
+	// reapply correct ownership — restic restores files as root
+	m.fixPostRestorePerms(siteDir, site.ID)
+
+	// restore the database
 	if err := m.restoreDB(ctx, site, repoPath, env, backup.SnapshotID, siteDir); err != nil {
 		return fmt.Errorf("restore db: %w", err)
 	}
@@ -501,34 +506,43 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 		return fmt.Errorf("restoreDB: DB_NAME: %w", err)
 	}
 
-	// stream the SQL dump out of restic
-	dumpCmd := exec.CommandContext(ctx, resticBin,
-		"-r", repoPath, "dump", snapID, "db_dump.sql",
-	)
-	dumpCmd.Env = env
+	// dump the SQL from restic into a temp file on the host
+	tmp, err := os.CreateTemp("", "podnest-restore-*.sql")
+	if err != nil {
+		return fmt.Errorf("restoreDB: create temp: %w", err)
+	}
+	defer os.Remove(tmp.Name())
 
-	// pipe restic dump stdout → mysql stdin inside the container
+	dumpCmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "dump", snapID, "db_dump.sql")
+	dumpCmd.Env = env
+	dumpCmd.Stdout = tmp
+	if err := dumpCmd.Run(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("restoreDB: restic dump: %w", err)
+	}
+	tmp.Close()
+
+	// copy the SQL file into the container
 	dbContainer := podman.ContainerName(site.Name, "db")
+	cpCmd := exec.CommandContext(ctx, "podman",
+		"cp", tmp.Name(), dbContainer+":/tmp/podnest-restore.sql",
+	)
+	cpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	if out, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("restoreDB: podman cp: %w — %s", err, string(out))
+	}
+
+	// run mysql inside the container redirected from the copied file
 	mysqlCmd := exec.CommandContext(ctx, "podman",
-		"exec", "-i", dbContainer,
-		"mysql", "-uroot", "-p"+rootPass, dbName,
+		"exec", dbContainer,
+		"sh", "-c",
+		fmt.Sprintf("mariadb -uroot -p%s %s < /tmp/podnest-restore.sql && rm /tmp/podnest-restore.sql", rootPass, dbName),
 	)
 	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
-
-	mysqlCmd.Stdin, err = dumpCmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("restoreDB: stdout pipe: %w", err)
-	}
-
-	if err := dumpCmd.Start(); err != nil {
-		return fmt.Errorf("restoreDB: restic dump start: %w", err)
-	}
+	var mysqlStderr bytes.Buffer
+	mysqlCmd.Stderr = &mysqlStderr
 	if err := mysqlCmd.Run(); err != nil {
-		dumpCmd.Wait()
-		return fmt.Errorf("restoreDB: mysql run: %w", err)
-	}
-	if err := dumpCmd.Wait(); err != nil {
-		return fmt.Errorf("restoreDB: restic dump wait: %w", err)
+		return fmt.Errorf("restoreDB: mariadb: %w — %s", err, mysqlStderr.String())
 	}
 
 	logger.Debug("restoreDB: DB restored for site %s from snapshot %s", site.Name, snapID)
@@ -591,6 +605,11 @@ func (m *Manager) findSnapshot(ctx context.Context, repoPath string, env []strin
 
 // forgetPrune applies the configured retention policy and prunes unreachable data
 func (m *Manager) forgetPrune(ctx context.Context, repoPath string, env []string) error {
+	// clear any stale locks before pruning
+	unlockCmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "unlock")
+	unlockCmd.Env = env
+	_ = unlockCmd.Run()
+
 	retainDays, err := db.GetSetting(m.db, "backup_retain_days")
 	if err != nil || retainDays == "" {
 		retainDays = "30"
@@ -972,6 +991,11 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 	// forget by tag across both repos — restic forget --tag removes all
 	// snapshots carrying that tag, which covers both the file and DB snapshots
 	forget := func(repoPath string, env []string) error {
+		// clear any stale locks before attempting forget
+		unlockCmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "unlock")
+		unlockCmd.Env = env
+		_ = unlockCmd.Run() // best-effort, ignore errors
+
 		// list snapshots matching the tag to get their IDs
 		listCmd := exec.CommandContext(ctx, resticBin,
 			"-r", repoPath, "snapshots", "--tag", b.SnapshotID, "--json",
@@ -1019,4 +1043,54 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 
 	logger.Debug("DeleteSnapshot: removed snapshots for tag %s", b.SnapshotID)
 	return nil
+}
+
+// fixPostRestorePerms reapplies the correct ownership and permissions to the
+// site directory after a file restore, matching what scaffoldSiteDir sets up
+func (m *Manager) fixPostRestorePerms(siteDir string, siteID int64) {
+	cred, err := db.GetSFTPCredBySite(m.db, siteID)
+	if err != nil || cred == nil {
+		logger.Warn("fixPostRestorePerms: could not get sftp cred for site %d: %v", siteID, err)
+		return
+	}
+	uid := cred.UID
+
+	// site root — must be root:root for sshd chroot
+	os.Chown(siteDir, 0, 0)
+	os.Chmod(siteDir, 0755)
+
+	// html — setgid + group-writable, siteUID owned
+	os.Chown(siteDir+"/html", uid, uid)
+	os.Chmod(siteDir+"/html", 02775)
+
+	// php-fpm, redis — siteUID owned
+	for _, d := range []string{"php-fpm", "redis"} {
+		os.Chown(siteDir+"/"+d, uid, uid)
+	}
+
+	// nginx dir — siteUID owned
+	os.Chown(siteDir+"/nginx", uid, uid)
+
+	// nginx/cache — root owned, nginx workers need 0755 on parent
+	os.Chown(siteDir+"/nginx/cache", 0, 0)
+	os.Chmod(siteDir+"/nginx/cache", 0755)
+
+	// nginx/cache/wp — clear stale cache files then set nginx uid (101)
+	wpCache := siteDir + "/nginx/cache/wp"
+	if entries, err := os.ReadDir(wpCache); err == nil {
+		for _, e := range entries {
+			os.RemoveAll(filepath.Join(wpCache, e.Name()))
+		}
+	}
+	os.Chown(wpCache, 101, 101)
+	os.Chmod(wpCache, 0750)
+
+	// nginx/logs — nginx uid (101)
+	os.Chown(siteDir+"/nginx/logs", 101, 101)
+	os.Chmod(siteDir+"/nginx/logs", 0750)
+
+	// db — mysql uid (999) inside the MariaDB container
+	os.Chown(siteDir+"/db", 999, 999)
+
+	logger.Debug("fixPostRestorePerms: permissions restored for %s", siteDir)
 }
