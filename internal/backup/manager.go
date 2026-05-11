@@ -817,8 +817,10 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 			defer cancel()
 			if _, err := m.Backup(bCtx, site, "scheduled"); err != nil {
 				logger.Error("scheduler: backup failed for site %s: %v", site.Name, err)
+				_ = db.SetBackupError(m.db, site.ID, err.Error())
 			} else {
 				logger.Info("scheduler: backup complete for site %s", site.Name)
+				_ = db.ClearBackupError(m.db, site.ID)
 			}
 		}()
 	}

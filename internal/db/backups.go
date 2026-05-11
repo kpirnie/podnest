@@ -16,11 +16,13 @@ func GetBackupRepo(db *sql.DB, siteID int64) (*models.BackupRepo, error) {
 	// query for the repo record matching the given site
 	r := &models.BackupRepo{}
 	err := db.QueryRow(`
-		SELECT id, site_id, repo_password, local_path, local_enabled, s3_enabled, created, updated
+		SELECT id, site_id, repo_password, local_path, local_enabled, s3_enabled,
+		       last_error, last_error_at, created, updated
 		FROM kppn_backup_repos WHERE site_id = ?`, siteID,
 	).Scan(
 		&r.ID, &r.SiteID, &r.RepoPassword,
 		&r.LocalPath, &r.LocalEnabled, &r.S3Enabled,
+		&r.LastError, &r.LastErrorAt,
 		&r.Created, &r.Updated,
 	)
 	if err == sql.ErrNoRows {
@@ -59,6 +61,36 @@ func UpsertBackupRepo(db *sql.DB, r *models.BackupRepo) error {
 
 	logger.Debug("UpsertBackupRepo: upserted repo for site %d", r.SiteID)
 	return nil
+}
+
+// SetBackupError records the most recent scheduled backup failure for a site
+func SetBackupError(db *sql.DB, siteID int64, errMsg string) error {
+	now := time.Now().UTC()
+	_, err := db.Exec(`
+		UPDATE kppn_backup_repos
+		SET last_error = ?, last_error_at = ?, updated = ?
+		WHERE site_id = ?`,
+		errMsg, now, now, siteID,
+	)
+	if err != nil {
+		logger.Error("SetBackupError: site %d: %v", siteID, err)
+	}
+	return err
+}
+
+// ClearBackupError clears any recorded backup failure for a site after a successful run
+func ClearBackupError(db *sql.DB, siteID int64) error {
+	now := time.Now().UTC()
+	_, err := db.Exec(`
+		UPDATE kppn_backup_repos
+		SET last_error = '', last_error_at = NULL, updated = ?
+		WHERE site_id = ?`,
+		now, siteID,
+	)
+	if err != nil {
+		logger.Error("ClearBackupError: site %d: %v", siteID, err)
+	}
+	return err
 }
 
 // -- backups -----------------------------------------------------------------

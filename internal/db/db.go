@@ -76,6 +76,9 @@ func migrateColumns(db *sql.DB) error {
 		`ALTER TABLE kppn_settings ADD COLUMN key TEXT`, // no-op guard; settings added via upsert
 		`ALTER TABLE kppn_backup_repos ADD COLUMN local_enabled INTEGER NOT NULL DEFAULT 1`,
 		`ALTER TABLE kppn_backup_repos ADD COLUMN s3_enabled INTEGER NOT NULL DEFAULT 0`,
+		// backup failure tracking
+		`ALTER TABLE kppn_backup_repos ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE kppn_backup_repos ADD COLUMN last_error_at DATETIME`,
 	}
 
 	for _, m := range migrations {

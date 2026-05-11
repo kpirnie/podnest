@@ -42,6 +42,7 @@ export function renderBackupsTab(siteId) {
                         <span uk-icon="cloud-upload"></span> Back Up Now
                     </button>
                 </div>
+                <div id="backup-error-banner"></div>
                 <div id="backup-list-wrap">
                     <div uk-spinner="ratio: 0.8" style="color:var(--kp-blue)"></div>
                 </div>
@@ -121,6 +122,23 @@ export async function loadBackupsPanel(root, siteId) {
         const s3Chk    = root.querySelector("#backup-s3-enabled");
         if (localChk) localChk.checked = !!repo.LocalEnabled;
         if (s3Chk)    s3Chk.checked    = !!repo.S3Enabled;
+
+        // show a warning banner if the last scheduled backup failed
+        const errBanner = root.querySelector("#backup-error-banner");
+        if (errBanner) {
+            if (repo.last_error) {
+                const at = repo.last_error_at
+                    ? ` (${new Date(repo.last_error_at).toLocaleString()})`
+                    : "";
+                errBanner.innerHTML = `
+                    <div uk-alert class="uk-alert-warning">
+                        <a class="uk-alert-close" uk-close></a>
+                        <p><strong>Last scheduled backup failed${at}:</strong> ${repo.last_error}</p>
+                    </div>`;
+            } else {
+                errBanner.innerHTML = "";
+            }
+        }
 
         // populate the backup list
         const listWrap = root.querySelector("#backup-list-wrap");

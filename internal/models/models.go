@@ -200,6 +200,8 @@ type BackupRepo struct {
 	LocalPath    string
 	LocalEnabled bool
 	S3Enabled    bool
+	LastError    string     `json:"last_error"`
+	LastErrorAt  *time.Time `json:"last_error_at"`
 	Created      time.Time
 	Updated      *time.Time
 }

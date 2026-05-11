@@ -1356,6 +1356,7 @@ The following features are actively planned or currently in development. This li
 |---|---|
 | **Cloning / One-Click Staging** | Duplicate a live site to a staging environment with a single click — files, database, and all |
 | **PHP Version Switching** | Change a site's PHP version and recreate the pod without losing data |
+| **Bulk Site Operations** | Start, stop, restart and recreate selectable pods |
 
 ### Operations
 
