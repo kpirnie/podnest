@@ -1,14 +1,13 @@
 # <img src="https://cdn.kcp.im/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy" width="64" valign="middle"> PodNest
 
-## Secure. Manage. Deploy
-
+## Secure. Manage. Deploy.
 
 [![Build Main](https://img.shields.io/github/actions/workflow/status/kpirnie/podnest/build.yml?branch=main&label=Main&logoColor=white&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/podnest/actions?query=workflow%3A%22Build+and+Push%22+branch%3Amain)
 [![Build Develop](https://img.shields.io/github/actions/workflow/status/kpirnie/podnest/build.yml?branch=develop&label=Develop&logoColor=white&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/podnest/actions?query=workflow%3A%22Build+and+Push%22+branch%3Adevelop)
 [![Last Commit](https://img.shields.io/github/last-commit/kpirnie/podnest?style=for-the-badge&labelColor=000)](https://github.com/kpirnie/podnest/commits/main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg?style=for-the-badge&logo=opensourceinitiative&logoColor=white&labelColor=000)](LICENSE)
 
-[![Go](https://img.shields.io/badge/Go-1.26.2-00ADD8?logo=go&logoColor=white&style=for-the-badge&labelColor=000)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white&style=for-the-badge&labelColor=000)](https://go.dev/)
 [![Alpine](https://img.shields.io/badge/Base-Alpine%20Linux-0D597F?logo=alpinelinux&logoColor=white&style=for-the-badge&labelColor=000)](https://www.alpinelinux.org/)
 [![Kevin Pirnie](https://img.shields.io/badge/-KevinPirnie.com-000d2d?style=for-the-badge&labelColor=000&logoColor=white&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4KICA8ZWxsaXBzZSBjeD0iMTIiIGN5PSIxMiIgcng9IjQuNSIgcnk9IjEwIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxMiIgeDI9IjIyIiB5Mj0iMTIiLz4KICA8bGluZSB4MT0iNC41IiB5MT0iNi41IiB4Mj0iMTkuNSIgeTI9IjYuNSIvPgogIDxsaW5lIHgxPSI0LjUiIHkxPSIxNy41IiB4Mj0iMTkuNSIgeTI9IjE3LjUiLz4KPC9zdmc+Cg==)](https://kevinpirnie.com/)
 [![Support](https://img.shields.io/badge/Support-Available-28a745?logo=handshake&logoColor=white&style=for-the-badge&labelColor=000)](https://kevinpirnie.com/about-kevin-pirnie/lets-talk/)
@@ -17,7 +16,7 @@ A hardened, high-performance web hosting pod manager built on Podman. Provision 
 
 ---
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ---
 
@@ -37,7 +36,7 @@ PodNest provisions and manages isolated web hosting environments using Podman. E
 
 Each pod is provisioned with nginx as the reverse proxy. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx only.
 
-All sites share a single global SFTP container for file management — one port, no per-site port allocation required.
+All sites share a single global SFTP container for file management — one port, no per-site port allocation required. A global Fail2Ban container monitors SFTP access and automatically bans IPs that repeatedly fail authentication.
 
 The recommended and fully supported deployment method is as a container. The binary option is available for those who prefer to compile and run it directly.
 
@@ -47,7 +46,7 @@ The recommended and fully supported deployment method is as a container. The bin
 
 ## Requirements
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 **For container deployment (recommended):**
 - Podman installed and running on the host
@@ -56,7 +55,7 @@ The recommended and fully supported deployment method is as a container. The bin
 
 **For binary deployment:**
 - Go 1.22 or later
-- `gcc` and `musl-dev` (CGO is required)
+- `gcc` and `musl-dev` (CGO is required for SQLite)
 - Podman installed and accessible via socket on the host
 
 ### Podman Socket Notes
@@ -79,7 +78,7 @@ systemctl --user start podman.socket
 
 ## Running as a Container
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 This is the **recommended** way to run PodNest. A pre-built image is published to the GitHub Container Registry — no compilation required.
 
@@ -89,10 +88,12 @@ This is the **recommended** way to run PodNest. A pre-built image is published t
 |---|---|
 | `latest` | Latest stable release — use this for production |
 | `dev` | Tracks the `develop` branch — use at your own risk |
+| `beta` | Tracks the `beta` branch — preview features, not production-ready |
 
 ```
-ghcr.io/kevinpirnie/podnest:latest
-ghcr.io/kevinpirnie/podnest:dev
+ghcr.io/kpirnie/podnest:latest
+ghcr.io/kpirnie/podnest:dev
+ghcr.io/kpirnie/podnest:beta
 ```
 
 ---
@@ -104,12 +105,15 @@ podman run -d \
   --name podnest \
   --hostname podnest \
   --restart unless-stopped \
+  -p 80:80 \
+  -p 443:443 \
   -p 9000:8080 \
-  -p 2222:2222 \
-  -v /run/podman/podman.sock:/run/podman/podman.sock:ro \
+  -v /run/podman/podman.sock:/run/podman/podman.sock:rw \
   -v /your/persistent/path:/opt/podnest:z \
+  --tmpfs /tmp \
   -e TZ=America/New_York \
-  ghcr.io/kevinpirnie/podnest:latest
+  -e LOG_LEVEL=INFO \
+  ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 8080 --socket /run/podman/podman.sock
 ```
 
 Replace `/your/persistent/path` with a host path where site configs, the database, and application data should persist across restarts and container recreations. Without this mount, all data is lost when the container is removed.
@@ -118,22 +122,23 @@ Once running, the UI is available at: `http://your-host:9000`
 
 ---
 
-### Docker Compose (Recommended)
+### Docker Compose
 
 A `docker-compose-example.yaml` is included in the repository as a starting point. Copy and adjust it to your environment:
 
 ```yaml
 services:
   podnest:
-    image: ghcr.io/kevinpirnie/podnest:latest
+    image: ghcr.io/kpirnie/podnest:latest
     container_name: podnest
     hostname: podnest
     restart: unless-stopped
     ports:
+      - 80:80
+      - 443:443
       - 9000:8080
-      - 2222:2222
     volumes:
-      - /run/podman/podman.sock:/run/podman/podman.sock:ro
+      - /run/podman/podman.sock:/run/podman/podman.sock:rw
       - /your/persistent/path:/opt/podnest:z
     tmpfs:
       - /tmp
@@ -160,11 +165,9 @@ podman-compose up -d
 
 The `:z` flag on the `/opt/podnest` volume mount is a SELinux relabeling option required on systems running SELinux in enforcing mode. It is safe to omit on systems that do not use SELinux.
 
-[▲ Back to Top](#PodNest)
-
 ---
 
-## Running with systemd (Recommended for Production)
+### Running with systemd (Recommended for Production)
 
 For production deployments on Linux, running PodNest as a systemd service is recommended over podman-compose. It guarantees the Podman socket exists before the container starts, which prevents a known issue where podman-compose can incorrectly create the socket path as a directory instead of a socket file.
 
@@ -208,9 +211,11 @@ systemctl enable --now podnest.service
 systemctl status podnest.service
 ```
 
-### Podman Socket Notes
+A `podnest.service` example file is included in the repository.
 
-A known issue with podman-compose is that if the Podman socket does not exist at the moment the container starts, the mount point is created as a directory instead of a socket file, causing all Podman API calls to fail with `connection refused`. The systemd unit avoids this by declaring `Requires=podman.socket`, which guarantees the socket exists before the container starts.
+### Podman Socket Warning
+
+A known issue with podman-compose is that if the Podman socket does not exist at the moment the container starts, the mount point is created as a directory instead of a socket file, causing all Podman API calls to fail. The systemd unit avoids this by declaring `Requires=podman.socket`.
 
 If you prefer to use podman-compose, ensure the socket exists before starting:
 
@@ -218,14 +223,20 @@ If you prefer to use podman-compose, ensure the socket exists before starting:
 systemctl start podman.socket
 # verify it is a socket file, not a directory
 ls -la /run/podman/podman.sock  # must show srw, not drwx
-podman-compose -f /home/admin/podnest.yaml up -d
+podman-compose up -d
 ```
+
+### Pod Auto-Recovery After Host Reboot
+
+When a host running PodNest reboots, PodNest restarts automatically via systemd. On startup, PodNest queries the database for all sites that were running at last shutdown and automatically restarts their pods. Sites whose pods no longer exist are marked as stopped so the UI reflects the correct state. No manual intervention is required after a host reboot.
+
+[▲ Back to Top](#PodNest)
 
 ---
 
 ## Running the Binary
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 > Container deployment is the recommended approach. The binary path is here for advanced users who prefer it.
 
@@ -236,7 +247,6 @@ Clone the repository:
 ```bash
 git clone https://github.com/kpirnie/podnest.git
 cd podnest
-git checkout develop
 ```
 
 Build the binary:
@@ -300,7 +310,7 @@ Both `init` and `serve` share the following persistent flags:
 
 ## First Login
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ### Container
 
@@ -323,13 +333,16 @@ If you used `podnest init`, log in with the credentials you provided during setu
 
 ## Directory Structure
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 Once PodNest is running with a persistent volume, the following structure is created at your mounted path (or at `--app-path` for binary deployments):
 
 ```
 /opt/podnest/
 ├── podnest.db          # SQLite database — users, sites, domains, configs, SFTP creds
+├── certs/              # TLS certificates (Let's Encrypt and self-signed fallback)
+├── logs/               # Application-level logs
+├── fail2ban/           # Fail2Ban config and jail data
 ├── sftp/               # Global SFTP container config
 │   ├── keys/           # Persistent SSH host keys
 │   ├── etc-ssh/
@@ -367,7 +380,7 @@ The `sftp/users.conf` file is managed automatically by PodNest. Do not edit it m
 
 ## Managing Sites
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 All site management is handled through the PodNest web UI or via the API. Access the UI at `http://your-host:PORT` after startup.
 
@@ -379,13 +392,14 @@ Navigate to **Sites → New Site** and fill in the required fields:
 
 | Field | Required | Description |
 |---|---|---|
-| Name | Yes | Unique identifier for the pod — used as the pod and container name. Lowercase, no spaces. |
-| Port | Yes | Host port to expose this site on (e.g. `8081`). Must be unique per site. |
+| Name | Yes | Unique identifier for the pod — used as the pod and container name. Lowercase, alphanumeric and hyphens only. |
+| Port | Yes | Host port to expose this site on (e.g. `8081`). Must be unique per site. Auto-assigned if left blank. |
 | Site Type | Yes | WordPress, PHP, Static HTML, Node.js, or .NET |
-| PHP Version | WordPress / PHP only | PHP 8.0–8.5. Defaults to 8.2. |
-| Runtime Version | Node.js / .NET only | Node 20/22/23 or .NET 8.0/9.0/10.0 |
+| PHP Version | WordPress / PHP only | PHP 8.2–8.5. Defaults to 8.2. |
+| Runtime Version | Node.js / .NET only | Node 22/23/24 or .NET 8.0/9.0/10.0 |
 | Start Command | Node.js / .NET only | Command used to start your app (e.g. `node index.js`) |
 | Domains | No | One or more domains or subdomains to associate with this site |
+| Install WordPress | WordPress only | Auto-installs WordPress into the web root on creation |
 
 Clicking **Create** will:
 1. Create the site record in the database
@@ -394,6 +408,7 @@ Clicking **Create** will:
 4. Generate unique database and Redis credentials and write them to `.env`
 5. Generate a unique SFTP password and register the site user with the global SFTP container
 6. Provision and start the Podman pod with all required containers
+7. Obtain SSL certificates for any registered domains (if the reverse proxy is configured and the domains are publicly reachable)
 
 ---
 
@@ -414,7 +429,7 @@ From the site detail view, the following actions are available:
 
 ### Managing Domains
 
-Each site can have one or more domains associated with it. From the site detail view you can add or remove domains at any time. Domain changes are stored in the database and reflected in the nginx configuration.
+Each site can have one or more domains associated with it. From the site detail view you can add or remove domains at any time. Domain changes are stored in the database, reflected in the reverse proxy routing, and SSL certificate acquisition is triggered automatically for any new domain.
 
 ---
 
@@ -425,7 +440,8 @@ From the site detail view, select **Delete Site** and confirm. This will:
 1. Stop the pod
 2. Remove the pod and all its containers
 3. Remove the site's SFTP user from the global SFTP container
-4. Delete the site record, domains, configs, and SFTP credentials from the database
+4. Evict the site's domains from the reverse proxy cache
+5. Delete the site record, domains, configs, and SFTP credentials from the database
 
 > **Note:** Deleting a site does **not** automatically remove the site directory on the host. Your web root files and database data under `/opt/podnest/sites/<name>/` remain on disk and must be removed manually if desired.
 
@@ -435,7 +451,7 @@ From the site detail view, select **Delete Site** and confirm. This will:
 
 ## SFTP Access
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 All sites share a single global SFTP container listening on port **2222**. Each site gets its own isolated user account automatically created when the site is provisioned.
 
@@ -476,13 +492,19 @@ The following are **not** accessible via SFTP:
 
 > **Note:** After editing configuration files via SFTP, a pod restart is required for the changes to take effect inside the running containers.
 
+---
+
+### Fail2Ban Integration
+
+A global Fail2Ban container monitors the SFTP log for repeated authentication failures and automatically bans offending IPs at the host firewall level. Banning and unbanning is handled entirely by Fail2Ban — no manual intervention is required.
+
 [▲ Back to Top](#PodNest)
 
 ---
 
 ## Built-in Reverse Proxy
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest includes a built-in reverse proxy that routes incoming traffic by domain to the appropriate site pod — no separate nginx layer required.
 
@@ -508,7 +530,7 @@ For servers not publicly reachable, PodNest falls back to a self-signed certific
 
 ### Requirements
 
-Expose ports 80 and 443 from your compose file:
+Expose ports 80 and 443 from your compose file or run command:
 
 ```yaml
 ports:
@@ -517,15 +539,21 @@ ports:
   - 9000:8080
 ```
 
+### Admin Domain
+
+You can configure a dedicated admin domain for the PodNest management UI under **Settings → Admin Domain**. Once set, the UI is accessible at `https://your-admin-domain` through the reverse proxy, and a Let's Encrypt certificate is automatically obtained for it.
+
 [▲ Back to Top](#PodNest)
 
 ---
 
 ## Site Configurations
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 Each site has up to four configuration sections, editable directly in the UI. Changes are saved to the database and written to disk immediately — no manual file editing required. A pod restart is needed for changes to take effect inside the running containers.
+
+Configurations can also be exported to a JSON file and imported back — useful for applying the same config to multiple sites or backing up your tuning.
 
 ---
 
@@ -661,9 +689,76 @@ Any configuration section can be reset to its original defaults from the UI. Thi
 
 ---
 
+## Security Rules
+
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+PodNest provides IP and User-Agent (UA) filtering at two levels: global rules that apply to all sites, and per-site rules that apply to individual sites only. Rules are enforced by the built-in reverse proxy and take effect immediately — no restart required.
+
+---
+
+### IP Rules
+
+IP rules allow you to whitelist or blacklist individual IP addresses and CIDR ranges.
+
+| List | Behavior |
+|---|---|
+| **Whitelist** | Always allow — bypasses all other IP-based blocking |
+| **Blacklist** | Always block — returns `403 Forbidden` |
+
+Whitelist takes precedence over the blacklist. If an IP matches both, it is allowed.
+
+Rules are entered as a newline-separated list — one IP or CIDR per line:
+
+```
+192.168.1.100
+10.0.0.0/8
+203.0.113.42
+```
+
+---
+
+### User-Agent Rules
+
+UA rules allow you to whitelist or blacklist HTTP clients by their `User-Agent` header string.
+
+| List | Behavior |
+|---|---|
+| **Whitelist** | Always allow — bypasses all other UA-based blocking |
+| **Blacklist** | Always block — returns `403 Forbidden` |
+
+Rules are entered as a newline-separated list — one string per line. Matching is case-insensitive substring matching:
+
+```
+Googlebot
+bingbot
+curl/
+BadBot2000
+```
+
+---
+
+### Global vs Per-Site Rules
+
+**Global rules** (under **Admin → Security**) apply to all sites handled by the reverse proxy. Use these for broad blocks — known bad actors, country-level CIDRs, abusive crawlers.
+
+**Per-site rules** (under **Sites → [site] → Security**) apply only to that site. Use these for site-specific access control — staging environments, client IP allowlists, blocking specific scrapers targeting one site.
+
+Both sets of rules are evaluated together — a request blocked by either global or per-site rules is denied.
+
+---
+
+### Import / Export
+
+IP and UA rule sets can be exported to CSV and imported from CSV, separately at both the global and per-site levels. Use this to apply a common baseline rule set across multiple sites or to back up your current rules.
+
+[▲ Back to Top](#PodNest)
+
+---
+
 ## Live Logs
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest streams live container logs directly to the UI via WebSocket. From the site detail view, select the **Logs** tab and choose which container to tail:
 
@@ -681,16 +776,71 @@ The log stream defaults to the last 100 lines and follows in real time. The tail
 
 ---
 
+## WP-CLI Terminal
+
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+WordPress sites include a built-in WP-CLI terminal accessible directly from the UI. From the site detail view, select the **WP-CLI** tab to open a browser-based terminal that streams command output in real time over WebSocket.
+
+WP-CLI is only available for **WordPress** site types.
+
+### Usage
+
+Type any WP-CLI command without the `wp` prefix and press Enter:
+
+```
+plugin list
+plugin update --all
+core update
+cache flush
+user list
+option get siteurl
+```
+
+PodNest automatically prepends `wp` and runs the command inside the site's PHP container as the correct user. Output streams back to the terminal in real time.
+
+### Notes
+
+- The site pod must be running for the WP-CLI terminal to function
+- Commands run inside the PHP-FPM container, not the nginx container — this is the correct context for WP-CLI
+- Long-running commands (e.g. large plugin updates) stream output continuously until complete
+
+[▲ Back to Top](#PodNest)
+
+---
+
+## phpMyAdmin
+
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+WordPress, PHP, Node.js, and .NET sites include a phpMyAdmin instance for database management, accessible directly from the PodNest UI. Static HTML sites do not include a database and therefore do not have phpMyAdmin available.
+
+### Accessing phpMyAdmin
+
+From the site detail overview tab, click the **phpMyAdmin** button. PodNest generates a short-lived one-time access token (valid for 10 minutes or first use) and opens phpMyAdmin in a new tab. No username or password is required — the session is pre-authenticated.
+
+phpMyAdmin is proxied through PodNest at `/pma/{site-id}`. It is never directly exposed on the network.
+
+### Notes
+
+- The site pod must be running for phpMyAdmin to be accessible
+- The one-time token expires after 10 minutes — clicking the button again generates a fresh token
+- phpMyAdmin session cookies are scoped per-site and expire after 2 hours of inactivity
+
+[▲ Back to Top](#PodNest)
+
+---
+
 ## User Management
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest has two user roles:
 
 | Role | Level | Description |
 |---|---|---|
 | Manager | 50 | Can create and manage their own sites only |
-| Admin | 99 | Full access — all sites and all users |
+| Admin | 99 | Full access — all sites, all users, all settings |
 
 User management is accessible to Admin-role users only under the **Admin** section of the UI.
 
@@ -716,15 +866,9 @@ First name, last name, email, phone, and role can all be updated. Password can o
 
 ---
 
-### Changing a Username
-
-Admins can change any user's username from the edit user modal. Usernames must be unique. The change takes effect immediately and the user will need to log in with their new username on the next login.
-
----
-
 ### Deleting a User
 
-Admins can delete any user account except their own. If the user owns any sites, the deletion will be blocked — those sites must be deleted first.
+Admins can delete any user account except their own. If the user owns any sites, the deletion will be blocked — those sites must be deleted or reassigned first.
 
 ---
 
@@ -745,9 +889,60 @@ TOTP is activated immediately on confirmation. From this point forward, logging 
 
 After entering your username and password, you will be redirected to a second step where you must enter the current 6-digit code from your authenticator app. The code is valid for 30 seconds with a ±30 second clock skew tolerance.
 
+#### Backup Codes
+
+On TOTP confirmation, a set of one-time backup codes is generated and displayed. Store these in a safe place — they can be used to log in if you lose access to your authenticator app. Each backup code can only be used once.
+
 #### Disabling TOTP
 
-Open the edit user modal and click **Disable TOTP** in the Two-Factor Authentication section. This removes the TOTP secret immediately — no code required to disable.
+Open the edit user modal and click **Disable TOTP** in the Two-Factor Authentication section. This removes the TOTP secret immediately — no code is required to disable.
+
+[▲ Back to Top](#PodNest)
+
+---
+
+## Settings
+
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+The **Settings** panel is accessible to Admin users only. Settings are divided into three sections.
+
+---
+
+### General
+
+| Setting | Description |
+|---|---|
+| **Admin Domain** | The domain used to access the PodNest management UI through the reverse proxy. Once set, a Let's Encrypt certificate is automatically obtained. Leave blank to access the UI directly by port. |
+
+---
+
+### Backup Schedule
+
+| Setting | Description |
+|---|---|
+| **Cron Schedule** | Standard 5-field cron expression (e.g. `0 2 * * *` for daily at 2am). Leave blank to disable automatic scheduled backups. |
+| **Retain Backups (days)** | Snapshots older than this many days are pruned automatically after each scheduled backup run. Default: `30`. |
+
+---
+
+### S3 Backup Storage
+
+Applies globally to all sites that have S3 backup destination enabled.
+
+| Setting | Description |
+|---|---|
+| **Endpoint URL** | Full URL to the S3-compatible endpoint (e.g. `https://s3.amazonaws.com`) |
+| **Bucket** | The bucket name. Each site uses a separate prefix within the bucket. |
+| **Region** | AWS region or equivalent (default: `us-east-1`) |
+| **Access Key ID** | S3 access key |
+| **Secret Access Key** | S3 secret key — stored encrypted, never returned in full after saving |
+
+---
+
+### Settings Export / Import
+
+The entire settings set (general + backup) can be exported to a JSON file and imported back. This is useful for migrating a PodNest instance or restoring settings after a fresh install.
 
 [▲ Back to Top](#PodNest)
 
@@ -755,7 +950,7 @@ Open the edit user modal and click **Disable TOTP** in the Two-Factor Authentica
 
 ## Backup & Restore
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest includes a fully integrated backup and restore system powered by [restic](https://restic.net/). Backups are incremental, deduplicated, and encrypted at rest. Each site maintains its own isolated restic repository per destination.
 
@@ -790,34 +985,15 @@ Destinations are enabled or disabled per site from the **Backups** tab on the si
 
 ---
 
-### Configuring Backup Settings
-
-Navigate to **Settings** and scroll to the **Backup Schedule** and **S3 Backup Storage** sections.
-
-**Backup Schedule**
-
-| Setting | Description |
-|---|---|
-| Cron Schedule | Standard 5-field cron expression (e.g. `0 2 * * *` for daily at 2am). Leave blank to disable automatic backups. |
-| Retain Backups (days) | Snapshots older than this many days are pruned automatically after each backup run. Default: `30`. |
-
-The schedule applies globally — all sites with at least one destination enabled are backed up on each scheduled run.
-
-**S3 Backup Storage**
-
-| Setting | Description |
-|---|---|
-| Endpoint URL | Full URL to the S3-compatible endpoint (e.g. `https://s3.amazonaws.com`) |
-| Bucket | The bucket name to store backups in. Each site uses a separate prefix within the bucket. |
-| Region | AWS region or equivalent (default: `us-east-1`) |
-| Access Key ID | S3 access key |
-| Secret Access Key | S3 secret key — stored encrypted, never returned in full after saving |
-
----
-
 ### Running a Manual Backup
 
 From the **Backups** tab on any site detail view, click **Back Up Now**. A progress modal will be displayed while the backup runs. The snapshot list updates automatically when the backup completes.
+
+---
+
+### Scheduled Backups
+
+Configure a cron schedule under **Settings → Backup Schedule**. All sites with at least one destination enabled are backed up on each scheduled run. If a scheduled backup fails for any site, a warning banner is displayed on that site's **Backups** tab showing the error message and the time of the failure. The banner clears automatically on the next successful backup run.
 
 ---
 
@@ -849,22 +1025,74 @@ The filename format is `{sitename}-{date}-{id}.tar.gz`.
 
 Click the delete icon on any snapshot and confirm. The snapshot is permanently removed from all configured repositories and the restic repos are pruned immediately. This action cannot be undone.
 
+[▲ Back to Top](#PodNest)
+
 ---
 
-### Backup API Endpoints
+## Security
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/sites/{id}/backup-repo` | Get the backup destination config for a site |
-| `PUT` | `/api/sites/{id}/backup-repo` | Update backup destination flags (local/S3 enabled) |
-| `GET` | `/api/sites/{id}/backups` | List all backup snapshots for a site |
-| `POST` | `/api/sites/{id}/backups` | Trigger an immediate backup |
-| `POST` | `/api/sites/{id}/backups/{bid}/restore` | Restore from a snapshot |
-| `GET` | `/api/sites/{id}/backups/{bid}/download` | Download snapshot as `.tar.gz` |
-| `DELETE` | `/api/sites/{id}/backups/{bid}` | Delete a snapshot |
-| `GET` | `/api/sites/{id}/backups/restore-status` | Check if a restore is currently in progress |
-| `GET` | `/api/settings/backup` | Get backup and S3 settings (admin only) |
-| `PUT` | `/api/settings/backup` | Update backup and S3 settings (admin only) |
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+PodNest is built with security in mind at every layer. The following protections are active out of the box.
+
+---
+
+### Login Rate Limiting
+
+The login endpoint is rate-limited per client IP. After **5 failed attempts within 5 minutes**, the IP is locked out for **15 minutes**. Lockouts are tracked in memory and reset automatically — no manual intervention is required. A successful login clears the failure count for that IP.
+
+---
+
+### Two-Factor Authentication
+
+TOTP-based 2FA is available for all user accounts. See [User Management → Two-Factor Authentication](#two-factor-authentication-totp) for setup instructions. Enabling TOTP on the admin account is strongly recommended.
+
+---
+
+### Session Management
+
+- Sessions are valid for **8 hours** from login
+- Expired sessions are automatically purged from the database hourly
+- Changing a user's password immediately invalidates all of their active sessions
+- Sessions are stored server-side — the browser cookie is a random token with no embedded data
+
+---
+
+### HTTP Security Headers
+
+All responses from the PodNest management panel include the following security headers:
+
+| Header | Value |
+|---|---|
+| `X-Frame-Options` | `SAMEORIGIN` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), usb=()` |
+| `Content-Security-Policy` | Locks scripts, styles, fonts, images, and connections to known sources only |
+
+The Content Security Policy allows only trusted sources: `cdn.jsdelivr.net` (UIKit), `cdn.kcp.im` (logos), `fonts.googleapis.com` and `fonts.gstatic.com` (fonts), and same-origin API connections including WebSocket. The phpMyAdmin proxy path is intentionally excluded from the CSP to avoid breaking the phpMyAdmin interface.
+
+---
+
+### API Authorization
+
+All API endpoints require a valid session. Admin-only endpoints (`/api/users`, `/api/settings`, `/api/security/...`) enforce the Admin role at the router level as well as inside each handler. Manager-role users can only access their own sites — attempting to access another user's site returns `403 Forbidden`.
+
+[▲ Back to Top](#PodNest)
+
+---
+
+## Updating
+
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+
+### Update Notifications
+
+When a new release is published on GitHub, Admin users will see a notification banner at the top of the management UI indicating the new version number with links to the release notes and update instructions. The banner checks GitHub's releases API at most once every 12 hours and is only visible to Admin-role users.
+
+### How to Update
+
+See [UPDATE.md](UPDATE.md) for full step-by-step instructions for your deployment method (systemd, Docker Compose, or manual Podman run). Updating is a pull-and-restart — your site data is never touched.
 
 [▲ Back to Top](#PodNest)
 
@@ -872,9 +1100,9 @@ Click the delete icon on any snapshot and confirm. The snapshot is permanently r
 
 ## API Reference
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
-PodNest exposes a JSON REST API under `/api/`. All API endpoints require a valid session, obtained by logging in via the UI or the `/login` endpoint. The session is maintained via a cookie that must be included in all subsequent requests.
+PodNest exposes a JSON REST API under `/api/`. All endpoints require a valid session obtained by logging in via the UI or the `/login` endpoint. The session is maintained via a cookie that must be included in all subsequent requests.
 
 All request and response bodies are JSON. Successful responses return the appropriate HTTP status code (`200 OK`, `201 Created`, `204 No Content`). Errors return a JSON object with an `error` field.
 
@@ -895,7 +1123,7 @@ POST /login
 }
 ```
 
-A successful login sets a session cookie. Include this cookie in all subsequent API requests.
+A successful login sets a session cookie. If TOTP is enabled for the user, the response will indicate a redirect to `/login/totp` is required before the session is established.
 
 **Logout**
 
@@ -909,84 +1137,22 @@ Clears the session cookie and invalidates the server-side session.
 
 ### Sites
 
-**List all sites**
-
-```
-GET /api/sites
-```
-
-Admins receive all sites. Managers receive only the sites they own.
-
-**Response:**
-
-```json
-[
-  {
-    "ID": 1,
-    "UID": 1,
-    "Name": "my-wordpress-site",
-    "Port": 8081,
-    "PHPVersion": 3,
-    "SiteStatus": 1,
-    "SiteType": 1,
-    "RuntimeVersion": null,
-    "StartCommand": "",
-    "PMAPort": 18081,
-    "Created": "2026-04-30T12:00:00Z",
-    "Updated": null
-  }
-]
-```
-
----
-
-**Get a site**
-
-```
-GET /api/sites/{id}
-```
-
-**Response:**
-
-```json
-{
-  "site": { ... },
-  "domains": [
-    { "ID": 1, "SiteID": 1, "Domain": "example.com", "Created": "...", "Updated": null }
-  ],
-  "sftp": {
-    "ID": 1,
-    "SiteID": 1,
-    "Username": "my-wordpress-site",
-    "Password": "generatedpassword",
-    "UID": 3001,
-    "Created": "...",
-    "Updated": null
-  }
-}
-```
-
----
-
-**Create a site**
-
-```
-POST /api/sites
-```
-
-**Request body:**
-
-```json
-{
-  "name": "my-wordpress-site",
-  "port": 8081,
-  "site_type": 1,
-  "php_version": 3,
-  "runtime_version": null,
-  "start_command": "",
-  "domains": ["example.com", "www.example.com"]
-}
-```
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/sites` | Session | List sites (admin: all; manager: own only) |
+| `POST` | `/api/sites` | Session | Create a new site |
+| `GET` | `/api/sites/{id}` | Session | Get a site with domains and SFTP credentials |
+| `PUT` | `/api/sites/{id}` | Session | Update site fields |
+| `DELETE` | `/api/sites/{id}` | Session | Delete site, pod, and all associated records |
+| `POST` | `/api/sites/{id}/start` | Session | Start the site pod |
+| `POST` | `/api/sites/{id}/stop` | Session | Stop the site pod |
+| `POST` | `/api/sites/{id}/restart` | Session | Restart the site pod |
+| `POST` | `/api/sites/{id}/flush` | Session | Flush nginx FastCGI cache |
+| `POST` | `/api/sites/{id}/update` | Session | Pull latest container images |
+| `POST` | `/api/sites/{id}/recreate` | Session | Recreate the pod from scratch |
+| `GET` | `/api/sites/{id}/status` | Session | Raw pod inspect payload from Podman |
+| `POST` | `/api/sites/{id}/pma-token` | Session | Issue a one-time phpMyAdmin access token |
+| `POST` | `/api/sites/{id}/sftp-regen` | Session | Regenerate the SFTP password |
 
 **Site type values:** `1` = WordPress, `2` = PHP, `3` = Static HTML, `4` = Node.js, `5` = .NET
 
@@ -996,207 +1162,52 @@ POST /api/sites
 
 **.NET runtime version values:** `1` = 8.0 *(default)*, `2` = 9.0, `3` = 10.0
 
-`start_command` is only relevant for Node.js and .NET site types.
-
-Returns `201 Created` with the new site object on success.
-
----
-
-**Update a site**
-
-```
-PUT /api/sites/{id}
-```
-
-All fields are optional — only supplied fields are updated.
-
-**Request body:**
-
-```json
-{
-  "name": "renamed-site",
-  "port": 8082,
-  "php_version": 4,
-  "site_type": 1,
-  "runtime_version": null,
-  "start_command": ""
-}
-```
-
----
-
-**Delete a site**
-
-```
-DELETE /api/sites/{id}
-```
-
-Stops and removes the pod, removes the SFTP user, then deletes the site, domains, configs, and SFTP credentials from the database. The site directory on the host is **not** removed automatically.
-
-Returns `204 No Content` on success.
-
----
-
-### Site Actions
-
-**Start**
-
-```
-POST /api/sites/{id}/start
-```
-
-```json
-{ "status": "running" }
-```
-
-**Stop**
-
-```
-POST /api/sites/{id}/stop
-```
-
-```json
-{ "status": "stopped" }
-```
-
-**Restart**
-
-```
-POST /api/sites/{id}/restart
-```
-
-```json
-{ "status": "running" }
-```
-
-**Flush nginx cache**
-
-```
-POST /api/sites/{id}/flush
-```
-
-```json
-{ "status": "flushed" }
-```
-
-**Update container images**
-
-```
-POST /api/sites/{id}/update
-```
-
-```json
-{ "status": "images updated" }
-```
-
-**Recreate pod**
-
-```
-POST /api/sites/{id}/recreate
-```
-
-```json
-{ "status": "running" }
-```
-
-**Get site status**
-
-```
-GET /api/sites/{id}/status
-```
-
-Returns the raw pod inspect payload from Podman, including pod state and per-container states.
-
-**Regenerate SFTP password**
-
-```
-POST /api/sites/{id}/sftp-regen
-```
-
-Generates a new cryptographically random SFTP password for the site and applies it to the running global SFTP container immediately with zero downtime. The new password is persisted to the database and displayed in the site overview tab.
-
-```json
-{ "status": "ok" }
-```
-
-**Issue phpMyAdmin token**
-
-```
-POST /api/sites/{id}/pma-token
-```
-
-Generates a short-lived one-time token for phpMyAdmin access. Returns the URL to open in a new tab. Token expires after 10 minutes or first use.
-
-```json
-{ "url": "/pma/1?tok=abc123..." }
-```
-
 ---
 
 ### Domains
 
-**List domains for a site**
-
-```
-GET /api/sites/{id}/domains
-```
-
-**Add a domain**
-
-```
-POST /api/sites/{id}/domains
-```
-
-```json
-{ "domain": "www.example.com" }
-```
-
-**Delete a domain**
-
-```
-DELETE /api/sites/{id}/domains/{did}
-```
-
-Returns `204 No Content` on success.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/sites/{id}/domains` | Session | List domains for a site |
+| `POST` | `/api/sites/{id}/domains` | Session | Add a domain |
+| `DELETE` | `/api/sites/{id}/domains/{did}` | Session | Remove a domain |
 
 ---
 
 ### Configs
 
-**Get all configs for a site**
-
-```
-GET /api/sites/{id}/configs
-```
-
-Returns a map of config type integer to key/value pairs:
-
-```json
-{
-  "1": { "worker_processes": "auto", "gzip": "on" },
-  "2": { "memory_limit": "256M", "pm": "dynamic" },
-  "3": { "max_connections": "200", "innodb_buffer_pool_size": "2G" },
-  "4": { "maxmemory": "1024mb", "maxmemory_policy": "allkeys-lru" }
-}
-```
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/sites/{id}/configs` | Session | Get all config sections as a map |
+| `PUT` | `/api/sites/{id}/configs/{type}` | Session | Merge-update a config section |
+| `POST` | `/api/sites/{id}/configs/{type}/reset` | Session | Reset a config section to defaults |
+| `GET` | `/api/sites/{id}/configs/{type}/export` | Session | Export a config section as JSON |
+| `POST` | `/api/sites/{id}/configs/{type}/import` | Session | Import a config section from JSON |
 
 **Config type values:** `1` = Nginx, `2` = PHP, `3` = MariaDB, `4` = Redis
 
-**Update a config**
+---
 
-```
-PUT /api/sites/{id}/configs/{type}
-```
+### Security Rules
 
-Send only the keys you want to change. Setting a key to an empty string removes it from the config. Changes are merged over the existing config and written to disk immediately. Restart the pod to apply.
-
-**Reset a config to defaults**
-
-```
-POST /api/sites/{id}/configs/{type}/reset
-```
-
-Overwrites the entire config section with built-in defaults and rewrites the file to disk immediately. Restart the pod to apply.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/security/ip` | Admin | Get global IP rules |
+| `PUT` | `/api/security/ip` | Admin | Save global IP rules |
+| `GET` | `/api/security/ua` | Admin | Get global UA rules |
+| `PUT` | `/api/security/ua` | Admin | Save global UA rules |
+| `GET` | `/api/security/ip/export` | Admin | Export global IP rules as CSV |
+| `POST` | `/api/security/ip/import` | Admin | Import global IP rules from CSV |
+| `GET` | `/api/security/ua/export` | Admin | Export global UA rules as CSV |
+| `POST` | `/api/security/ua/import` | Admin | Import global UA rules from CSV |
+| `GET` | `/api/sites/{id}/security/ip` | Session | Get per-site IP rules |
+| `PUT` | `/api/sites/{id}/security/ip` | Session | Save per-site IP rules |
+| `GET` | `/api/sites/{id}/security/ua` | Session | Get per-site UA rules |
+| `PUT` | `/api/sites/{id}/security/ua` | Session | Save per-site UA rules |
+| `GET` | `/api/sites/{id}/security/ip/export` | Session | Export per-site IP rules as CSV |
+| `POST` | `/api/sites/{id}/security/ip/import` | Session | Import per-site IP rules from CSV |
+| `GET` | `/api/sites/{id}/security/ua/export` | Session | Export per-site UA rules as CSV |
+| `POST` | `/api/sites/{id}/security/ua/import` | Session | Import per-site UA rules from CSV |
 
 ---
 
@@ -1204,102 +1215,46 @@ Overwrites the entire config section with built-in defaults and rewrites the fil
 
 > All user endpoints require Admin role.
 
-**List all users**
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/users` | Admin | List all users |
+| `POST` | `/api/users` | Admin | Create a user |
+| `GET` | `/api/users/{id}` | Admin | Get a user |
+| `PUT` | `/api/users/{id}` | Admin | Update a user |
+| `DELETE` | `/api/users/{id}` | Admin | Delete a user |
+| `POST` | `/api/users/{id}/totp/setup` | Admin / Self | Generate TOTP secret and provisioning URI |
+| `POST` | `/api/users/{id}/totp/confirm` | Admin / Self | Confirm TOTP code and activate 2FA |
+| `DELETE` | `/api/users/{id}/totp` | Admin / Self | Disable TOTP for a user |
 
-```
-GET /api/users
-```
+---
 
-**Get a user**
+### Settings
 
-```
-GET /api/users/{id}
-```
+> All settings endpoints require Admin role.
 
-**Create a user**
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/settings` | Admin | Get general settings |
+| `PUT` | `/api/settings` | Admin | Update general settings |
+| `GET` | `/api/settings/export` | Admin | Export all settings as JSON |
+| `POST` | `/api/settings/import` | Admin | Import settings from JSON |
+| `GET` | `/api/settings/backup` | Admin | Get backup and S3 settings |
+| `PUT` | `/api/settings/backup` | Admin | Update backup and S3 settings |
 
-```
-POST /api/users
-```
+---
 
-```json
-{
-  "uname": "jdoe",
-  "password": "securepassword",
-  "fname": "John",
-  "lname": "Doe",
-  "email": "jdoe@example.com",
-  "phone": "555-1234",
-  "role": 50
-}
-```
+### Backups
 
-**Update a user**
-
-```
-PUT /api/users/{id}
-```
-
-All fields are optional. Admin-only fields: `uname` (must be unique), `role`. Providing `password` immediately invalidates all existing sessions for that user.
-
-```json
-{
-  "uname": "newusername",
-  "fname": "Jane",
-  "lname": "Doe",
-  "email": "jane@example.com",
-  "phone": "555-5678",
-  "role": 99,
-  "password": "newpassword"
-}
-```
-
-**Setup TOTP**
-
-```
-POST /api/users/{id}/totp/setup
-```
-
-Generates a new TOTP secret and returns the provisioning URI. Admin or self only.
-
-```json
-{
-  "secret": "BASE32SECRETKEY",
-  "uri": "otpauth://totp/PodNest:username?secret=...&issuer=PodNest"
-}
-```
-
-**Confirm and activate TOTP**
-
-```
-POST /api/users/{id}/totp/confirm
-```
-
-Verifies the provided 6-digit code against the pending secret and activates TOTP for the user. Admin or self only.
-
-```json
-{ "code": "123456" }
-```
-
-Returns `200 OK` with `{ "status": "ok" }` on success.
-
-**Disable TOTP**
-
-```
-DELETE /api/users/{id}/totp
-```
-
-Removes the TOTP secret and disables two-factor authentication for the user. Admin or self only.
-
-Returns `200 OK` with `{ "status": "ok" }` on success.
-
-**Delete a user**
-
-```
-DELETE /api/users/{id}
-```
-
-Returns `204 No Content` on success.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/sites/{id}/backup-repo` | Session | Get backup destination config |
+| `PUT` | `/api/sites/{id}/backup-repo` | Session | Update backup destination flags |
+| `GET` | `/api/sites/{id}/backups` | Session | List all snapshots for a site |
+| `POST` | `/api/sites/{id}/backups` | Session | Trigger an immediate backup |
+| `POST` | `/api/sites/{id}/backups/{bid}/restore` | Session | Restore from a snapshot |
+| `GET` | `/api/sites/{id}/backups/{bid}/download` | Session | Download snapshot as `.tar.gz` |
+| `DELETE` | `/api/sites/{id}/backups/{bid}` | Session | Delete a snapshot |
+| `GET` | `/api/sites/{id}/backups/restore-status` | Session | Check if a restore is in progress |
 
 ---
 
@@ -1311,20 +1266,26 @@ GET /api/sites/{id}/logs?container=nginx&tail=100
 
 Upgrades to a WebSocket connection and streams live logs from the specified container.
 
-**Query parameters:**
-
 | Parameter | Default | Options | Description |
 |---|---|---|---|
 | `container` | `nginx` | `nginx`, `php`, `db`, `redis`, `app` | Which container to tail |
-| `tail` | `100` | `1`–`5000` | Number of historical lines to include before following |
+| `tail` | `100` | `1`–`5000` | Number of historical lines before following |
+
+---
+
+### WP-CLI WebSocket Terminal
+
+```
+GET /api/sites/{id}/wpcli
+```
+
+Upgrades to a WebSocket connection. Send a text message containing the WP-CLI command (without the `wp` prefix). The response streams the command output back as text frames until the command completes. WordPress sites only.
 
 [▲ Back to Top](#PodNest)
 
 ---
 
 ## License
-
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [LIVE LOGS](#live-logs) | [USER MANAGEMENT](#user-management) | [BACKUP & RESTORE](#backup--restore) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest is licensed under the [MIT License](LICENSE). See the `LICENSE` file in the repository for the full license text.
 
@@ -1342,7 +1303,7 @@ This project is provided as-is through GitHub. **Paid support is available** for
 
 ## Planned / In The Works
 
-The following features are actively planned or currently in development. This list represents the roadmap for PodNest — contributions and feedback are welcome.
+The following features are actively planned or currently in development. Contributions and feedback are welcome.
 
 ### Infrastructure
 
@@ -1354,17 +1315,18 @@ The following features are actively planned or currently in development. This li
 
 | Feature | Description |
 |---|---|
+| **Site Traffic** | Per-site traffic analytics collected in the background: total requests (today vs yesterday), top 10 IPs and User-Agents by request count, status code breakdown (2xx/3xx/4xx/5xx), and total bandwidth served. |
 | **Cloning / One-Click Staging** | Duplicate a live site to a staging environment with a single click — files, database, and all |
 | **PHP Version Switching** | Change a site's PHP version and recreate the pod without losing data |
-| **Bulk Site Operations** | Start, stop, restart and recreate selectable pods |
+| **Bulk Site Operations** | Start, stop, restart, and recreate selectable pods at once |
 
 ### Operations
 
 | Feature | Description |
 |---|---|
 | **Resource Monitoring** | Per-pod CPU, memory, and disk usage visible in the UI |
-| **Uptime / Health Monitoring** | Per-site health checks with configurable alerting |
-| **Audit Log** | Tracking for actions taken in the panel |
+| **Site Health Monitoring** | Per-site health checks with status tracking and alerting |
+| **Audit Log** | Per-user action tracking for all panel operations |
 
 ### Developer
 
