@@ -1235,8 +1235,6 @@ The following features are actively planned or currently in development. This li
 | Feature | Description |
 |---|---|
 | **Cloning / One-Click Staging** | Duplicate a live site to a staging environment with a single click — files, database, and all |
-| **Backup / Restore** | Scheduled or on-demand backup of site files and database with one-click restore |
-| **WordPress Auto-Install** | Provision a fresh WordPress install on site creation with configurable admin credentials |
 | **PHP Version Switching** | Change a site's PHP version and recreate the pod without losing data |
 | **Custom Environment Variables** | Per-site environment variables injected into containers at runtime |
 
@@ -1253,6 +1251,5 @@ The following features are actively planned or currently in development. This li
 | Feature | Description |
 |---|---|
 | **Git Deploy** | Push-to-deploy via webhook integration |
-| **Multi-Server Support** | Manage pods across multiple Podman hosts from a single UI |
 
 [▲ Back to Top](#PodNest)
