@@ -1,7 +1,9 @@
 package backup
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -9,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1042,6 +1045,174 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 	}
 
 	logger.Debug("DeleteSnapshot: removed snapshots for tag %s", b.SnapshotID)
+	return nil
+}
+
+// Export streams a complete site backup as a gzip-compressed tar archive to w.
+// The archive contains the full file tree from the files snapshot plus the
+// database dump extracted from the DB snapshot, giving the caller a single
+// self-contained archive restorable without restic.
+func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.Backup, w io.Writer) error {
+	repo, err := db.GetBackupRepo(m.db, site.ID)
+	if err != nil || repo == nil {
+		return fmt.Errorf("export: no repo configured for site %s", site.Name)
+	}
+
+	s3, err := m.loadS3Config()
+	if err != nil {
+		return err
+	}
+
+	// resolve which repo to export from based on the backup type
+	var repoPath string
+	var env []string
+	switch backup.BackupType {
+	case models.BackupTypeLocal:
+		repoPath = repo.LocalPath
+		env = resticEnv(repo.RepoPassword, nil)
+	case models.BackupTypeS3:
+		if s3 == nil {
+			return fmt.Errorf("export: S3 not configured")
+		}
+		repoPath = s3RepoURL(s3.endpoint, s3.bucket, site.Name)
+		env = resticEnv(repo.RepoPassword, s3)
+	default:
+		return fmt.Errorf("export: unknown backup type %d", backup.BackupType)
+	}
+
+	// find the file snapshot ID up front so we fail fast before writing output
+	fileSnapID, err := m.findSnapshot(ctx, repoPath, env, backup.SnapshotID, "files")
+	if err != nil {
+		return fmt.Errorf("export: find file snapshot: %w", err)
+	}
+
+	logger.Debug("Export: fileSnapID=%q repoPath=%q", fileSnapID, repoPath)
+
+	// restore the file snapshot to a temp directory — avoids relying on
+	// restic's --archive tar flag which is not available in all versions
+	tmpDir, err := os.MkdirTemp("", "podnest-export-*")
+	if err != nil {
+		return fmt.Errorf("export: create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	restoreCmd := exec.CommandContext(ctx, resticBin,
+		"-r", repoPath, "restore", fileSnapID,
+		"--target", tmpDir,
+		"--exclude", "*/nginx/cache/*",
+	)
+	restoreCmd.Env = env
+
+	var restoreStderr bytes.Buffer
+	restoreCmd.Stderr = &restoreStderr
+
+	if err := restoreCmd.Run(); err != nil {
+		return fmt.Errorf("export: restic restore: %w — %s", err, restoreStderr.String())
+	}
+
+	// restic restores to tmpDir + original absolute path, e.g.
+	// tmpDir/home/sites/sites/testsite/html/...
+	siteRestoreDir := filepath.Join(tmpDir, m.appPath, "sites", site.Name)
+
+	// wrap the response writer in gzip then tar
+	gz := gzip.NewWriter(w)
+	tw := tar.NewWriter(gz)
+
+	// walk the restored site directory and emit each entry into the tar stream
+	err = filepath.Walk(siteRestoreDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// get the path relative to the site root for clean archive entries
+		rel, err := filepath.Rel(siteRestoreDir, path)
+		if err != nil {
+			return fmt.Errorf("export: rel path: %w", err)
+		}
+
+		// skip the nginx cache directory — ephemeral and potentially large
+		if strings.HasPrefix(rel, "nginx/cache") {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// build the tar header from the file's metadata
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return fmt.Errorf("export: tar header for %s: %w", rel, err)
+		}
+		hdr.Name = rel
+
+		if err := tw.WriteHeader(hdr); err != nil {
+			return fmt.Errorf("export: write header %s: %w", rel, err)
+		}
+
+		// copy regular file contents into the tar stream
+		if info.Mode().IsRegular() {
+			f, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("export: open %s: %w", rel, err)
+			}
+			defer f.Close()
+			if _, err := io.Copy(tw, f); err != nil {
+				return fmt.Errorf("export: write %s: %w", rel, err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("export: walk restore dir: %w", err)
+	}
+
+	// -- database dump -------------------------------------------------------
+
+	// only sites with a MariaDB container have a DB snapshot
+	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
+		dbSnapID, err := m.findSnapshot(ctx, repoPath, env, backup.SnapshotID, "db")
+		if err != nil {
+			return fmt.Errorf("export: find db snapshot: %w", err)
+		}
+
+		// buffer the SQL so we know the byte size before writing the tar header
+		dbCmd := exec.CommandContext(ctx, resticBin,
+			"-r", repoPath, "dump", dbSnapID, "db_dump.sql",
+		)
+		dbCmd.Env = env
+
+		var dbStderr bytes.Buffer
+		dbCmd.Stderr = &dbStderr
+
+		sqlData, err := dbCmd.Output()
+		if err != nil {
+			return fmt.Errorf("export: restic dump db: %w — %s", err, dbStderr.String())
+		}
+
+		// write db_dump.sql as a top-level entry in the archive
+		if err := tw.WriteHeader(&tar.Header{
+			Name:    "db_dump.sql",
+			Size:    int64(len(sqlData)),
+			Mode:    0644,
+			ModTime: backup.Created,
+		}); err != nil {
+			return fmt.Errorf("export: write db header: %w", err)
+		}
+		if _, err := tw.Write(sqlData); err != nil {
+			return fmt.Errorf("export: write db entry: %w", err)
+		}
+	}
+
+	// flush tar and gzip writers to ensure all data reaches the response writer
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("export: close tar: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("export: close gzip: %w", err)
+	}
+
+	logger.Info("Export: completed archive for site %s backup %d", site.Name, backup.ID)
 	return nil
 }
 

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -241,4 +242,63 @@ func (s *Server) apiDeleteBackup(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug("apiDeleteBackup: deleted backup %d for site %d", bid, site.ID)
 	apiJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// apiDownloadBackup streams the backup as a gzip-compressed tar archive.
+// The response headers trigger a browser file-save dialog immediately so the
+// client receives the download as soon as the server begins streaming.
+func (s *Server) apiDownloadBackup(w http.ResponseWriter, r *http.Request) {
+	site, ok := s.resolveSite(w, r)
+	if !ok {
+		return
+	}
+
+	// parse the backup ID from the path
+	bidStr := r.PathValue("bid")
+	bid, err := strconv.ParseInt(bidStr, 10, 64)
+	if err != nil {
+		logger.Error("apiDownloadBackup: invalid backup id '%s'", bidStr)
+		apiErrorMsg(w, http.StatusBadRequest, "invalid backup id")
+		return
+	}
+
+	backup, err := db.GetBackup(s.cfg.DB, bid)
+	if err != nil {
+		logger.Error("apiDownloadBackup: get backup %d: %v", bid, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if backup == nil {
+		apiErrorMsg(w, http.StatusNotFound, "backup not found")
+		return
+	}
+
+	// ensure the backup belongs to the requested site
+	if backup.SiteID != site.ID {
+		apiErrorMsg(w, http.StatusForbidden, "backup does not belong to this site")
+		return
+	}
+
+	// build a descriptive filename: sitename-YYYY-MM-DD-backupID.tar.gz
+	filename := fmt.Sprintf("%s-%s-%d.tar.gz",
+		site.Name,
+		backup.Created.UTC().Format("2006-01-02"),
+		backup.ID,
+	)
+
+	// set headers before writing any body — once streaming starts headers
+	// are locked in and the browser will begin the file-save dialog
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx proxy buffering if present
+
+	logger.Info("apiDownloadBackup: streaming backup %d for site %s as %s", bid, site.Name, filename)
+
+	// stream the archive directly to the response writer; Export handles
+	// all tar/gzip assembly and flushes on completion
+	if err := s.backup.Export(r.Context(), site, backup, w); err != nil {
+		// headers are already sent so we can't return a JSON error — log it
+		logger.Error("apiDownloadBackup: export failed for backup %d: %v", bid, err)
+	}
 }

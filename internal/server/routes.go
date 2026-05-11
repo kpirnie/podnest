@@ -110,6 +110,7 @@ func (s *Server) routes() http.Handler {
 	api.Handle("GET /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetBackupSettings)))
 	api.Handle("PUT /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateBackupSettings)))
 	api.HandleFunc("GET /sites/{id}/backups/restore-status", s.apiRestoreStatus)
+	api.HandleFunc("GET /sites/{id}/backups/{bid}/download", s.apiDownloadBackup)
 
 	// WebSocket log tail
 	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)

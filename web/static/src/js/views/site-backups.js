@@ -76,6 +76,10 @@ function renderBackupList(backups) {
             <td>${new Date(b.Created).toLocaleString()}</td>
             <td>
                 <div class="uk-flex" style="gap:6px">
+                    <button class="uk-button kp-btn-ghost kp-btn-sm backup-download-btn"
+                        data-id="${b.ID}" uk-tooltip="Download backup archive">
+                        <span uk-icon="download"></span>
+                    </button>
                     <button class="uk-button kp-btn-secondary kp-btn-sm backup-restore-btn"
                         data-id="${b.ID}" uk-tooltip="Restore from this snapshot">
                         <span uk-icon="history"></span>
@@ -240,6 +244,38 @@ export function wireBackupsPanel(root, siteId) {
                 hideProgressModal();
                 toast.error(err.message);
             }
+        }
+
+        // download
+        const downloadBtn = e.target.closest(".backup-download-btn");
+        if (downloadBtn) {
+            const bid = downloadBtn.dataset.id;
+
+            showProgressModal(
+                "Preparing Download",
+                "Your backup archive is being generated — this may take a moment depending on site size. Your download will begin automatically. Do not close this tab."
+            );
+
+            // give the modal time to render before the browser download dialog
+            // potentially blocks the UI, then trigger via a hidden anchor
+            setTimeout(() => {
+                const a = document.createElement("a");
+                a.href = `/api/sites/${siteId}/backups/${bid}/download`;
+                a.style.display = "none";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                // dismiss the modal after a reasonable delay — we can't detect
+                // when the browser finishes downloading so we give it 5 seconds
+                // which is enough time for the response headers to arrive and
+                // the save dialog to appear
+                setTimeout(() => {
+                    hideProgressModal();
+                }, 5000);
+            }, 300);
+
+            return;
         }
         
     });
