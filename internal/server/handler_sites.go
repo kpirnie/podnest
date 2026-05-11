@@ -283,16 +283,24 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// build a config map to extract varnish settings for the pod config
+	cfgMapForPod := make(map[int]string)
+	for _, c := range configs {
+		cfgMapForPod[c.Type] = c.Config
+	}
+
 	// provision the Podman pod with all required containers
 	podCfg := podman.SiteConfig{
-		Site:       site,
-		SiteUID:    sftpUID,
-		SiteDir:    hostSiteDir,
-		DBName:     site.Name,
-		DBUser:     dbUser,
-		DBPass:     dbPass,
-		DBRootPass: dbRootPass,
-		RedisPass:  redisPass,
+		Site:           site,
+		SiteUID:        sftpUID,
+		SiteDir:        hostSiteDir,
+		DBName:         site.Name,
+		DBUser:         dbUser,
+		DBPass:         dbPass,
+		DBRootPass:     dbRootPass,
+		RedisPass:      redisPass,
+		VarnishEnabled: config.VarnishEnabled(cfgMapForPod[models.ConfigVarnish]),
+		VarnishMemory:  config.VarnishMemorySize(cfgMapForPod[models.ConfigVarnish]),
 	}
 	podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer podCancel()
@@ -485,7 +493,7 @@ func (s *Server) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 	apiJSON(w, http.StatusOK, map[string]string{"status": "running"})
 }
 
-// apiSiteFlush clears the nginx FastCGI cache for a site
+// apiSiteFlush clears the nginx FastCGI cache, PHP OPcache, and Varnish cache for a site
 func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 	site, ok := s.resolveSite(w, r)
 	if !ok {
@@ -503,6 +511,16 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
 		if err := s.podman.FlushPHPCache(r.Context(), podman.ContainerName(site.Name, "php")); err != nil {
 			logger.Error("failed to flush php opcache for site %d: %v", site.ID, err)
+			apiError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// flush varnish cache if enabled for this site
+	varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
+	if varnishCfg != nil && config.VarnishEnabled(varnishCfg.Config) {
+		if err := s.podman.FlushVarnishCache(r.Context(), podman.ContainerName(site.Name, "varnish")); err != nil {
+			logger.Error("failed to flush varnish cache for site %d: %v", site.ID, err)
 			apiError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -618,6 +636,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 		siteDir + "/php-fpm",
 		siteDir + "/db",
 		siteDir + "/redis",
+		siteDir + "/varnish",
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -692,6 +711,9 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 		cfgMap[c.Type] = c.Config
 	}
 
+	// determine if varnish is enabled for this site
+	vEnabled := config.VarnishEnabled(cfgMap[models.ConfigVarnish])
+
 	// render and write the nginx main config
 	nginxMain, err := config.RenderNginxMain(cfgMap[models.ConfigNginx])
 	if err != nil {
@@ -704,7 +726,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 	}
 
 	// render and write the nginx site server block
-	nginxSite, err := config.RenderNginxSite(cfgMap[models.ConfigNginx], site.SiteType)
+	nginxSite, err := config.RenderNginxSite(cfgMap[models.ConfigNginx], site.SiteType, vEnabled)
 	if err != nil {
 		logger.Error("failed to create nginx site block")
 		return err
@@ -770,6 +792,18 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 		}
 	}
 
+	// always write the VCL file so the bind mount target exists on disk;
+	// varnish will only be started if enabled in the pod config
+	vclContent, err := config.RenderVarnish(cfgMap[models.ConfigVarnish])
+	if err != nil {
+		logger.Error("failed to render varnish VCL")
+		return err
+	}
+	if err := os.WriteFile(siteDir+"/varnish/default.vcl", []byte(vclContent), 0644); err != nil {
+		logger.Error("failed to write varnish VCL file")
+		return err
+	}
+
 	logger.Debug("created and wrote the sites configurations")
 	return nil
 }
@@ -798,6 +832,12 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.podman.RemoveSitePod(bgCtx, site.Name); err != nil {
 		logger.Warn("remove pod %s: %v", site.Name, err)
+	}
+
+	// clear nginx fastcgi cache before recreate — stale subdirectory permissions
+	// from the previous pod run cause nginx workers to get permission denied on startup
+	if err := clearDirContents(siteDir + "/nginx/cache/wp"); err != nil {
+		logger.Warn("could not clear nginx cache for site %s: %v", site.Name, err)
 	}
 
 	// with the pod stopped (no container writing to html/), clear and switch type if requested
@@ -836,16 +876,46 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	dbRootPass, _ := readEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
 	redisPass, _ := readEnvValue(siteDir+"/.env", "REDIS_PASS")
 
+	// fetch the varnish config to determine if it should be provisioned
+	varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
+	var varnishCfgJSON string
+	if varnishCfg != nil {
+		varnishCfgJSON = varnishCfg.Config
+	} else {
+		// seed default varnish config for sites that predate this feature
+		blob, _ := config.MarshalDefaults(models.ConfigVarnish)
+		_ = db.UpsertConfig(s.cfg.DB, &models.Config{
+			SiteID: site.ID,
+			Type:   models.ConfigVarnish,
+			Config: blob,
+		})
+		varnishCfgJSON = blob
+		logger.Debug("seeded default varnish config for pre-existing site %d", site.ID)
+	}
+
+	// ensure the varnish directory and VCL file exist on disk for pre-existing sites
+	varnishDir := siteDir + "/varnish"
+	if err := os.MkdirAll(varnishDir, 0755); err != nil {
+		logger.Warn("could not create varnish dir for site %s: %v", site.Name, err)
+	}
+	if vclContent, err := config.RenderVarnish(varnishCfgJSON); err == nil {
+		if err := os.WriteFile(varnishDir+"/default.vcl", []byte(vclContent), 0644); err != nil {
+			logger.Warn("could not write varnish VCL for site %s: %v", site.Name, err)
+		}
+	}
+
 	// build the pod config using the existing credentials and recreate the pod
 	podCfg := podman.SiteConfig{
-		Site:       site,
-		SiteUID:    sftp.UIDForSite(site.ID),
-		SiteDir:    hostSiteDir,
-		DBName:     site.Name,
-		DBUser:     dbUser,
-		DBPass:     dbPass,
-		DBRootPass: dbRootPass,
-		RedisPass:  redisPass,
+		Site:           site,
+		SiteUID:        sftp.UIDForSite(site.ID),
+		SiteDir:        hostSiteDir,
+		DBName:         site.Name,
+		DBUser:         dbUser,
+		DBPass:         dbPass,
+		DBRootPass:     dbRootPass,
+		RedisPass:      redisPass,
+		VarnishEnabled: config.VarnishEnabled(varnishCfgJSON),
+		VarnishMemory:  config.VarnishMemorySize(varnishCfgJSON),
 	}
 
 	// try to create the sites pod

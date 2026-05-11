@@ -25,20 +25,22 @@ const (
 
 // SiteConfig holds everything needed to create a full WordPress pod
 type SiteConfig struct {
-	Site        *models.Site
-	SiteUID     int
-	SiteDir     string
-	DBName      string
-	DBUser      string
-	DBPass      string
-	DBRootPass  string
-	RedisPass   string
-	NginxConf   string
-	NginxSite   string
-	PHPFPMConf  string
-	PHPIniConf  string
-	MariaDBConf string
-	RedisConf   string
+	Site           *models.Site
+	SiteUID        int
+	SiteDir        string
+	DBName         string
+	DBUser         string
+	DBPass         string
+	DBRootPass     string
+	RedisPass      string
+	NginxConf      string
+	NginxSite      string
+	PHPFPMConf     string
+	PHPIniConf     string
+	MariaDBConf    string
+	RedisConf      string
+	VarnishEnabled bool
+	VarnishMemory  string
 }
 
 // PodName returns the canonical pod name for a site
@@ -70,6 +72,11 @@ func (c *Client) CreateSitePod(ctx context.Context, cfg SiteConfig) error {
 		images = append(images, imgDB, imgRedis, imgPMA, models.RuntimeImage(cfg.Site))
 	case models.SiteTypeDotNet:
 		images = append(images, imgDB, imgRedis, imgPMA, models.RuntimeImage(cfg.Site))
+	}
+
+	// pull the varnish image if enabled for this site
+	if cfg.VarnishEnabled {
+		images = append(images, models.ImgVarnish)
 	}
 
 	// iterate over the list of images and pull them before creating the pod; this ensures all images are available locally and avoids partial pod creation if a pull fails after the pod is created
@@ -139,6 +146,15 @@ func (c *Client) CreateSitePod(ctx context.Context, cfg SiteConfig) error {
 		return err
 	}
 
+	// varnish sits in front of nginx when enabled; provisioned after nginx
+	// so the backend is available when varnish starts
+	if cfg.VarnishEnabled {
+		if err := c.createVarnish(ctx, cfg); err != nil {
+			logger.Error("Failed to create varnish in pod %s: %v", podName, err)
+			return err
+		}
+	}
+
 	// setup the phpMyAdmin container for dynamic site types; this provides a web-based interface to manage the MariaDB database, and is configured to connect to the internal MariaDB container with the appropriate credentials; it is not created for static sites since they do not have a database
 	if cfg.Site.SiteType != models.SiteTypeStatic {
 		if err := c.createPMA(ctx, cfg); err != nil {
@@ -160,6 +176,47 @@ func (c *Client) RemoveSitePod(ctx context.Context, siteName string) error {
 // SiteStatus returns the pod inspect for a site
 func (c *Client) SiteStatus(ctx context.Context, siteName string) (*PodInspect, error) {
 	return c.InspectPod(ctx, PodName(siteName))
+}
+
+// createVarnish provisions the Varnish container inside the pod, listening on
+// port 80 and proxying to the nginx container on VarnishNginxPort; the VCL
+// file must already exist on disk before this is called
+func (c *Client) createVarnish(ctx context.Context, cfg SiteConfig) error {
+	podName := PodName(cfg.Site.Name)
+
+	// fall back to the default memory size if none was provided
+	memSize := cfg.VarnishMemory
+	if memSize == "" {
+		memSize = "256m"
+	}
+
+	_, err := c.CreateContainer(ctx, ContainerSpec{
+		Name:  ContainerName(cfg.Site.Name, "varnish"),
+		Image: models.ImgVarnish,
+		Pod:   podName,
+		Env: map[string]string{
+			"VARNISH_SIZE":      memSize,
+			"VARNISH_HTTP_PORT": "80",
+		},
+		Mounts: []Mount{
+			{
+				Type:        "bind",
+				Source:      cfg.SiteDir + "/varnish/default.vcl",
+				Destination: "/etc/varnish/default.vcl",
+				Options:     []string{"ro", "z"},
+			},
+		},
+		CapDrop: []string{"ALL"},
+		CapAdd:  []string{"SETUID", "SETGID", "IPC_LOCK"},
+		SecOpts: []string{secNoNewPriv},
+	})
+	if err != nil {
+		logger.Error("Failed to create varnish in pod %s: %v", podName, err)
+		return err
+	}
+
+	logger.Debug("Created varnish container for pod %s (memory: %s)", podName, memSize)
+	return c.StartContainer(ctx, ContainerName(cfg.Site.Name, "varnish"))
 }
 
 // createPMA provisions the phpMyAdmin container bound to the internal PMA port

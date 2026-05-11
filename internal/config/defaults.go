@@ -108,7 +108,7 @@ var DefaultMariaDB = map[string]string{
 
 // setup and hold the default redis config for new sites
 var DefaultRedis = map[string]string{
-	"maxmemory":              "256mb",
+	"maxmemory":              "512mb",
 	"maxmemory_policy":       "allkeys-lru",
 	"tcp_keepalive":          "300",
 	"hz":                     "10",
@@ -119,6 +119,21 @@ var DefaultRedis = map[string]string{
 	"lazyfree_lazy_expire":   "yes",
 	"save":                   "",
 	"appendonly":             "no",
+}
+
+// setup and hold the default varnish config for new sites
+var DefaultVarnish = map[string]string{
+	"enabled":               "false",
+	"memory_size":           "512m",
+	"ttl":                   "120s",
+	"grace":                 "30s",
+	"connect_timeout":       "5s",
+	"first_byte_timeout":    "60s",
+	"between_bytes_timeout": "10s",
+	"bypass_query_strings":  "true",
+	"bypass_paths":          "/wp-admin,/wp-login.php,/xmlrpc.php,/wp-cron.php,/wp-json,/feed",
+	"bypass_cookies":        "wordpress_logged_in,woocommerce_,wp_woocommerce,wordpress_sec",
+	"bypass_extensions":     "",
 }
 
 // DefaultsForType returns the default config map for a given config type constant
@@ -136,6 +151,9 @@ func DefaultsForType(configType int) (map[string]string, error) {
 	case models.ConfigRedis:
 		logger.Debug("returning default redis config")
 		return DefaultRedis, nil
+	case models.ConfigVarnish:
+		logger.Debug("returning default varnish config")
+		return DefaultVarnish, nil
 	default:
 		logger.Error("unknown config type: %d", configType)
 		return nil, fmt.Errorf("unknown config type: %d", configType)
@@ -166,8 +184,8 @@ func MarshalDefaults(configType int) (string, error) {
 // SeedSiteConfigs inserts default config rows for all four types for a new site
 func SeedSiteConfigs(siteID int64, siteType int) ([]*models.Config, error) {
 
-	// setup the config types to create, all sites get nginx, but the others depend on the site type
-	types := []int{models.ConfigNginx}
+	// all site types get nginx and varnish (disabled by default)
+	types := []int{models.ConfigNginx, models.ConfigVarnish}
 
 	// add the other types based on the site type
 	switch siteType {

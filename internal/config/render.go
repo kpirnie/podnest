@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"strings"
 )
 
 // RenderNginxMain renders the nginx.conf from a config JSON blob
@@ -126,23 +127,26 @@ http {
 	), nil
 }
 
-// RenderNginxSite renders the per-site server block (conf.d/site.conf)
-func RenderNginxSite(configJSON string, siteType int) (string, error) {
-
-	// The site.conf is rendered differently based on the site type (PHP, Node.js, .NET, or static)
+// RenderNginxSite renders the per-site server block (conf.d/site.conf).
+// When varnishEnabled is true, nginx listens on VarnishNginxPort instead of 80.
+func RenderNginxSite(configJSON string, siteType int, varnishEnabled bool) (string, error) {
+	listenPort := 80
+	if varnishEnabled {
+		listenPort = models.VarnishNginxPort
+	}
 	switch siteType {
 	case models.SiteTypeNode:
 		logger.Debug("rendering nginx.conf for Node.js site")
-		return renderNginxProxy(configJSON, models.NodeInternalPort)
+		return renderNginxProxy(configJSON, models.NodeInternalPort, listenPort)
 	case models.SiteTypeDotNet:
 		logger.Debug("rendering nginx.conf for .NET site")
-		return renderNginxProxy(configJSON, models.DotNetInternalPort)
+		return renderNginxProxy(configJSON, models.DotNetInternalPort, listenPort)
 	case models.SiteTypeStatic:
 		logger.Debug("rendering nginx.conf for static site")
-		return renderNginxStatic(configJSON)
+		return renderNginxStatic(configJSON, listenPort)
 	default:
 		logger.Debug("rendering nginx.conf for PHP site")
-		return renderNginxPHP(configJSON)
+		return renderNginxPHP(configJSON, listenPort)
 	}
 }
 
@@ -413,10 +417,127 @@ io-threads-do-reads %s
 	), nil
 }
 
+// VarnishEnabled reports whether varnish is enabled in a config JSON blob
+func VarnishEnabled(configJSON string) bool {
+	if configJSON == "" {
+		return false
+	}
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		return false
+	}
+	return strings.ToLower(cfg["enabled"]) == "true"
+}
+
+// VarnishMemorySize returns the memory_size value from a varnish config JSON blob
+func VarnishMemorySize(configJSON string) string {
+	if configJSON == "" {
+		return DefaultVarnish["memory_size"]
+	}
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		return DefaultVarnish["memory_size"]
+	}
+	return get(cfg, "memory_size", DefaultVarnish)
+}
+
+// RenderVarnish renders the Varnish VCL configuration file from a config JSON blob
+func RenderVarnish(configJSON string) (string, error) {
+	cfg, err := unmarshal(configJSON)
+	if err != nil {
+		logger.Error("failed to unmarshal config JSON for Varnish: %v", err)
+		return "", err
+	}
+
+	v := func(key string) string { return get(cfg, key, DefaultVarnish) }
+
+	// build the vcl_recv bypass blocks from the configurable ignore types
+	var bypasses strings.Builder
+
+	if v("bypass_query_strings") == "true" {
+		bypasses.WriteString("\n\t# bypass if a query string is present\n\tif (req.url ~ \"\\?\") {\n\t\treturn (pass);\n\t}\n")
+	}
+
+	if pattern := buildCSVPattern(v("bypass_paths")); pattern != "" {
+		bypasses.WriteString(fmt.Sprintf(
+			"\n\t# bypass configured paths\n\tif (req.url ~ \"^(%s)\") {\n\t\treturn (pass);\n\t}\n",
+			pattern,
+		))
+	}
+
+	if pattern := buildCSVPattern(v("bypass_cookies")); pattern != "" {
+		bypasses.WriteString(fmt.Sprintf(
+			"\n\t# bypass for configured cookies (logged-in users, session holders, etc.)\n\tif (req.http.Cookie ~ \"(%s)\") {\n\t\treturn (pass);\n\t}\n",
+			pattern,
+		))
+	}
+
+	if pattern := buildExtPattern(v("bypass_extensions")); pattern != "" {
+		bypasses.WriteString(fmt.Sprintf(
+			"\n\t# bypass configured file extensions\n\tif (req.url ~ \"\\.(%s)(\\?|$)\") {\n\t\treturn (pass);\n\t}\n",
+			pattern,
+		))
+	}
+
+	logger.Debug("rendering varnish VCL with config: %v", cfg)
+
+	return fmt.Sprintf(`vcl 4.1;
+
+import std;
+
+backend default {
+    .host                  = "127.0.0.1";
+    .port                  = "%d";
+    .connect_timeout       = %s;
+    .first_byte_timeout    = %s;
+    .between_bytes_timeout = %s;
+}
+
+sub vcl_recv {
+    # always pass non-cacheable HTTP methods
+    if (req.method != "GET" && req.method != "HEAD") {
+        return (pass);
+    }
+%s
+    # strip cookies from cacheable requests to allow caching
+    unset req.http.Cookie;
+}
+
+sub vcl_backend_response {
+    set beresp.ttl   = %s;
+    set beresp.grace = %s;
+
+    # do not cache server errors
+    if (beresp.status >= 500) {
+        set beresp.uncacheable = true;
+        set beresp.ttl = 0s;
+    }
+}
+
+sub vcl_deliver {
+    if (obj.hits > 0) {
+        set resp.http.X-Cache = "HIT";
+    } else {
+        set resp.http.X-Cache = "MISS";
+    }
+    unset resp.http.Via;
+    unset resp.http.X-Varnish;
+}
+`,
+		models.VarnishNginxPort,
+		v("connect_timeout"),
+		v("first_byte_timeout"),
+		v("between_bytes_timeout"),
+		bypasses.String(),
+		v("ttl"),
+		v("grace"),
+	), nil
+}
+
 // -- internal ----------------------------------------------------------------
 
 // renderNginxPHP renders the server block for WordPress and PHP sites
-func renderNginxPHP(configJSON string) (string, error) {
+func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 
 	// The PHP server block is rendered with the PHP-specific directives, including the FastCGI cache settings
 	cfg, err := unmarshal(configJSON)
@@ -431,7 +552,7 @@ func renderNginxPHP(configJSON string) (string, error) {
 	logger.Debug("rendering Nginx PHP server block with config: %v", cfg)
 
 	return fmt.Sprintf(`server {
-    listen 80;
+    listen %d;
     server_name _;
 
     root  /var/www/html;
@@ -535,13 +656,14 @@ func renderNginxPHP(configJSON string) (string, error) {
     include /var/www/html/.nginx.conf*;
 }
 `,
+		listenPort,
 		v("limit_conn_addr"),
 		v("fastcgi_cache_valid"),
 	), nil
 }
 
 // renderNginxProxy renders the server block for Node.js and .NET sites
-func renderNginxProxy(configJSON string, upstreamPort int) (string, error) {
+func renderNginxProxy(configJSON string, upstreamPort int, listenPort int) (string, error) {
 
 	// The proxy server block is rendered with the proxy_pass directive pointing to the appropriate upstream port
 	cfg, err := unmarshal(configJSON)
@@ -556,7 +678,7 @@ func renderNginxProxy(configJSON string, upstreamPort int) (string, error) {
 	logger.Debug("rendering Nginx proxy server block with config: %v", cfg)
 
 	return fmt.Sprintf(`server {
-    listen 80;
+    listen %d;
     server_name _;
 
 	access_log /dev/stdout main;
@@ -609,6 +731,7 @@ func renderNginxProxy(configJSON string, upstreamPort int) (string, error) {
     location ~ /\. { deny all; }
 }
 `,
+		listenPort,
 		v("limit_conn_addr"),
 		upstreamPort,
 		upstreamPort,
@@ -616,7 +739,7 @@ func renderNginxProxy(configJSON string, upstreamPort int) (string, error) {
 }
 
 // renderNginxStatic renders the server block for static HTML sites
-func renderNginxStatic(configJSON string) (string, error) {
+func renderNginxStatic(configJSON string, listenPort int) (string, error) {
 
 	// The static server block is rendered with the try_files directive and no PHP handling
 	cfg, err := unmarshal(configJSON)
@@ -631,7 +754,7 @@ func renderNginxStatic(configJSON string) (string, error) {
 	logger.Debug("rendering Nginx static server block with config: %v", cfg)
 
 	return fmt.Sprintf(`server {
-    listen 80;
+    listen %d;
     server_name _;
 
     root  /var/www/html;
@@ -682,6 +805,7 @@ func renderNginxStatic(configJSON string) (string, error) {
     include /var/www/html/.nginx.conf*;
 }
 `,
+		listenPort,
 		v("limit_conn_addr"),
 	), nil
 }
@@ -720,4 +844,28 @@ func get(cfg map[string]string, key string, defaults map[string]string) string {
 
 	// If the value is not set in either cfg or defaults, return an empty string
 	return ""
+}
+
+// buildCSVPattern converts a comma-separated list into a VCL alternation pattern
+func buildCSVPattern(csv string) string {
+	var parts []string
+	for _, p := range strings.Split(csv, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, "|")
+}
+
+// buildExtPattern converts a comma-separated extension list (with or without
+// leading dots) into a VCL alternation pattern
+func buildExtPattern(csv string) string {
+	var parts []string
+	for _, p := range strings.Split(csv, ",") {
+		p = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(p), "."))
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, "|")
 }

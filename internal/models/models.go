@@ -19,6 +19,7 @@ const (
 	ImgNode     = "docker.io/library/node:"
 	ImgDotNet   = "mcr.microsoft.com/dotnet/aspnet:"
 	ImgFail2Ban = "ghcr.io/kpirnie/podnest-fail2ban:latest"
+	ImgVarnish  = "docker.io/library/varnish:stable"
 )
 
 // security rule list types
@@ -79,13 +80,15 @@ const (
 	ConfigPHP     = 2
 	ConfigMariaDB = 3
 	ConfigRedis   = 4
+	ConfigVarnish = 5
 )
 
 // node versions
 var NodeVersionMap = map[int]string{
 	2: "22",
-	3: "23",
 	4: "24",
+	5: "25",
+	6: "26",
 }
 
 // .NET versions
@@ -101,6 +104,10 @@ const (
 	DotNetInternalPort = 8080
 	PHPMyAdminPort     = 8082
 )
+
+// nginx internal listen port when Varnish sits in front of it; safe within
+// each pod's isolated network namespace regardless of how many pods exist
+const VarnishNginxPort = 8080
 
 // user data structure
 type User struct {

@@ -419,3 +419,27 @@ func (c *Client) FlushPHPCache(ctx context.Context, containerName string) error 
 	logger.Debug("flushed PHP opcache for container %s", containerName)
 	return nil
 }
+
+// FlushVarnishCache issues a ban-all to the Varnish container via varnishadm,
+// purging all cached objects
+func (c *Client) FlushVarnishCache(ctx context.Context, containerName string) error {
+	spec := map[string]any{
+		"AttachStdout": false,
+		"AttachStderr": false,
+		"Detach":       true,
+		"Cmd":          []string{"varnishadm", "ban", "req.url", "~", "."},
+	}
+	var execResp struct {
+		ID string `json:"Id"`
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+containerName+"/exec", spec, &execResp); err != nil {
+		logger.Error("FlushVarnishCache: failed to create exec in %s: %v", containerName, err)
+		return err
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
+		logger.Error("FlushVarnishCache: failed to start exec in %s: %v", containerName, err)
+		return err
+	}
+	logger.Debug("FlushVarnishCache: ban issued in %s", containerName)
+	return nil
+}

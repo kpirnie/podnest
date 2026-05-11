@@ -222,28 +222,27 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 	// switch on the config type and render/write the appropriate config file(s) to disk based on the merged config blob
 	switch configType {
 	case models.ConfigNginx:
+		// load the varnish config to determine the correct nginx listen port
+		varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
+		vEnabled := false
+		if varnishCfg != nil {
+			vEnabled = config.VarnishEnabled(varnishCfg.Config)
+		}
 
-		// nginx needs the site type — read it from the .env file
 		main, err := config.RenderNginxMain(blob)
 		if err != nil {
 			logger.Error("failed to render nginx main config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// write the main nginx config file to disk
 		if err := writeFile(siteDir+"/nginx/nginx.conf", main, 0644); err != nil {
 			logger.Error("failed to write nginx main config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// render the site nginx config file based on the site type and write it to disk
-		site_, err := config.RenderNginxSite(blob, site.SiteType)
+		site_, err := config.RenderNginxSite(blob, site.SiteType, vEnabled)
 		if err != nil {
 			logger.Error("failed to render nginx site config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// write the site nginx config file to disk
 		return writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644)
 
 	case models.ConfigPHP:
@@ -301,6 +300,41 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 
 		// write the redis config file to disk
 		return writeFile(siteDir+"/redis/redis.conf", redisCfg, 0640)
+
+	case models.ConfigVarnish:
+
+		// rewrite the VCL file from the updated config blob
+		vclContent, err := config.RenderVarnish(blob)
+		if err != nil {
+			logger.Error("failed to render varnish VCL for site %d: %v", site.ID, err)
+			return err
+		}
+		if err := writeFile(siteDir+"/varnish/default.vcl", vclContent, 0644); err != nil {
+			logger.Error("failed to write varnish VCL for site %d: %v", site.ID, err)
+			return err
+		}
+		// rewrite nginx so its listen port reflects the updated varnish enabled state
+		nginxCfg, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigNginx)
+		if err != nil || nginxCfg == nil {
+			logger.Error("failed to fetch nginx config during varnish rewrite for site %d: %v", site.ID, err)
+			return err
+		}
+		vEnabled := config.VarnishEnabled(blob)
+		main, err := config.RenderNginxMain(nginxCfg.Config)
+		if err != nil {
+			logger.Error("failed to render nginx main during varnish rewrite for site %d: %v", site.ID, err)
+			return err
+		}
+		if err := writeFile(siteDir+"/nginx/nginx.conf", main, 0644); err != nil {
+			logger.Error("failed to write nginx main during varnish rewrite for site %d: %v", site.ID, err)
+			return err
+		}
+		site_, err := config.RenderNginxSite(nginxCfg.Config, site.SiteType, vEnabled)
+		if err != nil {
+			logger.Error("failed to render nginx site block during varnish rewrite for site %d: %v", site.ID, err)
+			return err
+		}
+		return writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644)
 	}
 
 	// if we somehow got here, the config type is invalid — log an error and return nil since there's no file to write
@@ -315,10 +349,10 @@ func resolveConfigType(w http.ResponseWriter, r *http.Request) (int, error) {
 	typeStr := r.PathValue("type")
 	t, err := strconv.Atoi(typeStr)
 
-	// validate that the type is 1 (nginx), 2 (php), 3 (mariadb), or 4 (redis)
-	if err != nil || t < 1 || t > 4 {
+	// validate that the type is 1 (nginx), 2 (php), 3 (mariadb), 4 (redis), 5 (varnish)
+	if err != nil || t < 1 || t > 5 {
 		logger.Error("invalid config type in path: %s", typeStr)
-		apiErrorMsg(w, http.StatusBadRequest, "invalid config type — must be 1 (nginx), 2 (php), 3 (mariadb), or 4 (redis)")
+		apiErrorMsg(w, http.StatusBadRequest, "invalid config type — must be 1 (nginx), 2 (php), 3 (mariadb), 4 (redis), or 5 (varnish)")
 		return 0, err
 	}
 
