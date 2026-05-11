@@ -63,11 +63,11 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /sites/{id}/configs/{type}/import", s.apiImportConfig)
 
 	// user management — admin only
-	api.HandleFunc("GET /users", s.apiListUsers)
-	api.HandleFunc("POST /users", s.apiCreateUser)
-	api.HandleFunc("GET /users/{id}", s.apiGetUser)
-	api.HandleFunc("PUT /users/{id}", s.apiUpdateUser)
-	api.HandleFunc("DELETE /users/{id}", s.apiDeleteUser)
+	api.Handle("GET /users", auth.RequireAPIAdmin(http.HandlerFunc(s.apiListUsers)))
+	api.Handle("POST /users", auth.RequireAPIAdmin(http.HandlerFunc(s.apiCreateUser)))
+	api.Handle("GET /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetUser)))
+	api.Handle("PUT /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateUser)))
+	api.Handle("DELETE /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDeleteUser)))
 
 	// TOTP management — admin or self
 	api.HandleFunc("POST /users/{id}/totp/setup", s.apiTOTPSetup)
@@ -130,5 +130,5 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/pma/", http.HandlerFunc(s.handlePMA))
 
 	logger.Debug("routes registered")
-	return mux
+	return securityHeaders(mux)
 }

@@ -1356,7 +1356,6 @@ The following features are actively planned or currently in development. This li
 |---|---|
 | **Cloning / One-Click Staging** | Duplicate a live site to a staging environment with a single click — files, database, and all |
 | **PHP Version Switching** | Change a site's PHP version and recreate the pod without losing data |
-| **Custom Environment Variables** | Per-site environment variables injected into containers at runtime |
 
 ### Operations
 
@@ -1364,7 +1363,7 @@ The following features are actively planned or currently in development. This li
 |---|---|
 | **Resource Monitoring** | Per-pod CPU, memory, and disk usage visible in the UI |
 | **Uptime / Health Monitoring** | Per-site health checks with configurable alerting |
-| **Scheduled Restarts** | Cron-style restart scheduling per site |
+| **Audit Log** | Tracking for actions taken in the panel |
 
 ### Developer
 

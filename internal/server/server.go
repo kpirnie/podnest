@@ -13,6 +13,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
+	"podnest/internal/models"
 	"podnest/internal/podman"
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
@@ -107,6 +108,9 @@ func (s *Server) Start() error {
 	if err := s.podman.PruneOrphanedPods(context.Background()); err != nil {
 		logger.Warn("orphan cleanup: %v", err)
 	}
+
+	// restore pods that were running before the last shutdown or host reboot
+	go s.startupRestore()
 
 	// background session cleanup
 	go s.sessionReaper()
@@ -305,5 +309,51 @@ func (s *Server) permissionReaper() {
 	defer ticker.Stop()
 	for range ticker.C {
 		fix()
+	}
+}
+
+// startupRestore queries the database for all sites that were running at last
+// shutdown and attempts to restart their pods. Any site whose pod no longer
+// exists is marked stopped so the DB stays accurate.
+func (s *Server) startupRestore() {
+
+	// brief pause to let Podman fully settle after the orphan prune
+	time.Sleep(5 * time.Second)
+
+	sites, err := db.GetAllSites(s.cfg.DB)
+	if err != nil {
+		logger.Error("startupRestore: failed to load sites: %v", err)
+		return
+	}
+
+	for _, site := range sites {
+
+		// only attempt sites that were running at last shutdown
+		if site.SiteStatus != models.StatusRunning {
+			continue
+		}
+
+		podName := podman.PodName(site.Name)
+
+		exists, err := s.podman.PodExists(context.Background(), podName)
+		if err != nil {
+			logger.Error("startupRestore: could not check pod existence for site %s: %v", site.Name, err)
+			continue
+		}
+
+		// pod is gone — correct the DB so the UI does not show a false running state
+		if !exists {
+			logger.Warn("startupRestore: pod for site %s no longer exists, marking stopped", site.Name)
+			_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
+			continue
+		}
+
+		if err := s.podman.StartPod(context.Background(), podName); err != nil {
+			logger.Error("startupRestore: failed to start pod for site %s: %v", site.Name, err)
+			_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
+			continue
+		}
+
+		logger.Info("startupRestore: pod for site %s restored successfully", site.Name)
 	}
 }

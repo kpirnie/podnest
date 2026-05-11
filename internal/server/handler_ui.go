@@ -66,6 +66,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 
+		// reject the request immediately if this IP is locked out
+		if !auth.LoginAllowed(r) {
+			http.Error(w, "too many failed attempts, please try again later", http.StatusTooManyRequests)
+			return
+		}
+
 		// parse the form values from the request body
 		if err := r.ParseForm(); err != nil {
 			logger.Error("failed to parse login form: %v", err)
@@ -86,6 +92,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				logger.Error("failed to execute login.html template after failed login: %v", err)
 				http.Error(w, "template error", http.StatusInternalServerError)
 			}
+			// log it for the ratelimiter
+			auth.RecordFailedLogin(r)
 			return
 		}
 
@@ -109,6 +117,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		// set the session cookie and redirect to the dashboard on success
 		logger.Debug("user '%s' logged in successfully", uname)
+		auth.RecordSuccessfulLogin(r)
 		auth.SetSessionCookie(w, result.SessionID)
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 
