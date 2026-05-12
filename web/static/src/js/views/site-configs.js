@@ -13,14 +13,14 @@ export function renderConfigTab(siteId, type, cfg) {
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                 <span class="kp-muted uk-text-small">${entries.length} configuration keys</span>
                 <div class="uk-flex" style="gap:8px">
-                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="${type}">
-                        <span uk-icon="plus"></span> Add Key
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="${type}" uk-tooltip="Add a Key">
+                        <span uk-icon="plus"></span>
                     </button>
-                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="${type}" data-site="${siteId}">
-                        <span uk-icon="check"></span> Save
+                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="${type}" data-site="${siteId}" uk-tooltip="Save the Configuration">
+                        <span uk-icon="check"></span>
                     </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="${type}" data-site="${siteId}">
-                        <span uk-icon="refresh"></span> Reset
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="${type}" data-site="${siteId}" uk-tooltip="Reset to Defaults">
+                        <span uk-icon="refresh"></span>
                     </button>
                     <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${siteId}/configs/${type}/export" download="${siteId}-config-${type}.csv" uk-tooltip="Export config as CSV">
                         <span uk-icon="download"></span>

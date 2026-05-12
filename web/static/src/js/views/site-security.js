@@ -23,8 +23,8 @@ export function renderSecurityPanel(siteId = null) {
                             <span uk-icon="upload"></span>
                             <input type="file" id="sec-ip-import" accept=".csv" style="display:none">
                         </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save">
-                            <span uk-icon="check"></span> Save IP Rules
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save" uk-tooltip="Save the IP Rules">
+                            <span uk-icon="check"></span>
                         </button>
                     </div>
                 </div>
@@ -65,8 +65,8 @@ export function renderSecurityPanel(siteId = null) {
                             <span uk-icon="upload"></span>
                             <input type="file" id="sec-ua-import" accept=".csv" style="display:none">
                         </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save">
-                            <span uk-icon="check"></span> Save UA Rules
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save" uk-tooltip="Save the User-Agent Rules">
+                            <span uk-icon="check"></span>
                         </button>
                     </div>
                 </div>

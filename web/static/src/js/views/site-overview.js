@@ -38,7 +38,7 @@ export function renderOverviewTab(site, domains, sftp) {
                     <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                         <tbody>
                             <tr><td class="kp-muted">Name</td><td>${site.Name}</td></tr>
-                            <tr><td class="kp-muted">Port</td><td>:${site.Port}</td></tr>
+                            <tr><td class="kp-muted">Internal Port</td><td>:${site.Port}</td></tr>
                             <tr><td class="kp-muted">Type</td><td>${siteTypeLabel(site.SiteType)}</td></tr>
                             <tr><td class="kp-muted">Version</td><td>${versionLabel(site)}</td></tr>
                             <tr><td class="kp-muted">Status</td><td>${statusBadge(site.SiteStatus)}</td></tr>
@@ -66,8 +66,8 @@ export function renderOverviewTab(site, domains, sftp) {
                 <div class="kp-card uk-padding-small">
                     <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                         <h3 class="kp-view-title uk-margin-bottom">Domains</h3>
-                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="domain-add-btn">
-                            <span uk-icon="plus"></span> Add
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="domain-add-btn" uk-tooltip="Add a New Domain">
+                            <span uk-icon="plus"></span>
                         </button>
                     </div>
                     <div id="domain-list">

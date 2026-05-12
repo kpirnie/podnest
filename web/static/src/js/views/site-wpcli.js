@@ -32,7 +32,7 @@ export function renderWPCLITab(siteId) {
             
             <p class="kp-muted uk-text-small uk-margin-small-top">
                 <span uk-icon="icon: info; ratio: 0.75"></span>
-                WP-CLI <span class="kp-mono">db</span> subcommands are not available — MariaDB client tools are only present in the database container.
+                WP-CLI <span class="kp-mono">db</span> subcommands are not available for security.
             </p>
 
             <div class="uk-flex uk-flex-middle uk-margin-small-top" style="gap:8px">

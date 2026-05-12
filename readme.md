@@ -1311,7 +1311,7 @@ The following features are actively planned or currently in development. Contrib
 |---|---|
 | **Site Traffic** | Per-site traffic analytics collected in the background: total requests (today vs yesterday), top 10 IPs and User-Agents by request count, status code breakdown (2xx/3xx/4xx/5xx), and total bandwidth served. |
 | **Cloning / One-Click Staging** | Duplicate a live site to a staging environment with a single click — files, database, and all |
-| **PHP Version Switching** | Change a site's PHP version and recreate the pod without losing data |
+| **Version Switching** | Change a site's PHP, .Net, or Node version and recreate the pod without losing data |
 | **Bulk Site Operations** | Start, stop, restart, and recreate selectable pods at once |
 
 ### Operations

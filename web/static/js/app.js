@@ -149,8 +149,8 @@
             </button>
         </div>
         <div class="kp-site-grid">
-            ${t.length===0?M("world","No sites yet \u2014 create one to get started"):t.map(F).join("")}
-        </div>`,document.getElementById("sites-new-btn").addEventListener("click",()=>H())}function F(e){let t=e.Domains?.[0]??null;return`
+            ${t.length===0?M("world","No sites yet \u2014 create one to get started"):t.map(W).join("")}
+        </div>`,document.getElementById("sites-new-btn").addEventListener("click",()=>H())}function W(e){let t=e.Domains?.[0]??null;return`
         <div class="kp-site-card" data-site-id="${e.ID}" data-status="${e.SiteStatus}">
             <div class="kp-site-card-header">
                 <div>
@@ -230,7 +230,7 @@
             </button>
         </div>
         <div class="kp-site-grid">
-            ${t.length===0?M("world","No sites yet"):t.slice(0,6).map(F).join("")}
+            ${t.length===0?M("world","No sites yet"):t.slice(0,6).map(W).join("")}
         </div>`,document.getElementById("dash-new-site")?.addEventListener("click",()=>H())}function R(e=null){let t=e?`/sites/${e}/security/ip`:"/security/ip",s=e?`/sites/${e}/security/ua`:"/security/ua";return`
         <div id="security-panel" data-ip-base="${t}" data-ua-base="${s}">
 
@@ -245,8 +245,8 @@
                             <span uk-icon="upload"></span>
                             <input type="file" id="sec-ip-import" accept=".csv" style="display:none">
                         </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save">
-                            <span uk-icon="check"></span> Save IP Rules
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save" uk-tooltip="Save the IP Rules">
+                            <span uk-icon="check"></span>
                         </button>
                     </div>
                 </div>
@@ -287,8 +287,8 @@
                             <span uk-icon="upload"></span>
                             <input type="file" id="sec-ua-import" accept=".csv" style="display:none">
                         </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save">
-                            <span uk-icon="check"></span> Save UA Rules
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save" uk-tooltip="Save the User-Agent Rules">
+                            <span uk-icon="check"></span>
                         </button>
                     </div>
                 </div>
@@ -324,7 +324,7 @@
             Global rules apply to all sites before per-site rules are evaluated.
             Blacklist always wins \u2014 a blacklisted entry cannot be overridden by any whitelist.
         </p>
-        ${R(null)}`,N(e),L(e)}function he(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function J(e){let t=document.getElementById("admin-domain-ssl");if(!(!t||!e))try{let s=await d.get(`/ssl-status?domain=${encodeURIComponent(e)}`);t.outerHTML=he(s.status)}catch{}}async function W(e){if(!E()){e.innerHTML=S("Access denied");return}let[t,s]=await Promise.all([d.get("/settings"),d.get("/settings/backup")]);e.innerHTML=`
+        ${R(null)}`,N(e),L(e)}function he(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function J(e){let t=document.getElementById("admin-domain-ssl");if(!(!t||!e))try{let s=await d.get(`/ssl-status?domain=${encodeURIComponent(e)}`);t.outerHTML=he(s.status)}catch{}}async function F(e){if(!E()){e.innerHTML=S("Access denied");return}let[t,s]=await Promise.all([d.get("/settings"),d.get("/settings/backup")]);e.innerHTML=`
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Settings</h1>
         </div>
@@ -477,21 +477,21 @@
                 </div>
             </form>
         </div>
-        `,t.admin_domain&&J(t.admin_domain),document.getElementById("settings-form").addEventListener("submit",async n=>{n.preventDefault();let a=n.target.querySelector('[type="submit"]'),i=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let r={admin_domain:new FormData(n.target).get("admin_domain").trim()};try{await d.put("/settings",r),o.success("Settings saved"),J(r.admin_domain)}catch(c){o.error(c.message)}finally{a.disabled=!1,a.innerHTML=i}}),document.getElementById("settings-import-file").addEventListener("change",async n=>{let a=n.target.files[0];if(!a)return;let i=new FormData;i.append("file",a);try{let l=await fetch("/api/settings/import",{method:"POST",body:i}),r=l.status===204?null:await l.json().catch(()=>null);if(!l.ok)throw new Error(r?.error||`HTTP ${l.status}`);o.success("Settings imported \u2014 reloading"),W(e)}catch(l){o.error(l.message)}finally{n.target.value=""}}),document.getElementById("backup-form").addEventListener("submit",async n=>{n.preventDefault();let a=n.target.querySelector('[type="submit"]'),i=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l=new FormData(n.target),r={backup_schedule:l.get("backup_schedule").trim(),backup_retain_days:l.get("backup_retain_days").trim()};try{await d.put("/settings/backup",r),o.success("Backup settings saved")}catch(c){o.error(c.message)}finally{a.disabled=!1,a.innerHTML=i}}),document.getElementById("s3-form").addEventListener("submit",async n=>{n.preventDefault();let a=n.target.querySelector('[type="submit"]'),i=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l=new FormData(n.target),r={s3_endpoint:l.get("s3_endpoint").trim(),s3_bucket:l.get("s3_bucket").trim(),s3_region:l.get("s3_region").trim(),s3_access_key:l.get("s3_access_key").trim()},c=l.get("s3_secret_key").trim();c&&(r.s3_secret_key=c);try{await d.put("/settings/backup",r),o.success("S3 settings saved")}catch(p){o.error(p.message)}finally{a.disabled=!1,a.innerHTML=i}})}function X(e){return`
+        `,t.admin_domain&&J(t.admin_domain),document.getElementById("settings-form").addEventListener("submit",async n=>{n.preventDefault();let a=n.target.querySelector('[type="submit"]'),i=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let r={admin_domain:new FormData(n.target).get("admin_domain").trim()};try{await d.put("/settings",r),o.success("Settings saved"),J(r.admin_domain)}catch(c){o.error(c.message)}finally{a.disabled=!1,a.innerHTML=i}}),document.getElementById("settings-import-file").addEventListener("change",async n=>{let a=n.target.files[0];if(!a)return;let i=new FormData;i.append("file",a);try{let l=await fetch("/api/settings/import",{method:"POST",body:i}),r=l.status===204?null:await l.json().catch(()=>null);if(!l.ok)throw new Error(r?.error||`HTTP ${l.status}`);o.success("Settings imported \u2014 reloading"),F(e)}catch(l){o.error(l.message)}finally{n.target.value=""}}),document.getElementById("backup-form").addEventListener("submit",async n=>{n.preventDefault();let a=n.target.querySelector('[type="submit"]'),i=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l=new FormData(n.target),r={backup_schedule:l.get("backup_schedule").trim(),backup_retain_days:l.get("backup_retain_days").trim()};try{await d.put("/settings/backup",r),o.success("Backup settings saved")}catch(c){o.error(c.message)}finally{a.disabled=!1,a.innerHTML=i}}),document.getElementById("s3-form").addEventListener("submit",async n=>{n.preventDefault();let a=n.target.querySelector('[type="submit"]'),i=a.innerHTML;a.disabled=!0,a.innerHTML='<div uk-spinner="ratio: 0.6"></div> Saving...';let l=new FormData(n.target),r={s3_endpoint:l.get("s3_endpoint").trim(),s3_bucket:l.get("s3_bucket").trim(),s3_region:l.get("s3_region").trim(),s3_access_key:l.get("s3_access_key").trim()},c=l.get("s3_secret_key").trim();c&&(r.s3_secret_key=c);try{await d.put("/settings/backup",r),o.success("S3 settings saved")}catch(p){o.error(p.message)}finally{a.disabled=!1,a.innerHTML=i}})}function X(e){return`
         <div id="backups-panel" data-site-id="${e}">
 
             <!-- repo config card -->
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">Backup Destinations</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-repo-save">
-                        <span uk-icon="check"></span> Save
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-repo-save" uk-tooltip="Save Your Backup Configuration">
+                        <span uk-icon="check"></span>
                     </button>
                 </div>
                 <div class="uk-flex" style="gap:24px;flex-wrap:wrap" id="backup-repo-toggles">
                     <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
                         <input type="checkbox" class="uk-checkbox" id="backup-local-enabled">
-                        <span class="kp-text">Local (SFTP accessible)</span>
+                        <span class="kp-text">Local</span>
                     </label>
                     <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
                         <input type="checkbox" class="uk-checkbox" id="backup-s3-enabled">
@@ -509,8 +509,8 @@
             <div class="kp-card uk-padding-small">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">Snapshots</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn">
-                        <span uk-icon="cloud-upload"></span> Back Up Now
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn" uk-tooltip="Run a Manual Backup">
+                        <span uk-icon="cloud-upload"></span>
                     </button>
                 </div>
                 <div id="backup-error-banner"></div>
@@ -564,14 +564,14 @@
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                 <span class="kp-muted uk-text-small">${n.length} configuration keys</span>
                 <div class="uk-flex" style="gap:8px">
-                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="${t}">
-                        <span uk-icon="plus"></span> Add Key
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="${t}" uk-tooltip="Add a Key">
+                        <span uk-icon="plus"></span>
                     </button>
-                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="${t}" data-site="${e}">
-                        <span uk-icon="check"></span> Save
+                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="${t}" data-site="${e}" uk-tooltip="Save the Configuration">
+                        <span uk-icon="check"></span>
                     </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="${t}" data-site="${e}">
-                        <span uk-icon="refresh"></span> Reset
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="${t}" data-site="${e}" uk-tooltip="Reset to Defaults">
+                        <span uk-icon="refresh"></span>
                     </button>
                     <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${e}/configs/${t}/export" download="${e}-config-${t}.csv" uk-tooltip="Export config as CSV">
                         <span uk-icon="download"></span>
@@ -646,14 +646,14 @@
                     <option value="500">500 lines</option>
                     <option value="1000">1000 lines</option>
                 </select>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="log-connect">
-                    <span uk-icon="play"></span> Connect
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="log-connect" uk-tooltip="Start Tailing the Logs">
+                    <span uk-icon="play"></span>
                 </button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-disconnect" disabled>
-                    <span uk-icon="ban"></span> Disconnect
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-disconnect" disabled uk-tooltip="Stop Tailing the Logs">
+                    <span uk-icon="ban"></span>
                 </button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-clear">
-                    <span uk-icon="trash"></span> Clear
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-clear" uk-tooltip="Clear the Logs">
+                    <span uk-icon="trash"></span>
                 </button>
                 <label style="font-size:0.82rem;color:var(--kp-text-dim);display:flex;align-items:center;gap:6px">
                     <input type="checkbox" class="uk-checkbox" id="log-autoscroll" checked>
@@ -676,7 +676,7 @@
                     <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                         <tbody>
                             <tr><td class="kp-muted">Name</td><td>${e.Name}</td></tr>
-                            <tr><td class="kp-muted">Port</td><td>:${e.Port}</td></tr>
+                            <tr><td class="kp-muted">Internal Port</td><td>:${e.Port}</td></tr>
                             <tr><td class="kp-muted">Type</td><td>${_(e.SiteType)}</td></tr>
                             <tr><td class="kp-muted">Version</td><td>${P(e)}</td></tr>
                             <tr><td class="kp-muted">Status</td><td>${$(e.SiteStatus)}</td></tr>
@@ -704,8 +704,8 @@
                 <div class="kp-card uk-padding-small">
                     <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                         <h3 class="kp-view-title uk-margin-bottom">Domains</h3>
-                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="domain-add-btn">
-                            <span uk-icon="plus"></span> Add
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="domain-add-btn" uk-tooltip="Add a New Domain">
+                            <span uk-icon="plus"></span>
                         </button>
                     </div>
                     <div id="domain-list">
@@ -768,7 +768,7 @@
             
             <p class="kp-muted uk-text-small uk-margin-small-top">
                 <span uk-icon="icon: info; ratio: 0.75"></span>
-                WP-CLI <span class="kp-mono">db</span> subcommands are not available \u2014 MariaDB client tools are only present in the database container.
+                WP-CLI <span class="kp-mono">db</span> subcommands are not available for security.
             </p>
 
             <div class="uk-flex uk-flex-middle uk-margin-small-top" style="gap:8px">
@@ -1043,4 +1043,4 @@
                 </button>
             </div>
         </td>
-    </tr>`}function Se(e){e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="delete-user"]');if(!(!s||!await w("Delete User","Delete this user? This cannot be undone.")))try{await d.delete(`/users/${s.dataset.uid}`),s.closest("tr").remove(),o.success("User deleted")}catch(a){o.error(a.message)}}),e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="edit-user"]');s&&ke(e,s.dataset.uid)})}m.register("dashboard",e=>G(e));m.register("sites",e=>Q(e));m.register("site-detail",(e,t)=>ue(e,t));m.register("users",e=>be(e));m.register("settings",e=>W(e));m.register("security",e=>Y(e));document.addEventListener("click",e=>{let t=e.target.closest("[data-view]");if(!t)return;e.preventDefault(),m.go(t.dataset.view);let s=document.getElementById("kp-offcanvas");s&&UIkit.offcanvas(s).hide()});document.addEventListener("click",async e=>{let t=e.target.closest("[data-action]");if(!t)return;e.stopPropagation();let{action:s,id:n}=t.dataset;switch(s){case"manage":m.go("site-detail",{id:n});break;case"start":await D(n,"start","Starting Site","Starting all containers - please wait...");break;case"stop":await D(n,"stop","Stopping Site","Gracefully stopping all containers - please wait...");break;case"restart":await D(n,"restart","Restarting Site","Restarting all containers - please wait...");break;case"flush":await D(n,"flush","Flushing Caches","Clearing container caches - please wait...");break;case"edit":{let a=await d.get(`/sites/${n}`);q(a.site);break}case"delete":await $e(n);break;case"update":await D(n,"update","Updating Images","Pulling latest container images - this may take a few minutes...");break;case"recreate":y("Recreating Pod","Recreating containers for this site - this may take a few minutes...");try{await d.post(`/sites/${n}/recreate`),f(),o.success("Pod recreated"),m.go("site-detail",{id:n})}catch(a){f(),o.error(a.message)}break}});async function D(e,t,s,n){y(s,n);try{await d.post(`/sites/${e}/${t}`),f(),o.success(s+" complete"),["start","stop","restart"].includes(t)&&m.go("sites")}catch(a){f(),o.error(a.message)}}async function $e(e){if(!await w("Delete Site","This will stop and permanently remove the pod and all its data. Are you sure?"))return;y("Deleting Site","Stopping containers and removing the pod - please wait...");try{await d.delete(`/sites/${e}`)}catch{}let s=!1,n=0;for(;!s&&n<10;){try{await new Promise(i=>setTimeout(i,2e3)),s=!(await d.get("/sites")).find(i=>i.ID===parseInt(e))}catch{}n++}f(),s?(o.success("Site deleted"),m.go("sites")):o.error("Delete failed - site still exists after 20s")}window.addEventListener("hashchange",()=>{let{view:e,params:t}=O();m.go(e,t)});var{view:Ee,params:Te}=O();m.go(Ee,Te);})();
+    </tr>`}function Se(e){e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="delete-user"]');if(!(!s||!await w("Delete User","Delete this user? This cannot be undone.")))try{await d.delete(`/users/${s.dataset.uid}`),s.closest("tr").remove(),o.success("User deleted")}catch(a){o.error(a.message)}}),e.addEventListener("click",async t=>{let s=t.target.closest('[data-action="edit-user"]');s&&ke(e,s.dataset.uid)})}m.register("dashboard",e=>G(e));m.register("sites",e=>Q(e));m.register("site-detail",(e,t)=>ue(e,t));m.register("users",e=>be(e));m.register("settings",e=>F(e));m.register("security",e=>Y(e));document.addEventListener("click",e=>{let t=e.target.closest("[data-view]");if(!t)return;e.preventDefault(),m.go(t.dataset.view);let s=document.getElementById("kp-offcanvas");s&&UIkit.offcanvas(s).hide()});document.addEventListener("click",async e=>{let t=e.target.closest("[data-action]");if(!t)return;e.stopPropagation();let{action:s,id:n}=t.dataset;switch(s){case"manage":m.go("site-detail",{id:n});break;case"start":await D(n,"start","Starting Site","Starting all containers - please wait...");break;case"stop":await D(n,"stop","Stopping Site","Gracefully stopping all containers - please wait...");break;case"restart":await D(n,"restart","Restarting Site","Restarting all containers - please wait...");break;case"flush":await D(n,"flush","Flushing Caches","Clearing container caches - please wait...");break;case"edit":{let a=await d.get(`/sites/${n}`);q(a.site);break}case"delete":await $e(n);break;case"update":await D(n,"update","Updating Images","Pulling latest container images - this may take a few minutes...");break;case"recreate":y("Recreating Pod","Recreating containers for this site - this may take a few minutes...");try{await d.post(`/sites/${n}/recreate`),f(),o.success("Pod recreated"),m.go("site-detail",{id:n})}catch(a){f(),o.error(a.message)}break}});async function D(e,t,s,n){y(s,n);try{await d.post(`/sites/${e}/${t}`),f(),o.success(s+" complete"),["start","stop","restart"].includes(t)&&m.go("sites")}catch(a){f(),o.error(a.message)}}async function $e(e){if(!await w("Delete Site","This will stop and permanently remove the pod and all its data. Are you sure?"))return;y("Deleting Site","Stopping containers and removing the pod - please wait...");try{await d.delete(`/sites/${e}`)}catch{}let s=!1,n=0;for(;!s&&n<10;){try{await new Promise(i=>setTimeout(i,2e3)),s=!(await d.get("/sites")).find(i=>i.ID===parseInt(e))}catch{}n++}f(),s?(o.success("Site deleted"),m.go("sites")):o.error("Delete failed - site still exists after 20s")}window.addEventListener("hashchange",()=>{let{view:e,params:t}=O();m.go(e,t)});var{view:Ee,params:Te}=O();m.go(Ee,Te);})();

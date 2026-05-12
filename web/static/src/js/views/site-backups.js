@@ -13,14 +13,14 @@ export function renderBackupsTab(siteId) {
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">Backup Destinations</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-repo-save">
-                        <span uk-icon="check"></span> Save
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-repo-save" uk-tooltip="Save Your Backup Configuration">
+                        <span uk-icon="check"></span>
                     </button>
                 </div>
                 <div class="uk-flex" style="gap:24px;flex-wrap:wrap" id="backup-repo-toggles">
                     <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
                         <input type="checkbox" class="uk-checkbox" id="backup-local-enabled">
-                        <span class="kp-text">Local (SFTP accessible)</span>
+                        <span class="kp-text">Local</span>
                     </label>
                     <label class="uk-flex uk-flex-middle" style="gap:8px;cursor:pointer">
                         <input type="checkbox" class="uk-checkbox" id="backup-s3-enabled">
@@ -38,8 +38,8 @@ export function renderBackupsTab(siteId) {
             <div class="kp-card uk-padding-small">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">Snapshots</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn">
-                        <span uk-icon="cloud-upload"></span> Back Up Now
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn" uk-tooltip="Run a Manual Backup">
+                        <span uk-icon="cloud-upload"></span>
                     </button>
                 </div>
                 <div id="backup-error-banner"></div>

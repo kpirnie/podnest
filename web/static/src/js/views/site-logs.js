@@ -26,14 +26,14 @@ export function renderLogsTab(siteId, siteType) {
                     <option value="500">500 lines</option>
                     <option value="1000">1000 lines</option>
                 </select>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="log-connect">
-                    <span uk-icon="play"></span> Connect
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="log-connect" uk-tooltip="Start Tailing the Logs">
+                    <span uk-icon="play"></span>
                 </button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-disconnect" disabled>
-                    <span uk-icon="ban"></span> Disconnect
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-disconnect" disabled uk-tooltip="Stop Tailing the Logs">
+                    <span uk-icon="ban"></span>
                 </button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-clear">
-                    <span uk-icon="trash"></span> Clear
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="log-clear" uk-tooltip="Clear the Logs">
+                    <span uk-icon="trash"></span>
                 </button>
                 <label style="font-size:0.82rem;color:var(--kp-text-dim);display:flex;align-items:center;gap:6px">
                     <input type="checkbox" class="uk-checkbox" id="log-autoscroll" checked>

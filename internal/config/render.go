@@ -87,6 +87,7 @@ http {
     limit_req_zone  $binary_remote_addr zone=general:10m  rate=%s;
     limit_conn_zone $binary_remote_addr zone=addr:10m;
 
+    set_real_ip_from  127.0.0.1;
     set_real_ip_from  10.0.0.0/8;
     set_real_ip_from  172.16.0.0/12;
     set_real_ip_from  192.168.0.0/16;
@@ -494,6 +495,14 @@ backend default {
 }
 
 sub vcl_recv {
+
+	# pass the real client IP to the backend
+    if (req.http.X-Forwarded-For) {
+        set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
+    } else {
+        set req.http.X-Forwarded-For = client.ip;
+    }
+
     # always pass non-cacheable HTTP methods
     if (req.method != "GET" && req.method != "HEAD") {
         return (pass);
