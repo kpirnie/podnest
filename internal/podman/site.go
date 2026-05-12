@@ -207,7 +207,7 @@ func (c *Client) createVarnish(ctx context.Context, cfg SiteConfig) error {
 			},
 		},
 		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"SETUID", "SETGID", "IPC_LOCK"},
+		CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
 		SecOpts: []string{secNoNewPriv},
 	})
 	if err != nil {

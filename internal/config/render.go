@@ -516,9 +516,9 @@ sub vcl_backend_response {
 
 sub vcl_deliver {
     if (obj.hits > 0) {
-        set resp.http.X-Cache = "HIT";
+        set resp.http.X-Cache = "VAR-HIT";
     } else {
-        set resp.http.X-Cache = "MISS";
+        set resp.http.X-Cache = "VAR-MISS";
     }
     unset resp.http.Via;
     unset resp.http.X-Varnish;
