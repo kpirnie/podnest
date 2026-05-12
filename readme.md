@@ -1305,12 +1305,6 @@ This project is provided as-is through GitHub. **Paid support is available** for
 
 The following features are actively planned or currently in development. Contributions and feedback are welcome.
 
-### Infrastructure
-
-| Feature | Description |
-|---|---|
-| **Varnish Cache** | Optional per-site Varnish container for full-page caching, configurable VCL, sits in front of nginx within the pod |
-
 ### Site Management
 
 | Feature | Description |

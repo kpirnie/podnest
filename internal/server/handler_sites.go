@@ -500,11 +500,25 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// determine the nginx cache path based on site type
+	var cachePath string
+	switch site.SiteType {
+	case models.SiteTypeWordPress, models.SiteTypePHP:
+		cachePath = "/var/cache/nginx/wp"
+	case models.SiteTypeNode, models.SiteTypeDotNet:
+		cachePath = "/var/cache/nginx/proxy"
+	default:
+		// static sites have no fastcgi/proxy cache to flush
+		cachePath = ""
+	}
+
 	// flush nginx fastcgi cache
-	if err := s.podman.FlushCache(r.Context(), podman.ContainerName(site.Name, "nginx")); err != nil {
-		logger.Error("failed to flush nginx cache for site %d: %v", site.ID, err)
-		apiError(w, http.StatusInternalServerError, err)
-		return
+	if cachePath != "" {
+		if err := s.podman.FlushCache(r.Context(), podman.ContainerName(site.Name, "nginx"), cachePath); err != nil {
+			logger.Error("failed to flush nginx cache for site %d: %v", site.ID, err)
+			apiError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	// flush php opcache for php-based site types

@@ -9,6 +9,7 @@ import (
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"strings"
+	"time"
 )
 
 // pod specification for creating a new pod with port mappings
@@ -320,13 +321,13 @@ func (c *Client) StreamLogs(ctx context.Context, containerName string, tail int,
 }
 
 // FlushCache deletes all files under the nginx fastcgi cache directory in the nginx container
-func (c *Client) FlushCache(ctx context.Context, containerName string) error {
+func (c *Client) FlushCache(ctx context.Context, containerName string, cachePath string) error {
 
-	// setuo the command specification for the exec instance to delete all files under the nginx fastcgi cache directory, ensuring that stdout and stderr are attached to capture any output or errors from the command execution
+	// setup the command specification for the exec instance to delete all files under the nginx fastcgi cache directory, ensuring that stdout and stderr are attached to capture any output or errors from the command execution
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
-		"Cmd":          []string{"find", "/var/cache/nginx/wp", "-type", "f", "-delete"},
+		"Cmd":          []string{"find", cachePath, "-type", "f", "-delete"},
 	}
 	var execResp struct {
 		ID string `json:"Id"`
@@ -441,5 +442,62 @@ func (c *Client) FlushVarnishCache(ctx context.Context, containerName string) er
 		return err
 	}
 	logger.Debug("FlushVarnishCache: ban issued in %s", containerName)
+	return nil
+}
+
+// KillContainer sends a signal to a running container; used to trigger
+// hot-reloads without a full pod recreate (e.g. SIGHUP for nginx, SIGUSR2 for php-fpm)
+func (c *Client) KillContainer(ctx context.Context, name, signal string) error {
+	path := fmt.Sprintf("/v4.0.0/libpod/containers/%s/kill?signal=%s", name, signal)
+	if err := c.post(ctx, path, nil, nil); err != nil {
+		logger.Warn("KillContainer: failed to send %s to %s: %v", signal, name, err)
+		return err
+	}
+	logger.Debug("KillContainer: sent %s to %s", signal, name)
+	return nil
+}
+
+// RestartContainer stops and restarts a single container without affecting the pod;
+// used to apply config changes that cannot be hot-reloaded (e.g. redis, mariadb)
+func (c *Client) RestartContainer(ctx context.Context, name string) error {
+	path := fmt.Sprintf("/v4.0.0/libpod/containers/%s/restart", name)
+	if err := c.post(ctx, path, nil, nil); err != nil {
+		logger.Warn("RestartContainer: failed to restart %s: %v", name, err)
+		return err
+	}
+	logger.Debug("RestartContainer: restarted %s", name)
+	return nil
+}
+
+// ReloadVarnish hot-reloads the VCL config inside a running Varnish container
+// by loading the updated VCL file and switching to it via varnishadm
+func (c *Client) ReloadVarnish(ctx context.Context, name string) error {
+	// use a timestamp-based label so each reload gets a unique VCL name
+	label := fmt.Sprintf("podnest_%d", time.Now().Unix())
+
+	for _, cmd := range [][]string{
+		{"varnishadm", "vcl.load", label, "/etc/varnish/default.vcl"},
+		{"varnishadm", "vcl.use", label},
+	} {
+		spec := map[string]any{
+			"AttachStdout": false,
+			"AttachStderr": false,
+			"Detach":       true,
+			"Cmd":          cmd,
+		}
+		var execResp struct {
+			ID string `json:"Id"`
+		}
+		if err := c.post(ctx, "/v4.0.0/libpod/containers/"+name+"/exec", spec, &execResp); err != nil {
+			logger.Warn("ReloadVarnish: failed to create exec for %v in %s: %v", cmd, name, err)
+			return err
+		}
+		if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
+			logger.Warn("ReloadVarnish: failed to start exec for %v in %s: %v", cmd, name, err)
+			return err
+		}
+	}
+
+	logger.Debug("ReloadVarnish: hot-reloaded VCL in %s (label: %s)", name, label)
 	return nil
 }

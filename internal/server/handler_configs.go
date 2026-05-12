@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/podman"
 	"podnest/internal/sftp"
 )
 
@@ -243,7 +245,15 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 			logger.Error("failed to render nginx site config for site %d: %v", site.ID, err)
 			return err
 		}
-		return writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644)
+		if err := writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644); err != nil {
+			logger.Error("failed to write nginx site config for site %d: %v", site.ID, err)
+			return err
+		}
+		// hot-reload nginx — best-effort, pod may be stopped
+		if err := s.podman.KillContainer(context.Background(), podman.ContainerName(site.Name, "nginx"), "HUP"); err != nil {
+			logger.Warn("nginx reload after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+		return nil
 
 	case models.ConfigPHP:
 
@@ -267,8 +277,16 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 			return err
 		}
 
-		// write the php.ini config file to disk
-		return writeFile(siteDir+"/php-fpm/php.ini", ini, 0644)
+		// try to write php configs
+		if err := writeFile(siteDir+"/php-fpm/php.ini", ini, 0644); err != nil {
+			logger.Error("failed to write php.ini config for site %d: %v", site.ID, err)
+			return err
+		}
+		// hot-reload php-fpm via SIGUSR2 — best-effort, pod may be stopped
+		if err := s.podman.KillContainer(context.Background(), podman.ContainerName(site.Name, "php"), "USR2"); err != nil {
+			logger.Warn("php-fpm reload after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+		return nil
 
 	case models.ConfigMariaDB:
 
@@ -280,7 +298,15 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 		}
 
 		// write the mariadb config file to disk
-		return writeFile(siteDir+"/db/my.cnf", my, 0640)
+		if err := writeFile(siteDir+"/db/my.cnf", my, 0640); err != nil {
+			logger.Error("failed to write mariadb config for site %d: %v", site.ID, err)
+			return err
+		}
+		// restart mariadb to apply config changes — best-effort, pod may be stopped
+		if err := s.podman.RestartContainer(context.Background(), podman.ContainerName(site.Name, "db")); err != nil {
+			logger.Warn("mariadb restart after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+		return nil
 
 	case models.ConfigRedis:
 
@@ -299,7 +325,15 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 		}
 
 		// write the redis config file to disk
-		return writeFile(siteDir+"/redis/redis.conf", redisCfg, 0640)
+		if err := writeFile(siteDir+"/redis/redis.conf", redisCfg, 0640); err != nil {
+			logger.Error("failed to write redis config for site %d: %v", site.ID, err)
+			return err
+		}
+		// restart redis to apply config changes — best-effort, pod may be stopped
+		if err := s.podman.RestartContainer(context.Background(), podman.ContainerName(site.Name, "redis")); err != nil {
+			logger.Warn("redis restart after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+		return nil
 
 	case models.ConfigVarnish:
 
@@ -334,7 +368,20 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 			logger.Error("failed to render nginx site block during varnish rewrite for site %d: %v", site.ID, err)
 			return err
 		}
-		return writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644)
+
+		// write the and hot-restart
+		if err := writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644); err != nil {
+			logger.Error("failed to write nginx site block during varnish rewrite for site %d: %v", site.ID, err)
+			return err
+		}
+		// hot-reload varnish VCL and nginx listen port — best-effort, pod may be stopped
+		if err := s.podman.ReloadVarnish(context.Background(), podman.ContainerName(site.Name, "varnish")); err != nil {
+			logger.Warn("varnish VCL reload after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+		if err := s.podman.KillContainer(context.Background(), podman.ContainerName(site.Name, "nginx"), "HUP"); err != nil {
+			logger.Warn("nginx reload after varnish config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+		return nil
 	}
 
 	// if we somehow got here, the config type is invalid — log an error and return nil since there's no file to write
