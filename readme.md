@@ -22,7 +22,7 @@ A hardened, high-performance web hosting pod manager built on Podman. Provision 
 
 ## Overview
 
-PodNest provisions and manages isolated web hosting environments using Podman. Each site runs in its own dedicated pod — fully isolated, production-hardened, and manageable entirely through the built-in web UI. No shell access is needed after the initial setup.
+Each pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only.
 
 **Supported site types:**
 
@@ -31,7 +31,7 @@ PodNest provisions and manages isolated web hosting environments using Podman. E
 | WordPress | PHP 8.2, 8.3, 8.4, 8.5 |
 | PHP | PHP 8.2, 8.3, 8.4, 8.5 |
 | Static HTML | nginx only |
-| Node.js | Node 22, 23, 24 |
+| Node.js | Node 22, 24, 25 |
 | .NET | .NET 8.0, 9.0, 10.0 |
 
 Each pod is provisioned with nginx as the reverse proxy. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx only.
@@ -365,6 +365,8 @@ Once PodNest is running with a persistent volume, the following structure is cre
         │   └── my.cnf
         ├── redis/          # All sites except Static HTML
         │   └── redis.conf
+        ├── varnish/        # All site types (disabled by default)
+        │   └── default.vcl
         ├── backups/        # Restic backup repositories
         │   └── local/      # Local restic repo (SFTP accessible, read-only)
         └── .env            # Auto-generated credentials — do not delete
@@ -421,7 +423,7 @@ From the site detail view, the following actions are available:
 | **Start** | Starts the site pod and all its containers |
 | **Stop** | Gracefully stops the site pod |
 | **Restart** | Stops and restarts the site pod |
-| **Flush Cache** | Clears the nginx FastCGI cache for the site |
+| **Flush Cache** | Clears the nginx FastCGI cache, PHP OPcache, and Varnish cache (if enabled) for the site |
 | **Update Images** | Pulls the latest versions of all container images used by the site |
 | **Recreate Pod** | Stops and removes the existing pod, pulls the latest images, and provisions a fresh pod using the existing site data and credentials |
 
@@ -551,7 +553,7 @@ You can configure a dedicated admin domain for the PodNest management UI under *
 
 [OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
-Each site has up to four configuration sections, editable directly in the UI. Changes are saved to the database and written to disk immediately — no manual file editing required. A pod restart is needed for changes to take effect inside the running containers.
+Each site has up to five configuration sections, editable directly in the UI. Changes are saved to the database and applied immediately — no manual file editing required.
 
 Configurations can also be exported to a JSON file and imported back — useful for applying the same config to multiple sites or backing up your tuning.
 
@@ -678,6 +680,26 @@ Applies to all site types except Static HTML.
 | `lazyfree_lazy_expire` | `yes` | Non-blocking key expiration |
 | `save` | *(empty)* | RDB persistence disabled by default |
 | `appendonly` | `no` | AOF persistence disabled by default |
+
+---
+
+### Varnish
+
+Available for all site types. Varnish is disabled by default. When enabled, it sits in front of nginx inside the pod, caching HTTP responses in memory. Requires a pod recreate to enable or disable — all other setting changes hot-reload without recreate.
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Enable Varnish cache — requires pod recreate to take effect |
+| `memory_size` | `256m` | Varnish storage allocation (e.g. `256m`, `1g`) |
+| `ttl` | `120s` | Default cache TTL for cacheable responses |
+| `grace` | `30s` | Serve stale content for this duration if the backend is unavailable |
+| `connect_timeout` | `5s` | Backend connection timeout |
+| `first_byte_timeout` | `60s` | Time to wait for the first byte from the backend |
+| `between_bytes_timeout` | `10s` | Time to wait between bytes from the backend |
+| `bypass_query_strings` | `true` | Bypass cache for any request with a query string |
+| `bypass_paths` | `/wp-admin,/wp-login.php,/xmlrpc.php,/wp-cron.php,/wp-json,/feed` | Comma-separated URL path prefixes that always bypass the cache |
+| `bypass_cookies` | `wordpress_logged_in,woocommerce_,wp_woocommerce,wordpress_sec` | Comma-separated cookie name patterns — requests carrying these cookies bypass the cache |
+| `bypass_extensions` | *(empty)* | Comma-separated file extensions that bypass the cache (e.g. `.php`) |
 
 ---
 
@@ -1158,7 +1180,7 @@ Clears the session cookie and invalidates the server-side session.
 
 **PHP version values:** `3` = 8.2 *(default)*, `4` = 8.3, `5` = 8.4, `6` = 8.5
 
-**Node runtime version values:** `2` = 22 *(default)*, `3` = 23, `4` = 24
+**Node runtime version values:** `2` = 22 *(default)*, `4` = 24, `5` = 25
 
 **.NET runtime version values:** `1` = 8.0 *(default)*, `2` = 9.0, `3` = 10.0
 
@@ -1184,7 +1206,7 @@ Clears the session cookie and invalidates the server-side session.
 | `GET` | `/api/sites/{id}/configs/{type}/export` | Session | Export a config section as JSON |
 | `POST` | `/api/sites/{id}/configs/{type}/import` | Session | Import a config section from JSON |
 
-**Config type values:** `1` = Nginx, `2` = PHP, `3` = MariaDB, `4` = Redis
+**Config type values:** `1` = Nginx, `2` = PHP, `3` = MariaDB, `4` = Redis, `5` = Varnish
 
 ---
 
