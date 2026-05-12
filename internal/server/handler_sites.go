@@ -447,7 +447,7 @@ func (s *Server) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Debug("started pod for site %d", site.ID)
-	if !s.confirmPodRunning(r.Context(), podman.PodName(site.Name)) {
+	if !s.confirmPodRunning(r.Context(), podman.PodName(site.Name), site.SiteType) {
 		logger.Error("pod for site %d did not reach running state after start", site.ID)
 		_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusError)
 		apiErrorMsg(w, http.StatusInternalServerError, "pod failed to reach running state")
@@ -943,10 +943,8 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("recreated pod for site %d: %s", site.ID, site.Name)
-	if !s.confirmPodRunning(bgCtx, podman.PodName(site.Name)) {
+	if !s.confirmPodRunning(bgCtx, podman.PodName(site.Name), site.SiteType) {
 		logger.Error("pod for site %d did not reach running state after recreate", site.ID)
-		_ = s.podman.StopPod(bgCtx, podman.PodName(site.Name))
-		_ = s.podman.RemoveSitePod(bgCtx, site.Name)
 		_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusError)
 		apiErrorMsg(w, http.StatusInternalServerError, "pod failed to reach running state")
 		return
@@ -955,10 +953,16 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	apiJSON(w, http.StatusOK, map[string]string{"status": "running"})
 }
 
-// confirmPodRunning polls the pod status for up to 15 seconds and returns true
-// only when every container in the pod reports a running state.
-func (s *Server) confirmPodRunning(ctx context.Context, podName string) bool {
-	deadline := time.Now().Add(15 * time.Second)
+// confirmPodRunning polls the pod status and returns true only when every
+// container in the pod reports a running state; timeout is 90s for WordPress
+// and PHP sites (PMA + Varnish take time to initialise) and 30s for others.
+func (s *Server) confirmPodRunning(ctx context.Context, podName string, siteType int) bool {
+	timeout := 30 * time.Second
+	switch siteType {
+	case models.SiteTypeWordPress, models.SiteTypePHP:
+		timeout = 90 * time.Second
+	}
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		inspect, err := s.podman.InspectPod(ctx, podName)
 		if err == nil && inspect.State == "Running" {
