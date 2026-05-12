@@ -43,17 +43,17 @@ export function renderVarnishTab(siteId, cfg) {
     const entries = cfg ? Object.entries(cfg).filter(([k]) => k !== "enabled") : [];
     return `
         <div>
-            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom" uk-tooltip="Add a Key">
                 <span class="kp-muted uk-text-small">${entries.length} configuration keys</span>
                 <div class="uk-flex" style="gap:8px">
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="5">
-                        <span uk-icon="plus"></span> Add Key
+                        <span uk-icon="plus"></span>
                     </button>
-                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="5" data-site="${siteId}">
-                        <span uk-icon="check"></span> Save
+                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="5" data-site="${siteId}" uk-tooltip="Save the Configuration">
+                        <span uk-icon="check"></span>
                     </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="5" data-site="${siteId}">
-                        <span uk-icon="refresh"></span> Reset
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="5" data-site="${siteId}" uk-tooltip="Reset to Defaults">
+                        <span uk-icon="refresh"></span>
                     </button>
                     <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${siteId}/configs/5/export" download="${siteId}-config-5.csv" uk-tooltip="Export config as CSV">
                         <span uk-icon="download"></span>
