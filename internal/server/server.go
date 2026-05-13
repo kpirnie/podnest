@@ -118,6 +118,9 @@ func (s *Server) Start() error {
 	// background permission fixer
 	go s.permissionReaper()
 
+	// fire up the status checker
+	go s.syncPodStatuses()
+
 	// start the backup scheduler
 	s.backup.StartScheduler(context.Background())
 
@@ -355,5 +358,41 @@ func (s *Server) startupRestore() {
 		}
 
 		logger.Info("startupRestore: pod for site %s restored successfully", site.Name)
+	}
+}
+
+// syncPodStatuses periodically reconciles DB site statuses against actual
+// Podman pod states, correcting any drift caused by crashes or manual intervention.
+func (s *Server) syncPodStatuses() {
+	fix := func() {
+		sites, err := db.GetAllSites(s.cfg.DB)
+		if err != nil {
+			logger.Error("syncPodStatuses: failed to load sites: %v", err)
+			return
+		}
+		for _, site := range sites {
+			podName := podman.PodName(site.Name)
+			inspect, err := s.podman.InspectPod(context.Background(), podName)
+			if err != nil {
+				// pod doesn't exist — mark stopped if not already
+				if site.SiteStatus != models.StatusStopped {
+					_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
+				}
+				continue
+			}
+			if inspect.State == "Running" && site.SiteStatus != models.StatusRunning {
+				logger.Debug("syncPodStatuses: correcting site %d status to running", site.ID)
+				_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRunning)
+			} else if inspect.State != "Running" && site.SiteStatus == models.StatusRunning {
+				logger.Debug("syncPodStatuses: correcting site %d status to stopped", site.ID)
+				_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
+			}
+		}
+	}
+	fix()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		fix()
 	}
 }
