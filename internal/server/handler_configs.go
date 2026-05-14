@@ -15,6 +15,7 @@ import (
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/podman"
+	"podnest/internal/sftp"
 )
 
 // get the configs for a site, grouped by type, and return them as a JSON object of the form {type: {key: value}}
@@ -257,7 +258,7 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 	case models.ConfigPHP:
 
 		// render the php-fpm and php.ini config files based on the merged config blob and write them to disk
-		fpm, err := config.RenderPHPFPM(blob)
+		fpm, err := config.RenderPHPFPM(blob, sftp.UIDForSite(site.ID))
 		if err != nil {
 			logger.Error("failed to render php-fpm config for site %d: %v", site.ID, err)
 			return err

@@ -1234,7 +1234,7 @@ func (m *Manager) fixPostRestorePerms(siteDir string, siteID int64) {
 
 	// html — setgid + group-writable, siteUID owned
 	os.Chown(siteDir+"/html", uid, uid)
-	os.Chmod(siteDir+"/html", 02775)
+	os.Chmod(siteDir+"/html", 0755)
 
 	// php-fpm, redis — siteUID owned
 	for _, d := range []string{"php-fpm", "redis"} {

@@ -65,6 +65,7 @@ type ContainerSpec struct {
 	Command      []string          `json:"command,omitempty"`
 	ReadOnlyFS   bool              `json:"read_only_rootfs,omitempty"`
 	WorkingDir   string            `json:"work_dir,omitempty"`
+	User         string            `json:"user,omitempty"`
 	NetNS        NetworkNamespace  `json:"netns,omitempty"`
 }
 

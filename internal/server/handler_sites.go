@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -21,6 +23,17 @@ import (
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
 )
+
+// wpInitScript is the entrypoint for WordPress containers — copies WP files on
+// first run then execs php-fpm directly so siteUID owns everything
+const wpInitScript = `#!/bin/sh
+set -e
+if [ ! -f /var/www/html/index.php ]; then
+    echo "Copying WordPress files..."
+    cp -r /usr/src/wordpress/. /var/www/html/
+fi
+exec php-fpm
+`
 
 // sitesBase returns the base directory path for all site data on disk
 func (s *Server) sitesBase() string {
@@ -636,6 +649,56 @@ func (s *Server) resolveSite(w http.ResponseWriter, r *http.Request) (*models.Si
 	return site, true
 }
 
+// generateWPConfig renders a wp-config.php for the given site credentials.
+// Used instead of the WordPress Docker entrypoint so php-fpm can run as siteUID.
+func generateWPConfig(dbName, dbUser, dbPass, redisPass string) string {
+	// generate unique salts so each site has its own cryptographic keys
+	salt := func() string {
+		b := make([]byte, 48)
+		rand.Read(b)
+		return hex.EncodeToString(b)
+	}
+	return fmt.Sprintf(`<?php
+defined('DB_NAME') || define('DB_NAME',     '%s');
+defined('DB_USER') || define('DB_USER',     '%s');
+defined('DB_PASSWORD') || define('DB_PASSWORD', '%s');
+defined('DB_HOST') || define('DB_HOST',     '127.0.0.1:3306');
+defined('DB_CHARSET') || define('DB_CHARSET',  'utf8mb4');
+defined('DB_COLLATE') || define('DB_COLLATE',  '');
+defined('AUTH_KEY') || define('AUTH_KEY',         '%s');
+defined('SECURE_AUTH_KEY') || define('SECURE_AUTH_KEY',  '%s');
+defined('LOGGED_IN_KEY') || define('LOGGED_IN_KEY',    '%s');
+defined('NONCE_KEY') || define('NONCE_KEY',        '%s');
+defined('AUTH_SALT') || define('AUTH_SALT',        '%s');
+defined('SECURE_AUTH_SALT') || define('SECURE_AUTH_SALT', '%s');
+defined('LOGGED_IN_SALT') || define('LOGGED_IN_SALT',   '%s');
+defined('NONCE_SALT') || define('NONCE_SALT',       '%s');
+defined('WP_REDIS_HOST') || define('WP_REDIS_HOST',     '127.0.0.1');
+defined('WP_REDIS_PORT') || define('WP_REDIS_PORT',     6379);
+defined('WP_REDIS_PASSWORD') || define('WP_REDIS_PASSWORD', '%s');
+defined('WP_CACHE') || define('WP_CACHE',          true);
+defined('WP_DEBUG') || define('WP_DEBUG',          false);
+defined('DISALLOW_FILE_EDIT') || define('DISALLOW_FILE_EDIT', true);
+defined('FORCE_SSL_ADMIN') || define('FORCE_SSL_ADMIN',   true);
+defined('WP_AUTO_UPDATE_CORE') || define('WP_AUTO_UPDATE_CORE', 'minor');
+defined('FS_METHOD') || define('FS_METHOD',         'direct');
+defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON',   true);
+
+$table_prefix = 'wp_';
+defined('ABSPATH') || define( 'ABSPATH', __DIR__ . '/' );
+// tell WordPress it's behind an SSL-terminating reverse proxy
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+    $_SERVER['HTTPS'] = 'on';
+}
+require_once ABSPATH . 'wp-settings.php';
+`,
+		dbName, dbUser, dbPass,
+		salt(), salt(), salt(), salt(),
+		salt(), salt(), salt(), salt(),
+		redisPass,
+	)
+}
+
 // scaffoldSiteDir writes all config files to disk for a new site.
 // siteUID is the numeric SFTP uid — used so PHP-FPM runs as that user.
 func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config, dbUser, dbPass, dbRootPass, redisPass string, siteUID int) error {
@@ -755,7 +818,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 
 	// render and write PHP configs for WordPress and PHP site types
 	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
-		phpFPM, err := config.RenderPHPFPM(cfgMap[models.ConfigPHP])
+		phpFPM, err := config.RenderPHPFPM(cfgMap[models.ConfigPHP], siteUID)
 		if err != nil {
 			logger.Error("failed to create php config")
 			return err
@@ -784,6 +847,26 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 	if err := os.WriteFile(siteDir+"/.env", []byte(env), 0600); err != nil {
 		logger.Error("failed to write the .env file")
 		return err
+	}
+
+	// write wp-config.php for WordPress sites so the WP entrypoint can be skipped
+	// entirely and php-fpm runs as siteUID without ownership conflicts
+	// write wp-config.php
+	if site.SiteType == models.SiteTypeWordPress {
+		wpConfig := generateWPConfig(site.Name, dbUser, dbPass, redisPass)
+		if err := os.WriteFile(siteDir+"/html/wp-config.php", []byte(wpConfig), 0640); err != nil {
+			logger.Error("failed to write wp-config.php for site %s: %v", site.Name, err)
+			return err
+		}
+		if err := os.Chown(siteDir+"/html/wp-config.php", siteUID, siteUID); err != nil {
+			logger.Warn("could not chown wp-config.php: %v", err)
+		}
+
+		// write the init script that copies WP files on first run then execs php-fpm as siteUID
+		if err := os.WriteFile(siteDir+"/php-fpm/wp-init.sh", []byte(wpInitScript), 0755); err != nil {
+			logger.Error("failed to write wp-init.sh for site %s: %v", site.Name, err)
+			return err
+		}
 	}
 
 	// render and write MariaDB and Redis configs for all non-static site types
@@ -918,6 +1001,13 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	if vclContent, err := config.RenderVarnish(varnishCfgJSON); err == nil {
 		if err := os.WriteFile(varnishDir+"/default.vcl", []byte(vclContent), 0644); err != nil {
 			logger.Warn("could not write varnish VCL for site %s: %v", site.Name, err)
+		}
+	}
+
+	// write wp-init.sh for WordPress sites if it doesn't already exist
+	if site.SiteType == models.SiteTypeWordPress {
+		if err := os.WriteFile(siteDir+"/php-fpm/wp-init.sh", []byte(wpInitScript), 0755); err != nil {
+			logger.Warn("could not write wp-init.sh for site %s: %v", site.Name, err)
 		}
 	}
 

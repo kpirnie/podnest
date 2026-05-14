@@ -31,8 +31,7 @@ if [ -f /etc/sftp/users.conf ]; then
         echo "$username:$password" | chpasswd
 
         # chroot root must be root:root for sshd — only chown the subdirs
-        [ -d "/home/$username/html" ] && chown -R "33:$uid" "/home/$username/html" 2>/dev/null || true
-        for d in nginx php-fpm redis db; do
+        for d in html nginx php-fpm redis db; do
             [ -d "/home/$username/$d" ] && chown -R "$uid:$uid" "/home/$username/$d" 2>/dev/null || true
         done
         chmod 2775 "/home/$username/html" 2>/dev/null || true

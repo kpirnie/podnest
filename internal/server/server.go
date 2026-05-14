@@ -273,7 +273,7 @@ func (s *Server) permissionReaper() {
 			os.Chmod(siteDir, 0755)
 
 			// html — setgid so PHP (siteUID) and SFTP uploads share group ownership
-			os.Chown(siteDir+"/html", 33, sftpUID)
+			os.Chown(siteDir+"/html", sftpUID, sftpUID)
 			os.Chmod(siteDir+"/html", 02775)
 
 			// nginx dir — sftp user owns config files

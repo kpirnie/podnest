@@ -97,7 +97,7 @@ func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid in
 		{"adduser", "-D", "-u", fmt.Sprintf("%d", uid), "-G", fmt.Sprintf("sftp-%s", siteName), "-G", "sftpusers", "-h", "/home/" + siteName, "-s", "/usr/lib/openssh/sftp-server", siteName},
 		{"sh", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", siteName, password)},
 		// chroot root (/home/sitename) stays root:root — only chown the content subdirs
-		{"chown", "-R", fmt.Sprintf("%d:%d", 33, uid), "/home/" + siteName + "/html"},
+		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/html"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/php-fpm"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/redis"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/db"},
