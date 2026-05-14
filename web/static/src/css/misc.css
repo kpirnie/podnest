@@ -98,3 +98,26 @@
     transition: color var(--kp-transition);
 }
 .kp-footer a:hover { color: var(--kp-cyan); }
+
+/* -- site nav selector ----------------------------------------------------- */
+.kp-site-nav-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.kp-site-nav-wrap .uk-select {
+    width: auto;
+    height: 38px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--kp-white);
+    padding-right: 28px;
+    appearance: none;
+    -webkit-appearance: none;
+}
+.kp-site-nav-arrow {
+    position: absolute;
+    right: 8px;
+    pointer-events: none;
+    color: var(--kp-text-dim);
+}

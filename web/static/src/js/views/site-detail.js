@@ -25,9 +25,12 @@ export async function viewSiteDetail(root, { id }) {
         <div class="kp-view-header">
             <div class="uk-flex uk-flex-middle" style="gap:12px">
                 <button class="kp-btn-icon" id="sd-back"><span uk-icon="arrow-left"></span></button>
-                <select id="sd-site-nav" class="uk-select kp-select" style="width:auto;height:38px;font-size:1rem;font-weight:700;color:var(--kp-white)">
-                    ${allSites.map(s => `<option value="${s.ID}" ${s.ID === site.ID ? "selected" : ""}>${s.Name}</option>`).join("")}
-                </select>
+                <div class="kp-site-nav-wrap">
+                    <select id="sd-site-nav" class="uk-select kp-select">
+                        ${allSites.map(s => `<option value="${s.ID}" ${s.ID === site.ID ? "selected" : ""}>${s.Name}</option>`).join("")}
+                    </select>
+                    <span class="kp-site-nav-arrow" uk-icon="icon:chevron-down;ratio:0.8"></span>
+                </div>
                 ${statusBadge(site.SiteStatus)}
             </div>
             <div class="uk-flex" style="gap:8px;flex-wrap:wrap">
