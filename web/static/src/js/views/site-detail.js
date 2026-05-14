@@ -13,15 +13,21 @@ import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './sit
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
 
 export async function viewSiteDetail(root, { id }) {
-    const { site, domains, sftp } = await api.get(`/sites/${id}`);
-    const configs = await api.get(`/sites/${id}/configs`);
+    // fetch site detail and full site list in parallel for the nav selector
+    const [{ site, domains, sftp }, allSites, configs] = await Promise.all([
+        api.get(`/sites/${id}`),
+        api.get("/sites"),
+        api.get(`/sites/${id}/configs`),
+    ]);
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
 
     root.innerHTML = `
         <div class="kp-view-header">
             <div class="uk-flex uk-flex-middle" style="gap:12px">
                 <button class="kp-btn-icon" id="sd-back"><span uk-icon="arrow-left"></span></button>
-                <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">${site.Name}</h1>
+                <select id="sd-site-nav" class="uk-select kp-select" style="width:auto;height:38px;font-size:1rem;font-weight:700;color:var(--kp-white)">
+                    ${allSites.map(s => `<option value="${s.ID}" ${s.ID === site.ID ? "selected" : ""}>${s.Name}</option>`).join("")}
+                </select>
                 ${statusBadge(site.SiteStatus)}
             </div>
             <div class="uk-flex" style="gap:8px;flex-wrap:wrap">
@@ -74,6 +80,11 @@ export async function viewSiteDetail(root, { id }) {
             hideProgressModal();
             toast.error(e.message);
         }
+    });
+
+    // navigate to selected site when the dropdown changes
+    document.getElementById("sd-site-nav")?.addEventListener("change", (e) => {
+        router.go("site-detail", { id: e.target.value });
     });
 
     // wire toolbar action buttons (start, stop, restart, flush, update)

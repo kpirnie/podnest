@@ -363,13 +363,17 @@ func (c *Client) createPHP(ctx context.Context, cfg SiteConfig) error {
 	// construct the WP_CACHE and WP_REDIS_* directives for the wp-config.php based on the Redis password, and also include some additional recommended WordPress constants for security and performance
 	wpExtra := fmt.Sprintf(
 		"define('WP_REDIS_HOST','127.0.0.1');"+
-			"define('WP_REDIS_PORT',6379);"+
-			"define('WP_REDIS_PASSWORD','%s');"+
-			"define('WP_CACHE',true);"+
-			"define('WP_DEBUG',false);"+
-			"define('DISALLOW_FILE_EDIT',true);"+
-			"define('FORCE_SSL_ADMIN',true);"+
-			"define('WP_AUTO_UPDATE_CORE','minor');",
+			"defined('WP_REDIS_PORT') || define('WP_REDIS_PORT',6379);"+
+			"defined('WP_REDIS_PASSWORD') || define('WP_REDIS_PASSWORD','%s');"+
+			"defined('WP_CACHE') || define('WP_CACHE',true);"+
+			"defined('WP_DEBUG') || define('WP_DEBUG',false);"+
+			"defined('DISALLOW_FILE_EDIT') || define('DISALLOW_FILE_EDIT',true);"+
+			"defined('FORCE_SSL_ADMIN') || define('FORCE_SSL_ADMIN',true);"+
+			"defined('WP_AUTO_UPDATE_CORE') || define('WP_AUTO_UPDATE_CORE','minor');"+
+			"defined('FS_METHOD') || define('FS_METHOD','direct');"+
+			"defined('FS_CHMOD_DIR') || define('FS_CHMOD_DIR', 0700);"+
+			"defined('FS_CHMOD_FILE') || define('FS_CHMOD_FILE', 0600);"+
+			"defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON', true);",
 		cfg.RedisPass,
 	)
 
@@ -780,13 +784,15 @@ func (c *Client) ensureMariaDBUser(ctx context.Context, cfg SiteConfig) error {
 // chowns everything to www-data, which blocks PHP-FPM (running as siteUID) from writing
 func (c *Client) fixPHPOwnership(ctx context.Context, cfg SiteConfig) error {
 	containerName := ContainerName(cfg.Site.Name, "php")
+
+	// sleep 15s to let the WordPress entrypoint finish setting up before we correct ownership
 	spec := map[string]any{
-		"AttachStdout": false,
-		"AttachStderr": false,
-		"Detach":       true,
+		"AttachStdout": true,
+		"AttachStderr": true,
+		"Detach":       false,
 		"Cmd": []string{
 			"sh", "-c",
-			fmt.Sprintf("chown -R %d:%d /var/www/html", cfg.SiteUID, cfg.SiteUID),
+			fmt.Sprintf("sleep 5 && mkdir -p /var/www/html/wp-content/upgrade && find /var/www/html -exec chown 33:%d {} \\; && find /var/www/html -type d -exec chmod 775 {} \\;", cfg.SiteUID),
 		},
 	}
 	var execResp struct {
@@ -796,10 +802,33 @@ func (c *Client) fixPHPOwnership(ctx context.Context, cfg SiteConfig) error {
 		logger.Error("fixPHPOwnership: failed to create exec in %s: %v", containerName, err)
 		return err
 	}
-	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
+	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": false}, nil); err != nil {
 		logger.Error("fixPHPOwnership: failed to start exec in %s: %v", containerName, err)
 		return err
 	}
-	logger.Debug("fixPHPOwnership: chowned /var/www/html to uid %d in %s", cfg.SiteUID, containerName)
+
+	// poll until complete
+	deadline := time.Now().Add(30 * time.Second)
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if err := c.get(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err != nil {
+			logger.Error("fixPHPOwnership: failed to inspect exec in %s: %v", containerName, err)
+			return err
+		}
+		if !inspect.Running {
+			break
+		}
+	}
+
+	if inspect.ExitCode != 0 {
+		logger.Error("fixPHPOwnership: chown exited with code %d in %s", inspect.ExitCode, containerName)
+		return fmt.Errorf("fixPHPOwnership: chown exited with code %d", inspect.ExitCode)
+	}
+
+	logger.Debug("fixPHPOwnership: chowned /var/www/html to 33:%d in %s", cfg.SiteUID, containerName)
 	return nil
 }

@@ -154,7 +154,7 @@ func RenderNginxSite(configJSON string, siteType int, varnishEnabled bool) (stri
 // RenderPHPFPM renders the www.conf for php-fpm.
 // siteUID is the numeric UID of the SFTP user so that PHP-created files
 // are owned by the same account the SFTP user authenticates as.
-func RenderPHPFPM(configJSON string, siteUID int) (string, error) {
+func RenderPHPFPM(configJSON string) (string, error) {
 
 	// The www.conf is only rendered for PHP sites, and contains the process manager settings
 	cfg, err := unmarshal(configJSON)
@@ -169,8 +169,8 @@ func RenderPHPFPM(configJSON string, siteUID int) (string, error) {
 	logger.Debug("rendering php-fpm.conf with config: %v", cfg)
 
 	return fmt.Sprintf(`[www]
-user  = %d
-group = %d
+user  = www-data
+group = www-data
 
 listen              = 127.0.0.1:9000
 listen.allowed_clients = 127.0.0.1
@@ -192,8 +192,6 @@ ping.path      = /fpm-ping
 
 clear_env = no
 `,
-		siteUID,
-		siteUID,
 		v("pm"),
 		v("pm_max_children"),
 		v("pm_start_servers"),

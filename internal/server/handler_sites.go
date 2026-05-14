@@ -674,7 +674,10 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 	}
 
 	// set ownership on all content directories to the SFTP user
-	for _, d := range []string{"html", "php-fpm", "redis"} {
+	if err := os.Chown(siteDir+"/html", 33, siteUID); err != nil {
+		logger.Warn("could not chown html to www-data:sftp uid %d: %v", siteUID, err)
+	}
+	for _, d := range []string{"php-fpm", "redis"} {
 		if err := os.Chown(siteDir+"/"+d, siteUID, siteUID); err != nil {
 			logger.Warn("could not chown %s to sftp uid %d: %v", d, siteUID, err)
 		}
@@ -752,7 +755,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 
 	// render and write PHP configs for WordPress and PHP site types
 	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
-		phpFPM, err := config.RenderPHPFPM(cfgMap[models.ConfigPHP], siteUID)
+		phpFPM, err := config.RenderPHPFPM(cfgMap[models.ConfigPHP])
 		if err != nil {
 			logger.Error("failed to create php config")
 			return err
