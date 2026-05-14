@@ -111,13 +111,16 @@
     font-size: 1rem;
     font-weight: 700;
     color: var(--kp-white);
-    padding-right: 28px;
+    padding-right: 25px !important;
     appearance: none;
     -webkit-appearance: none;
 }
 .kp-site-nav-arrow {
     position: absolute;
-    right: 8px;
+    right: 10px;
+    top: 16px;
     pointer-events: none;
     color: var(--kp-text-dim);
+    font-size: 0.7rem;
+    line-height: 1;
 }

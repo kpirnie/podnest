@@ -805,7 +805,7 @@
                     <select id="sd-site-nav" class="uk-select kp-select">
                         ${i.map(r=>`<option value="${r.ID}" ${r.ID===s.ID?"selected":""}>${r.Name}</option>`).join("")}
                     </select>
-                    <span class="kp-site-nav-arrow" uk-icon="icon:chevron-down;ratio:0.8"></span>
+                    <span class="kp-site-nav-arrow">&#9660;</span>
                 </div>
                 ${$(s.SiteStatus)}
             </div>
