@@ -161,6 +161,12 @@ func (s *Server) Start() error {
 	}
 	px.WarmSecurityCache(ipRules, uaRules)
 
+	// warm the WAF engine — compiles CRS rules; non-fatal on failure so a
+	// misconfigured exclusion does not prevent the proxy from starting
+	if err := px.WarmWAFCache(); err != nil {
+		logger.Warn("WAF cache warm failed, WAF will be inactive: %v", err)
+	}
+
 	// run the proxy
 	go func() {
 		if err := px.Start(); err != nil && err != http.ErrServerClosed {

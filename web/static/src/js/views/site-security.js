@@ -6,11 +6,12 @@ import { toast } from '../toast.js';
 // renderSecurityPanel renders the shared IP + UA security panel for either
 // global scope (siteId null) or per-site scope (siteId set).
 export function renderSecurityPanel(siteId = null) {
-    const ipBase = siteId ? `/sites/${siteId}/security/ip` : `/security/ip`;
-    const uaBase = siteId ? `/sites/${siteId}/security/ua` : `/security/ua`;
+    const ipBase  = siteId ? `/sites/${siteId}/security/ip` : `/security/ip`;
+    const uaBase  = siteId ? `/sites/${siteId}/security/ua` : `/security/ua`;
+    const wafBase = siteId ? `/sites/${siteId}/waf`          : `/settings/waf`;
 
     return `
-        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}">
+        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-waf-base="${wafBase}">
 
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
@@ -54,7 +55,7 @@ export function renderSecurityPanel(siteId = null) {
                 </div>
             </div>
 
-            <div class="kp-card uk-padding-small">
+            <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">User-Agent Rules</h3>
                     <div class="uk-flex" style="gap:8px">
@@ -94,6 +95,83 @@ export function renderSecurityPanel(siteId = null) {
                 </div>
             </div>
 
+            <div class="kp-card uk-padding-small">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Web Application Firewall</h3>
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-waf-save" uk-tooltip="Save WAF Settings">
+                        <span uk-icon="check"></span>
+                    </button>
+                </div>
+
+                ${siteId ? `
+                <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                    Override the global WAF setting for this site and add site-specific rule exclusions
+                    on top of any global exclusions.
+                </p>
+                <div class="uk-margin-small-bottom">
+                    <label class="kp-label" for="sec-waf-override">Site Behaviour</label>
+                    <select class="uk-select kp-select" id="sec-waf-override">
+                        <option value="0">Inherit global setting</option>
+                        <option value="1">Force ON for this site</option>
+                        <option value="2">Force OFF for this site</option>
+                    </select>
+                </div>
+                <div class="uk-margin-small-bottom">
+                    <label class="kp-label" for="sec-waf-exclusions">Additional Rule Exclusions</label>
+                    <textarea class="uk-textarea kp-textarea kp-mono" id="sec-waf-exclusions" rows="6"
+                        placeholder="# Numeric = rule ID, text = tag name, one per line&#10;942100&#10;attack-xss"></textarea>
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Merged on top of global exclusions. Useful for WooCommerce, contact forms, or file uploads that trigger false positives.
+                    </p>
+                </div>
+                ` : `
+                <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                    Inspects all proxied requests using the OWASP Core Rule Set.
+                    Start in Detection mode to review false positives before enabling Prevention.
+                    The engine recompiles in the background after saving.
+                </p>
+                <div class="uk-grid-small uk-margin-small-bottom" uk-grid>
+                    <div class="uk-width-1-2@s">
+                        <label class="kp-label" for="sec-waf-mode">Mode</label>
+                        <select class="uk-select kp-select" id="sec-waf-mode">
+                            <option value="0">Detection — log matches only</option>
+                            <option value="1">Prevention — block matching requests</option>
+                        </select>
+                    </div>
+                    <div class="uk-width-1-2@s">
+                        <label class="kp-label" for="sec-waf-paranoia">Paranoia Level</label>
+                        <select class="uk-select kp-select" id="sec-waf-paranoia">
+                            <option value="1">1 — Baseline (recommended)</option>
+                            <option value="2">2 — Moderate</option>
+                            <option value="3">3 — Strict</option>
+                            <option value="4">4 — Paranoid</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="uk-margin-small-bottom">
+                    <label class="kp-label">
+                        <input class="uk-checkbox" type="checkbox" id="sec-waf-enabled">
+                        &nbsp;Enable WAF (OWASP Core Rule Set)
+                    </label>
+                    &nbsp;&nbsp;
+                    <label class="kp-label">
+                        <input class="uk-checkbox" type="checkbox" id="sec-waf-audit">
+                        &nbsp;Enable Audit Log
+                    </label>
+                </div>
+                <div class="uk-margin-small-bottom">
+                    <label class="kp-label" for="sec-waf-exclusions">Global Rule Exclusions</label>
+                    <textarea class="uk-textarea kp-textarea kp-mono kp-waf-exclusions" id="sec-waf-exclusions" rows="15"
+                        placeholder="# Numeric = rule ID, text = tag name, one per line&#10;920350&#10;attack-sqli"></textarea>
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Numeric entries map to <span class="kp-mono">SecRuleRemoveById</span>;
+                        text entries to <span class="kp-mono">SecRuleRemoveByTag</span>.
+                    </p>
+                </div>
+                `}
+
+            </div>
+
         </div>`;
 }
 
@@ -104,19 +182,37 @@ export async function loadSecurityPanel(root) {
     const panel  = root.querySelector("#security-panel");
     if (!panel) return;
 
-    const ipBase = panel.dataset.ipBase;
-    const uaBase = panel.dataset.uaBase;
+    const ipBase  = panel.dataset.ipBase;
+    const uaBase  = panel.dataset.uaBase;
+    const wafBase = panel.dataset.wafBase;
 
     try {
-        const [ip, ua] = await Promise.all([
+        const [ip, ua, waf] = await Promise.all([
             api.get(ipBase),
             api.get(uaBase),
+            api.get(wafBase),
         ]);
 
         root.querySelector("#sec-ip-whitelist").value = ip.whitelist ?? "";
         root.querySelector("#sec-ip-blacklist").value = ip.blacklist ?? "";
         root.querySelector("#sec-ua-whitelist").value = ua.whitelist ?? "";
         root.querySelector("#sec-ua-blacklist").value = ua.blacklist ?? "";
+        root.querySelector("#sec-waf-exclusions").value = waf.Exclusions ?? waf.exclusions ?? "";
+
+        // global WAF fields (only present on the Security page, not per-site)
+        const enabled  = root.querySelector("#sec-waf-enabled");
+        const audit    = root.querySelector("#sec-waf-audit");
+        const mode     = root.querySelector("#sec-waf-mode");
+        const paranoia = root.querySelector("#sec-waf-paranoia");
+        if (enabled)  enabled.checked  = !!waf.Enabled;
+        if (audit)    audit.checked    = !!waf.AuditLog;
+        if (mode)     mode.value       = String(waf.Mode          ?? 0);
+        if (paranoia) paranoia.value   = String(waf.ParanoiaLevel ?? 1);
+
+        // per-site override field
+        const override = root.querySelector("#sec-waf-override");
+        if (override) override.value  = String(waf.Override ?? 0);
+
     } catch (e) {
         toast.error("Failed to load security rules: " + e.message);
     }
@@ -128,8 +224,9 @@ export function wireSecurityPanel(root) {
     const panel = root.querySelector("#security-panel");
     if (!panel) return;
 
-    const ipBase = panel.dataset.ipBase;
-    const uaBase = panel.dataset.uaBase;
+    const ipBase  = panel.dataset.ipBase;
+    const uaBase  = panel.dataset.uaBase;
+    const wafBase = panel.dataset.wafBase;
 
     // save IP rules
     root.querySelector("#sec-ip-save")?.addEventListener("click", async () => {
@@ -171,18 +268,49 @@ export function wireSecurityPanel(root) {
         }
     });
 
-    // handle IP rules CSV import
+    // save WAF settings
+    root.querySelector("#sec-waf-save")?.addEventListener("click", async () => {
+        const btn  = root.querySelector("#sec-waf-save");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            // per-site override
+            const override = root.querySelector("#sec-waf-override");
+            if (override) {
+                await api.put(wafBase, {
+                    override:   parseInt(override.value, 10),
+                    exclusions: root.querySelector("#sec-waf-exclusions").value.trim(),
+                });
+            } else {
+                // global settings
+                await api.put(wafBase, {
+                    enabled:        root.querySelector("#sec-waf-enabled").checked,
+                    mode:           parseInt(root.querySelector("#sec-waf-mode").value, 10),
+                    paranoia_level: parseInt(root.querySelector("#sec-waf-paranoia").value, 10),
+                    audit_log:      root.querySelector("#sec-waf-audit").checked,
+                    exclusions:     root.querySelector("#sec-waf-exclusions").value.trim(),
+                });
+            }
+            toast.success("WAF settings saved — engine recompiling in background");
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            btn.disabled  = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // IP rules CSV import
     root.querySelector("#sec-ip-import")?.addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const fd = new FormData();
         fd.append("file", file);
         try {
-            const res = await fetch(ipBase + "/import", { method: "POST", body: fd });
+            const res  = await fetch("/api" + ipBase + "/import", { method: "POST", body: fd });
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
-            // reload the textareas to reflect the imported rules
             await loadSecurityPanel(root);
             toast.success("IP rules imported");
         } catch (err) {
@@ -192,18 +320,16 @@ export function wireSecurityPanel(root) {
         }
     });
 
-    // handle UA rules CSV import
+    // UA rules CSV import
     root.querySelector("#sec-ua-import")?.addEventListener("change", async (e) => {
         const file = e.target.files[0];
         if (!file) return;
         const fd = new FormData();
         fd.append("file", file);
         try {
-            const res = await fetch(uaBase + "/import", { method: "POST", body: fd });
+            const res  = await fetch("/api" + uaBase + "/import", { method: "POST", body: fd });
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-
-            // reload the textareas to reflect the imported rules
             await loadSecurityPanel(root);
             toast.success("UA rules imported");
         } catch (err) {

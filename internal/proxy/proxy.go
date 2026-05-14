@@ -18,6 +18,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,19 +74,23 @@ func (sw *statusWriter) Flush() {
 
 // Proxy is the built-in TLS-terminating reverse proxy
 type Proxy struct {
-	database    *sql.DB
-	hostGateway string
-	adminDomain string
-	adminPort   int
-	adminMu     sync.RWMutex                           // guards adminDomain only
-	cache       atomic.Pointer[map[string]domainEntry] // domain → entry; swapped atomically on every change
-	secCache    atomic.Pointer[securityCache]          // compiled rule sets; swapped atomically on rule changes
-	rpCache     sync.Map                               // int(port) → *httputil.ReverseProxy; write-rarely, read-heavy
-	transport   *http.Transport                        // shared connection pool across all reverse proxies
-	accessLog   *os.File                               // structured access log for Fail2Ban consumption
-	manager     *autocert.Manager
-	httpSrv     *http.Server
-	httpsSrv    *http.Server
+	database       *sql.DB
+	hostGateway    string
+	adminDomain    string
+	adminPort      int
+	adminMu        sync.RWMutex                                 // guards adminDomain only
+	cache          atomic.Pointer[map[string]domainEntry]       // domain → entry; swapped atomically on every change
+	secCache       atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
+	wafEnabled     atomic.Bool                                  // true when global WAF is on
+	wafEngine      atomic.Pointer[WAFEngine]                    // global compiled engine
+	wafSiteEngines sync.Map                                     // int64(siteID) → *WAFEngine
+	wafOverrides   atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
+	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy; write-rarely, read-heavy
+	transport      *http.Transport                              // shared connection pool across all reverse proxies
+	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
+	manager        *autocert.Manager
+	httpSrv        *http.Server
+	httpsSrv       *http.Server
 }
 
 // Config holds the proxy dependencies
@@ -117,6 +122,9 @@ func New(cfg Config) *Proxy {
 
 	emptySec := securityCache{perSite: make(map[int64]ruleSet)}
 	p.secCache.Store(&emptySec)
+
+	emptyOverrides := make(map[int64]db.WAFSiteOverride)
+	p.wafOverrides.Store(&emptyOverrides)
 
 	// open or create the structured proxy access log for Fail2Ban to watch
 	logDir := cfg.CertDir + "/../logs"
@@ -213,6 +221,65 @@ func (p *Proxy) WarmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) {
 	cache := buildSecurityCache(ipRules, uaRules)
 	p.secCache.Store(&cache)
 	logger.Info("proxy: security cache warmed — %d IP rules, %d UA rules", len(ipRules), len(uaRules))
+}
+
+// WarmWAFCache loads WAF settings and per-site overrides from the database,
+// compiles the Coraza engine(s), and installs them atomically.
+// Called once on startup and after any WAF settings change.
+func (p *Proxy) WarmWAFCache() error {
+	settings, err := db.GetWAFSettings(p.database)
+	if err != nil {
+		logger.Error("proxy: failed to load WAF settings: %v", err)
+		return err
+	}
+
+	// clear any previously compiled site engines
+	p.wafSiteEngines.Range(func(k, _ any) bool {
+		p.wafSiteEngines.Delete(k)
+		return true
+	})
+
+	if !settings.Enabled {
+		p.wafEnabled.Store(false)
+		p.wafEngine.Store(nil)
+		empty := make(map[int64]db.WAFSiteOverride)
+		p.wafOverrides.Store(&empty)
+		logger.Info("proxy: WAF disabled")
+		return nil
+	}
+
+	// build the global engine
+	engine, err := NewWAFEngine(settings, "")
+	if err != nil {
+		return err
+	}
+
+	// fetch per-site overrides and build site-specific engines where needed
+	siteOverrides, err := db.GetAllWAFSiteOverrides(p.database)
+	if err != nil {
+		logger.Error("proxy: failed to load WAF site overrides: %v", err)
+		return err
+	}
+
+	overrideMap := make(map[int64]db.WAFSiteOverride, len(siteOverrides))
+	for _, o := range siteOverrides {
+		overrideMap[o.SiteID] = o
+		// only build a site engine when there are additional exclusions to apply
+		if strings.TrimSpace(o.Exclusions) != "" && o.Override != db.WAFOverrideOff {
+			siteEngine, err := NewWAFEngine(settings, o.Exclusions)
+			if err != nil {
+				logger.Error("proxy: WAF site engine build failed siteID=%d: %v", o.SiteID, err)
+				continue
+			}
+			p.wafSiteEngines.Store(o.SiteID, siteEngine)
+		}
+	}
+
+	p.wafEngine.Store(engine)
+	p.wafOverrides.Store(&overrideMap)
+	p.wafEnabled.Store(true)
+	logger.Info("proxy: WAF cache warmed — %d site overrides", len(siteOverrides))
+	return nil
 }
 
 // AddDomain inserts a domain→port+siteID mapping into the cache atomically.
@@ -328,6 +395,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		p.writeAccessLog(r, http.StatusForbidden, 0, time.Since(start), clientIP.String())
 		return
+	}
+
+	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
+	if siteID > 0 {
+		if engine := p.resolveWAFEngine(siteID); engine != nil {
+			if !engine.Inspect(w, r, clientIP.String(), p.accessLog) {
+				// WAF wrote the 403 and access log entry; nothing more to do
+				return
+			}
+		}
 	}
 
 	// wrap the writer to capture status + byte count for the access log
@@ -504,4 +581,34 @@ func selfSignedCert(certDir string) (tls.Certificate, error) {
 	kf.Close()
 
 	return tls.LoadX509KeyPair(certFile, keyFile)
+}
+
+// resolveWAFEngine returns the WAFEngine to use for a given site, accounting
+// for per-site overrides. Returns nil when the site should bypass WAF.
+func (p *Proxy) resolveWAFEngine(siteID int64) *WAFEngine {
+	override := db.WAFOverrideInherit
+	if overrides := p.wafOverrides.Load(); overrides != nil {
+		if o, ok := (*overrides)[siteID]; ok {
+			override = o.Override
+		}
+	}
+
+	switch override {
+	case db.WAFOverrideOff:
+		return nil
+	case db.WAFOverrideOn:
+		// site-specific engine if compiled, otherwise fall back to global
+		if e, ok := p.wafSiteEngines.Load(siteID); ok {
+			return e.(*WAFEngine)
+		}
+		return p.wafEngine.Load()
+	default: // WAFOverrideInherit — respect global enabled state
+		if !p.wafEnabled.Load() {
+			return nil
+		}
+		if e, ok := p.wafSiteEngines.Load(siteID); ok {
+			return e.(*WAFEngine)
+		}
+		return p.wafEngine.Load()
+	}
 }

@@ -27,165 +27,161 @@ export async function viewSettings(root) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     // fetch panel settings and backup/S3 settings in parallel
-    const [settings, backupSettings] = await Promise.all([
+    const [settings, backupSettings, wafSettings] = await Promise.all([
         api.get("/settings"),
         api.get("/settings/backup"),
+        api.get("/settings/waf"),
     ]);
 
     root.innerHTML = `
-        <div class="kp-view-header">
-            <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Settings</h1>
+    <div class="kp-view-header">
+        <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Settings</h1>
+    </div>
+    <div class="uk-grid uk-grid-medium uk-margin-large-bottom" uk-grid>
+        <div class="uk-width-1-1">
+            <!-- panel configuration -->
+            <div class="kp-card uk-padding">
+                <h3 class="kp-view-title uk-margin-bottom">Panel Configuration</h3>
+                <form id="settings-form" class="uk-form-stacked">
+                    <div class="uk-margin">
+                        <label class="kp-label" for="admin-domain">Management UI Domain</label>
+                        <div class="uk-flex kp-settings-domain-wrap">
+                            <span id="admin-domain-ssl" class="kp-ssl-pending" uk-icon="icon: more; ratio: 0.85"></span>
+                            <input
+                                class="uk-input kp-input"
+                                id="admin-domain"
+                                name="admin_domain"
+                                type="text"
+                                placeholder="panel.example.com"
+                                value="${settings.admin_domain ?? ''}">
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            When set, the proxy will route this domain to the management UI and issue
+                            a Let's Encrypt certificate automatically. Leave blank to disable.
+                        </p>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
-
-        <!-- panel configuration -->
-        <div class="kp-card uk-padding kp-settings-wrap">
-            <h3 class="kp-view-title uk-margin-bottom">Panel Configuration</h3>
-            <form id="settings-form" class="uk-form-stacked">
-                <div class="uk-margin">
-                    <label class="kp-label" for="admin-domain">Management UI Domain</label>
-                    <div class="uk-flex kp-settings-domain-wrap">
-                        <span id="admin-domain-ssl" class="kp-ssl-pending" uk-icon="icon: more; ratio: 0.85"></span>
+        <div class="uk-width-1-2@m">
+            <!-- backup schedule / retention -->
+            <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+                <h3 class="kp-view-title uk-margin-bottom">Backup Schedule</h3>
+                <form id="backup-form" class="uk-form-stacked">
+                    <div class="uk-margin">
+                        <label class="kp-label" for="backup-schedule">Cron Schedule</label>
+                        <input
+                            class="uk-input kp-input kp-mono"
+                            id="backup-schedule"
+                            name="backup_schedule"
+                            type="text"
+                            placeholder="0 2 * * *"
+                            value="${backupSettings.backup_schedule ?? ''}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Standard 5-field cron expression. Leave blank to disable automatic backups.<br>
+                            Examples: <span class="kp-mono">0 2 * * *</span> (daily at 2am) &nbsp;
+                            <span class="kp-mono">0 */6 * * *</span> (every 6 hours)
+                        </p>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="backup-retain-days">Retain Backups (days)</label>
                         <input
                             class="uk-input kp-input"
-                            id="admin-domain"
-                            name="admin_domain"
-                            type="text"
-                            placeholder="panel.example.com"
-                            value="${settings.admin_domain ?? ''}">
+                            id="backup-retain-days"
+                            name="backup_retain_days"
+                            type="number"
+                            min="1"
+                            max="365"
+                            placeholder="30"
+                            value="${backupSettings.backup_retain_days ?? '30'}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Snapshots older than this many days will be pruned automatically after each backup run.
+                        </p>
                     </div>
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        When set, the proxy will route this domain to the management UI and issue
-                        a Let's Encrypt certificate automatically. Leave blank to disable.
-                    </p>
-                </div>
-                <div class="uk-flex uk-flex-right uk-margin-top">
-                    <button type="submit" class="uk-button kp-btn-primary">
-                        <span uk-icon="check"></span> Save Settings
-                    </button>
-                </div>
-                <hr class="kp-divider uk-margin-top">
-                <div class="uk-flex uk-flex-middle" style="gap:10px;flex-wrap:wrap">
-                    <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/export" download="podnest-settings.csv" uk-tooltip="Export settings as CSV">
-                        <span uk-icon="download"></span> Export CSV
-                    </a>
-                    <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import settings from CSV">
-                        <span uk-icon="upload"></span> Import CSV
-                        <input type="file" id="settings-import-file" accept=".csv" style="display:none">
-                    </label>
-                </div>
-            </form>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
-
-        <!-- backup schedule / retention -->
-        <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
-            <h3 class="kp-view-title uk-margin-bottom">Backup Schedule</h3>
-            <form id="backup-form" class="uk-form-stacked">
-                <div class="uk-margin">
-                    <label class="kp-label" for="backup-schedule">Cron Schedule</label>
-                    <input
-                        class="uk-input kp-input kp-mono"
-                        id="backup-schedule"
-                        name="backup_schedule"
-                        type="text"
-                        placeholder="0 2 * * *"
-                        value="${backupSettings.backup_schedule ?? ''}">
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        Standard 5-field cron expression. Leave blank to disable automatic backups.<br>
-                        Examples: <span class="kp-mono">0 2 * * *</span> (daily at 2am) &nbsp;
-                        <span class="kp-mono">0 */6 * * *</span> (every 6 hours)
-                    </p>
-                </div>
-                <div class="uk-margin">
-                    <label class="kp-label" for="backup-retain-days">Retain Backups (days)</label>
-                    <input
-                        class="uk-input kp-input"
-                        id="backup-retain-days"
-                        name="backup_retain_days"
-                        type="number"
-                        min="1"
-                        max="365"
-                        placeholder="30"
-                        value="${backupSettings.backup_retain_days ?? '30'}">
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        Snapshots older than this many days will be pruned automatically after each backup run.
-                    </p>
-                </div>
-                <div class="uk-flex uk-flex-right uk-margin-top">
-                    <button type="submit" class="uk-button kp-btn-primary">
-                        <span uk-icon="check"></span> Save
-                    </button>
-                </div>
-            </form>
+        <div class="uk-width-1-2@m">
+            <!-- S3 backup storage -->
+            <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+                <h3 class="kp-view-title uk-margin-bottom">S3 Backup Storage</h3>
+                <form id="s3-form" class="uk-form-stacked">
+                    <div class="uk-margin">
+                        <label class="kp-label" for="s3-endpoint">Endpoint URL</label>
+                        <input
+                            class="uk-input kp-input kp-mono"
+                            id="s3-endpoint"
+                            name="s3_endpoint"
+                            type="url"
+                            placeholder="https://s3.amazonaws.com"
+                            value="${backupSettings.s3_endpoint ?? ''}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            AWS S3 or any S3-compatible endpoint (Backblaze B2, MinIO, Wasabi, etc.)
+                        </p>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="s3-bucket">Bucket</label>
+                        <input
+                            class="uk-input kp-input kp-mono"
+                            id="s3-bucket"
+                            name="s3_bucket"
+                            type="text"
+                            placeholder="my-podnest-backups"
+                            value="${backupSettings.s3_bucket ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="s3-region">Region</label>
+                        <input
+                            class="uk-input kp-input kp-mono"
+                            id="s3-region"
+                            name="s3_region"
+                            type="text"
+                            placeholder="us-east-1"
+                            value="${backupSettings.s3_region ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="s3-access-key">Access Key ID</label>
+                        <input
+                            class="uk-input kp-input kp-mono"
+                            id="s3-access-key"
+                            name="s3_access_key"
+                            type="text"
+                            placeholder="AKIAIOSFODNN7EXAMPLE"
+                            value="${backupSettings.s3_access_key ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="s3-secret-key">Secret Access Key</label>
+                        <input
+                            class="uk-input kp-input kp-mono"
+                            id="s3-secret-key"
+                            name="s3_secret_key"
+                            type="password"
+                            placeholder="${backupSettings.s3_secret_key ? 'saved — enter new value to change' : 'enter secret key'}"
+                            value="">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Leave blank to keep the existing key.
+                        </p>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
-
-        <!-- S3 backup storage -->
-        <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
-            <h3 class="kp-view-title uk-margin-bottom">S3 Backup Storage</h3>
-            <form id="s3-form" class="uk-form-stacked">
-                <div class="uk-margin">
-                    <label class="kp-label" for="s3-endpoint">Endpoint URL</label>
-                    <input
-                        class="uk-input kp-input kp-mono"
-                        id="s3-endpoint"
-                        name="s3_endpoint"
-                        type="url"
-                        placeholder="https://s3.amazonaws.com"
-                        value="${backupSettings.s3_endpoint ?? ''}">
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        AWS S3 or any S3-compatible endpoint (Backblaze B2, MinIO, Wasabi, etc.)
-                    </p>
-                </div>
-                <div class="uk-margin">
-                    <label class="kp-label" for="s3-bucket">Bucket</label>
-                    <input
-                        class="uk-input kp-input kp-mono"
-                        id="s3-bucket"
-                        name="s3_bucket"
-                        type="text"
-                        placeholder="my-podnest-backups"
-                        value="${backupSettings.s3_bucket ?? ''}">
-                </div>
-                <div class="uk-margin">
-                    <label class="kp-label" for="s3-region">Region</label>
-                    <input
-                        class="uk-input kp-input kp-mono"
-                        id="s3-region"
-                        name="s3_region"
-                        type="text"
-                        placeholder="us-east-1"
-                        value="${backupSettings.s3_region ?? ''}">
-                </div>
-                <div class="uk-margin">
-                    <label class="kp-label" for="s3-access-key">Access Key ID</label>
-                    <input
-                        class="uk-input kp-input kp-mono"
-                        id="s3-access-key"
-                        name="s3_access_key"
-                        type="text"
-                        placeholder="AKIAIOSFODNN7EXAMPLE"
-                        value="${backupSettings.s3_access_key ?? ''}">
-                </div>
-                <div class="uk-margin">
-                    <label class="kp-label" for="s3-secret-key">Secret Access Key</label>
-                    <input
-                        class="uk-input kp-input kp-mono"
-                        id="s3-secret-key"
-                        name="s3_secret_key"
-                        type="password"
-                        placeholder="${backupSettings.s3_secret_key ? 'saved — enter new value to change' : 'enter secret key'}"
-                        value="">
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        Leave blank to keep the existing key.
-                    </p>
-                </div>
-                <div class="uk-flex uk-flex-right uk-margin-top">
-                    <button type="submit" class="uk-button kp-btn-primary">
-                        <span uk-icon="check"></span> Save
-                    </button>
-                </div>
-            </form>
-        </div>
-        `;
+    </div>
+    `;
 
     // load the ssl status for the current admin domain if one is set
     if (settings.admin_domain) {
@@ -214,27 +210,6 @@ export async function viewSettings(root) {
         } finally {
             btn.disabled = false;
             btn.innerHTML = orig;
-        }
-    });
-
-    // -- settings csv import -------------------------------------------------
-    document.getElementById("settings-import-file").addEventListener("change", async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        const fd = new FormData();
-        fd.append("file", file);
-
-        try {
-            const res  = await fetch("/api/settings/import", { method: "POST", body: fd });
-            const data = res.status === 204 ? null : await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-            toast.success("Settings imported — reloading");
-            viewSettings(root);
-        } catch (err) {
-            toast.error(err.message);
-        } finally {
-            e.target.value = "";
         }
     });
 
@@ -295,4 +270,5 @@ export async function viewSettings(root) {
             btn.innerHTML = orig;
         }
     });
+
 }

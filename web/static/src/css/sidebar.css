@@ -77,14 +77,12 @@
 .kp-nav { padding: 0 14px; flex: 1; }
 
 .kp-nav-section {
-    font-size: 0.65rem;
     font-weight: 700;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--kp-text-dim);
     padding: 16px 8px 6px;
     font-family: 'JetBrains Mono', monospace;
-    opacity: 0.6;
 }
 
 .kp-nav-link {

@@ -15,6 +15,9 @@
     box-shadow: 0 0 0 3px var(--kp-blue-glow) !important;
 }
 .kp-input::placeholder { color: var(--kp-text-dim); opacity: 0.6; }
+.kp-waf-exclusions {
+    height:auto !important;
+}
 
 .kp-label {
     font-size: 0.75rem;

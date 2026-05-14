@@ -304,4 +304,24 @@ CREATE TABLE IF NOT EXISTS kppn_backups (
 
 CREATE INDEX IF NOT EXISTS idx_backups_site    ON kppn_backups (site_id);
 CREATE INDEX IF NOT EXISTS idx_backups_created ON kppn_backups (created);
+
+CREATE TABLE IF NOT EXISTS kppn_waf_settings (
+    id             INTEGER PRIMARY KEY CHECK(id = 1),
+    enabled        INTEGER NOT NULL DEFAULT 0,
+    mode           INTEGER NOT NULL DEFAULT 0,
+    paranoia_level INTEGER NOT NULL DEFAULT 1,
+    audit_log      INTEGER NOT NULL DEFAULT 0,
+    exclusions     TEXT    NOT NULL DEFAULT '',
+    updated        DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS kppn_waf_site_overrides (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id    INTEGER NOT NULL UNIQUE REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    override   INTEGER NOT NULL DEFAULT 0,
+    exclusions TEXT    NOT NULL DEFAULT '',
+    updated    DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_waf_site_overrides_site ON kppn_waf_site_overrides (site_id);
 `
