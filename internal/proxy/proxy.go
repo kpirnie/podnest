@@ -18,6 +18,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -267,12 +268,16 @@ func (p *Proxy) WarmWAFCache() error {
 		return nil
 	}
 
-	// use locally downloaded CRS rules when available; fall back to embedded
+	// prefer locally downloaded CRS rules over the embedded coraza-coreruleset;
+	// fall back to the embedded ruleset only when no local install is present
 	crsDir := ""
-	//localCRS := CRSDir(p.appPath)
-	//if _, err := os.Stat(filepath.Join(localCRS, ".version")); err == nil {
-	//	crsDir = localCRS
-	//}
+	localCRS := CRSDir(p.appPath)
+	if _, err := os.Stat(filepath.Join(localCRS, ".version")); err == nil {
+		crsDir = localCRS
+		logger.Info("proxy: using local CRS rules from %s", crsDir)
+	} else {
+		logger.Warn("proxy: local CRS not found, falling back to embedded coraza-coreruleset")
+	}
 
 	// build the global engine
 	engine, err := NewWAFEngine(settings, "", crsDir)

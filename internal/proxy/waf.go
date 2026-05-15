@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -28,19 +29,49 @@ type WAFEngine struct {
 	log  bool // whether audit logging is enabled
 }
 
+// overlayFS gives local CRS files priority over the embedded coreruleset.
+// Requests for owasp_crs/* are remapped to rules/* to match the local CRS layout.
+type overlayFS struct {
+	local    fs.FS // locally downloaded CRS — takes priority
+	embedded fs.FS // embedded coraza-coreruleset — fallback only
+}
+
+// Open implements fs.FS. It first tries to open the file from the local FS, and if that fails it falls back to the embedded FS.
+func (o overlayFS) Open(name string) (fs.File, error) {
+	// remap owasp_crs/* → rules/* to match the downloaded CRS directory layout
+	localName := name
+	if strings.HasPrefix(name, "owasp_crs/") {
+		localName = "rules/" + strings.TrimPrefix(name, "owasp_crs/")
+	}
+	if f, err := o.local.Open(localName); err == nil {
+		return f, nil
+	}
+	return o.embedded.Open(name)
+}
+
 // NewWAFEngine builds a Coraza WAF engine from the given global settings.
 // extraExclusions is merged on top of s.Exclusions — pass a per-site exclusion
 // list here, or an empty string when building the global engine.
 func NewWAFEngine(s db.WAFSettings, extraExclusions, crsDir string) (*WAFEngine, error) {
+
+	// directives are always @-prefixed; the rootFS determines which files are served —
+	// local CRS takes priority via overlayFS when a local install is present
 	directives := fmt.Sprintf(`
 Include @coraza.conf-recommended
 Include @crs-setup.conf.example
 Include @owasp_crs/*.conf
 %s`, buildDirectives(s.ParanoiaLevel, mergeExclusions(s.Exclusions, extraExclusions)))
 
+	// use the overlay FS when a local CRS install is present so local rules
+	// take priority over the embedded coraza-coreruleset
+	var rootFS fs.FS = coreruleset.FS
+	if crsDir != "" {
+		rootFS = overlayFS{local: os.DirFS(crsDir), embedded: coreruleset.FS}
+	}
+
 	waf, err := coraza.NewWAF(
 		coraza.NewWAFConfig().
-			WithRootFS(coreruleset.FS).
+			WithRootFS(rootFS).
 			WithErrorCallback(func(mr types.MatchedRule) {
 				// log every matched rule for false-positive diagnosis
 				logger.Debug("waf: rule matched id=%d raw=%q", mr.Rule().ID(), mr.Rule().Raw())
