@@ -120,8 +120,9 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /sites/{id}/backups/restore-status", s.apiRestoreStatus)
 	api.HandleFunc("GET /sites/{id}/backups/{bid}/download", s.apiDownloadBackup)
 
-	// WebSocket log tail
+	// WebSockets log tail
 	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)
+	api.HandleFunc("GET /sites/{id}/logs/waf", s.apiSiteWAFLog)
 
 	// WP-CLI WebSocket terminal — WordPress sites only
 	api.HandleFunc("GET /sites/{id}/wpcli", s.apiWPCLI)

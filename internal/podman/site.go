@@ -357,13 +357,20 @@ func (c *Client) createPHP(ctx context.Context, cfg SiteConfig) error {
 	phpImage := models.PHPImage(cfg.Site.PHPVersion)
 
 	_, err := c.CreateContainer(ctx, ContainerSpec{
-		Name:  ContainerName(cfg.Site.Name, "php"),
-		Image: phpImage,
-		Pod:   podName,
-		User:  fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
-		// skip the WordPress entrypoint — wp-config.php is written by scaffoldSiteDir
-		// so php-fpm runs directly as siteUID with no ownership conflicts
+		Name:       ContainerName(cfg.Site.Name, "php"),
+		Image:      phpImage,
+		Pod:        podName,
+		User:       fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
 		Entrypoint: []string{"/usr/local/etc/php-fpm.d/wp-init.sh"},
+		Env: map[string]string{
+			"WORDPRESS_DB_HOST":      "127.0.0.1",
+			"WORDPRESS_DB_NAME":      cfg.DBName,
+			"WORDPRESS_DB_USER":      cfg.DBUser,
+			"WORDPRESS_DB_PASSWORD":  cfg.DBPass,
+			"REDIS_PASSWORD":         cfg.RedisPass,
+			"WORDPRESS_TABLE_PREFIX": "wp_",
+			"WORDPRESS_DEBUG":        "0",
+		},
 		Mounts: []Mount{
 			{
 				Type:        "bind",

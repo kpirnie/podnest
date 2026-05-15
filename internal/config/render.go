@@ -570,14 +570,6 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 	access_log /dev/stdout main;
     error_log  /dev/stderr warn;
 
-	# block common SQLi and XSS patterns in URI and args
-	if ($request_uri ~* "(union.*select|insert.*into|drop.*table|<script|javascript:|eval\()") {
-		return 403;
-	}
-	# block directory traversal and null byte injection
-	if ($request_uri ~* "(\.\./|\.\.\\|\x00)") {
-		return 403;
-	}
 	# only allow standard HTTP methods
 	if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH)$) {
 		return 405;
@@ -657,10 +649,6 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
     location ~* /(?:uploads|files)/.*\.php$ { deny all; }
     location ~* \.(engine|inc|info|install|make|module|profile|po|sh|sql|tpl|xtmpl)$ { deny all; }
 
-	# block direct HTTP access to nginx and PHP ini override files
-    location ^~ /.nginx.conf { deny all; return 403; }
-    location ^~ /.user.ini   { deny all; return 403; }
-
     # include per-site nginx rules if present
     include /var/www/html/.nginx.conf*;
 }
@@ -693,14 +681,6 @@ func renderNginxProxy(configJSON string, upstreamPort int, listenPort int) (stri
 	access_log /dev/stdout main;
     error_log  /dev/stderr warn;
 
-	# block common SQLi and XSS patterns in URI and args
-	if ($request_uri ~* "(union.*select|insert.*into|drop.*table|<script|javascript:|eval\()") {
-		return 403;
-	}
-	# block directory traversal and null byte injection
-	if ($request_uri ~* "(\.\./|\.\.\\|\x00)") {
-		return 403;
-	}
 	# only allow standard HTTP methods
 	if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH)$) {
 		return 405;
@@ -772,14 +752,6 @@ func renderNginxStatic(configJSON string, listenPort int) (string, error) {
 	access_log /dev/stdout main;
     error_log  /dev/stderr warn;
 
-	# block common SQLi and XSS patterns in URI and args
-	if ($request_uri ~* "(union.*select|insert.*into|drop.*table|<script|javascript:|eval\()") {
-		return 403;
-	}
-	# block directory traversal and null byte injection
-	if ($request_uri ~* "(\.\./|\.\.\\|\x00)") {
-		return 403;
-	}
 	# only allow standard HTTP methods
 	if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE|OPTIONS|PATCH)$) {
 		return 405;
@@ -805,10 +777,6 @@ func renderNginxStatic(configJSON string, listenPort int) (string, error) {
     location = /favicon.ico { log_not_found off; access_log off; }
     location = /robots.txt  { log_not_found off; access_log off; allow all; }
     location ~ /\. { deny all; }
-
-	# block direct HTTP access to nginx and PHP ini override files
-    location ^~ /.nginx.conf { deny all; return 403; }
-    location ^~ /.user.ini   { deny all; return 403; }
 
     # include per-site nginx rules if present
     include /var/www/html/.nginx.conf*;

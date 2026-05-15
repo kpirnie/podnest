@@ -6,6 +6,7 @@ require (
 	github.com/corazawaf/coraza-coreruleset/v4 v4.25.0
 	github.com/corazawaf/coraza/v3 v3.7.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/jcchavezs/mergefs v0.1.1
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.51.0

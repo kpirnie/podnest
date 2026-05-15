@@ -19,6 +19,7 @@ export function renderLogsTab(siteId, siteType) {
                     ${runtimeOption()}
                     <option value="db">MariaDB</option>
                     <option value="redis">Redis</option>
+                    <option value="waf">WAF Log</option>
                 </select>
                 <select class="uk-select kp-select" id="log-tail" style="width:120px;height:38px">
                     <option value="100">100 lines</option>
@@ -64,7 +65,9 @@ export function wireLogsTab(root, siteId) {
         text.split("\n").forEach((line) => {
             if (!line) return;
             const div = document.createElement("div");
-            div.className = line.match(/error|crit|emerg/i) ? "kp-log-line-err"
+            div.className = line.match(/WAF BLOCK/i) ? "kp-log-line-err"
+                : line.match(/WAF DETECT/i) ? "kp-log-line-warn"
+                : line.match(/error|crit|emerg/i) ? "kp-log-line-err"
                 : line.match(/warn/i) ? "kp-log-line-warn"
                 : line.match(/info|notice/i) ? "kp-log-line-info" : "";
             div.textContent = line;
@@ -85,8 +88,11 @@ export function wireLogsTab(root, siteId) {
         disconnect();
         const container = root.querySelector("#log-container").value;
         const tail      = root.querySelector("#log-tail").value;
-        const proto     = location.protocol === "https:" ? "wss" : "ws";
-        ws = new WebSocket(`${proto}://${location.host}/api/sites/${siteId}/logs?container=${container}&tail=${tail}`);
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const wsUrl = container === "waf"
+            ? `${proto}://${location.host}/api/sites/${siteId}/logs/waf?tail=${tail}`
+            : `${proto}://${location.host}/api/sites/${siteId}/logs?container=${container}&tail=${tail}`;
+        ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
             connected = true;

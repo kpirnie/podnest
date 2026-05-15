@@ -137,8 +137,12 @@ func (s *Server) Start() error {
 		HostGateway: s.cfg.HostGateway,
 		AdminDomain: adminDomain,
 		AdminPort:   s.cfg.Port,
+		AppPath:     s.cfg.AppPath,
 	})
 	s.proxy = px
+
+	// nightly CRS rule update — runs immediately on startup then every 24 hours
+	go s.crsUpdater()
 
 	// try to grab a cert
 	if adminDomain != "" {
@@ -185,6 +189,32 @@ func (s *Server) sessionReaper() {
 	for range ticker.C {
 		_ = auth.PurgeExpiredSessions(s.cfg.DB)
 		_ = db.DeleteExpiredPMATokens(s.cfg.DB)
+	}
+}
+
+// crsUpdater checks for updated OWASP CRS rules nightly and recompiles the
+// WAF engine if a new version is downloaded.
+func (s *Server) crsUpdater() {
+	run := func() {
+		if err := proxy.UpdateCRS(s.cfg.AppPath); err != nil {
+			logger.Warn("crs: update check failed: %v", err)
+			return
+		}
+		// recompile the WAF engine if the proxy is already running
+		if s.proxy != nil {
+			if err := s.proxy.WarmWAFCache(); err != nil {
+				logger.Error("crs: WAF cache refresh after update failed: %v", err)
+			}
+		}
+	}
+
+	// run immediately on startup so rules are current before serving traffic
+	run()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		run()
 	}
 }
 

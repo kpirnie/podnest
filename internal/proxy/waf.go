@@ -31,7 +31,7 @@ type WAFEngine struct {
 // NewWAFEngine builds a Coraza WAF engine from the given global settings.
 // extraExclusions is merged on top of s.Exclusions — pass a per-site exclusion
 // list here, or an empty string when building the global engine.
-func NewWAFEngine(s db.WAFSettings, extraExclusions string) (*WAFEngine, error) {
+func NewWAFEngine(s db.WAFSettings, extraExclusions, crsDir string) (*WAFEngine, error) {
 	directives := fmt.Sprintf(`
 Include @coraza.conf-recommended
 Include @crs-setup.conf.example
@@ -41,6 +41,10 @@ Include @owasp_crs/*.conf
 	waf, err := coraza.NewWAF(
 		coraza.NewWAFConfig().
 			WithRootFS(coreruleset.FS).
+			WithErrorCallback(func(mr types.MatchedRule) {
+				// log every matched rule for false-positive diagnosis
+				logger.Debug("waf: rule matched id=%d raw=%q", mr.Rule().ID(), mr.Rule().Raw())
+			}).
 			WithDirectives(directives),
 	)
 	if err != nil {
@@ -66,10 +70,21 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	tx.ProcessConnection(clientIP, 0, "", 0)
 	tx.ProcessURI(r.URL.RequestURI(), r.Method, r.Proto)
 
-	// request headers phase
+	// explicitly populate ARGS from query string so CRS rules can inspect them
+	for key, vals := range r.URL.Query() {
+		for _, v := range vals {
+			tx.AddGetRequestArgument(key, v)
+			logger.Debug("waf: adding GET arg key=%q val=%q", key, v)
+		}
+	}
+
+	// process request headers — Host must be added explicitly as Go excludes
+	// it from r.Header and stores it separately in r.Host
+	tx.AddRequestHeader("Host", r.Host)
 	for name, vals := range r.Header {
 		for _, v := range vals {
 			tx.AddRequestHeader(name, v)
+			logger.Debug("waf: HEADER name=%q val=%q", name, v)
 		}
 	}
 	if it := tx.ProcessRequestHeaders(); it != nil {
@@ -88,12 +103,15 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 			}
 		}
 	}
+
+	logger.Debug("waf: calling ProcessRequestBody")
 	if it, err := tx.ProcessRequestBody(); err != nil {
 		logger.Error("waf: ProcessRequestBody: %v", err)
 	} else if it != nil {
 		return e.interrupt(w, r, it, clientIP, accessLog)
 	}
 
+	logger.Debug("waf: inspect complete — no interruption (method=%s uri=%s)", r.Method, r.URL.RequestURI())
 	return true
 }
 
@@ -138,6 +156,11 @@ func writeWAFLog(f *os.File, r *http.Request, clientIP string, ruleID int, actio
 // (numeric) or tag names.
 func buildDirectives(paranoiaLevel int, exclusions string) string {
 	var b strings.Builder
+
+	// enable the rule engine so ProcessRequest* returns interruptions;
+	// detect-vs-prevent behaviour is handled in WAFEngine.interrupt()
+	b.WriteString("SecRuleEngine On\n")
+
 	fmt.Fprintf(&b,
 		"SecAction \"id:900000,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=%d\"\n",
 		paranoiaLevel,

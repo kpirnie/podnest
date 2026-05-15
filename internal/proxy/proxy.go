@@ -78,6 +78,7 @@ type Proxy struct {
 	hostGateway    string
 	adminDomain    string
 	adminPort      int
+	appPath        string
 	adminMu        sync.RWMutex                                 // guards adminDomain only
 	cache          atomic.Pointer[map[string]domainEntry]       // domain → entry; swapped atomically on every change
 	secCache       atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
@@ -88,6 +89,7 @@ type Proxy struct {
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy; write-rarely, read-heavy
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
+	wafLog         *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
 	manager        *autocert.Manager
 	httpSrv        *http.Server
 	httpsSrv       *http.Server
@@ -100,6 +102,7 @@ type Config struct {
 	HostGateway string
 	AdminDomain string
 	AdminPort   int
+	AppPath     string
 }
 
 // New creates and configures the proxy but does not start listeners
@@ -109,6 +112,7 @@ func New(cfg Config) *Proxy {
 		hostGateway: cfg.HostGateway,
 		adminDomain: cfg.AdminDomain,
 		adminPort:   cfg.AdminPort,
+		appPath:     cfg.AppPath,
 		transport: &http.Transport{
 			MaxIdleConns:        500,
 			MaxIdleConnsPerHost: 100,
@@ -140,17 +144,26 @@ func New(cfg Config) *Proxy {
 		}
 	}
 
+	// setup the waf log
+	wafPath := logDir + "/waf.log"
+	if f, err := os.OpenFile(wafPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640); err != nil {
+		logger.Warn("proxy: could not open WAF log %s: %v", wafPath, err)
+	} else {
+		p.wafLog = f
+	}
+
+	// setup the SSL cert manager, or the self signed cert manager if necessary
 	p.manager = &autocert.Manager{
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: p.hostPolicy,
 		Cache:      autocert.DirCache(cfg.CertDir),
 	}
-
 	selfCert, err := selfSignedCert(cfg.CertDir)
 	if err != nil {
 		logger.Error("failed to generate self-signed cert: %v", err)
 	}
 
+	// SERVE IT!
 	p.httpsSrv = &http.Server{
 		Addr:    ":443",
 		Handler: p,
@@ -167,6 +180,7 @@ func New(cfg Config) *Proxy {
 		},
 	}
 
+	// SERVE IT!
 	p.httpSrv = &http.Server{
 		Addr:    ":80",
 		Handler: p.manager.HTTPHandler(p),
@@ -195,6 +209,11 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	// flush and close the access log file
 	if p.accessLog != nil {
 		p.accessLog.Close()
+	}
+
+	// flush and close the waf log file
+	if p.wafLog != nil {
+		p.wafLog.Close()
 	}
 }
 
@@ -248,8 +267,15 @@ func (p *Proxy) WarmWAFCache() error {
 		return nil
 	}
 
+	// use locally downloaded CRS rules when available; fall back to embedded
+	crsDir := ""
+	//localCRS := CRSDir(p.appPath)
+	//if _, err := os.Stat(filepath.Join(localCRS, ".version")); err == nil {
+	//	crsDir = localCRS
+	//}
+
 	// build the global engine
-	engine, err := NewWAFEngine(settings, "")
+	engine, err := NewWAFEngine(settings, "", crsDir)
 	if err != nil {
 		return err
 	}
@@ -266,7 +292,7 @@ func (p *Proxy) WarmWAFCache() error {
 		overrideMap[o.SiteID] = o
 		// only build a site engine when there are additional exclusions to apply
 		if strings.TrimSpace(o.Exclusions) != "" && o.Override != db.WAFOverrideOff {
-			siteEngine, err := NewWAFEngine(settings, o.Exclusions)
+			siteEngine, err := NewWAFEngine(settings, o.Exclusions, crsDir)
 			if err != nil {
 				logger.Error("proxy: WAF site engine build failed siteID=%d: %v", o.SiteID, err)
 				continue
@@ -397,11 +423,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), p.resolveWAFEngine(siteID) != nil)
 	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
 	if siteID > 0 {
 		if engine := p.resolveWAFEngine(siteID); engine != nil {
-			if !engine.Inspect(w, r, clientIP.String(), p.accessLog) {
-				// WAF wrote the 403 and access log entry; nothing more to do
+			if !engine.Inspect(w, r, clientIP.String(), p.wafLog) {
+				// WAF wrote the 403; record it in the access log for Fail2Ban
+				p.writeAccessLog(r, http.StatusForbidden, 0, time.Since(start), clientIP.String())
 				return
 			}
 		}

@@ -1,11 +1,16 @@
 package server
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
+	"time"
 
+	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/podman"
 
@@ -111,4 +116,130 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// apiSiteWAFLog upgrades the connection to a WebSocket, streams the last n matching
+// lines from waf.log for the site's domain, then polls for new entries live.
+func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
+
+	site, ok := s.resolveSite(w, r)
+	if !ok {
+		return
+	}
+
+	// fetch all domains for this site to use as log filters
+	domains, err := db.GetDomainsBySite(s.cfg.DB, site.ID)
+	if err != nil || len(domains) == 0 {
+		logger.Error("apiSiteWAFLog: no domains for site %d: %v", site.ID, err)
+		http.Error(w, "no domains found for site", http.StatusNotFound)
+		return
+	}
+	// use the primary domain (first entry) as the WAF log filter
+	domain := domains[0].Domain
+
+	// resolve tail line count from query string, defaulting to 100
+	tail := 100
+	if t := r.URL.Query().Get("tail"); t != "" {
+		if n, err := strconv.Atoi(t); err == nil && n > 0 && n <= 5000 {
+			tail = n
+		}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Error("apiSiteWAFLog: upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	wafLogPath := s.cfg.AppPath + "/logs/waf.log"
+	ctx := r.Context()
+
+	// send the initial tail of matching lines before switching to live follow
+	initial, err := tailWAFLog(wafLogPath, domain, tail)
+	if err != nil {
+		// log file may not exist yet if no WAF events have fired for this site
+		conn.WriteMessage(websocket.TextMessage, []byte("[waf] no WAF log entries yet"))
+		logger.Debug("apiSiteWAFLog: waf.log not readable for site %d: %v", site.ID, err)
+		return
+	}
+	for _, line := range initial {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+			return
+		}
+	}
+
+	// open the file and seek to the end for live streaming
+	f, err := os.Open(wafLogPath)
+	if err != nil {
+		logger.Error("apiSiteWAFLog: open for live tail: %v", err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		logger.Error("apiSiteWAFLog: seek: %v", err)
+		return
+	}
+
+	reader := bufio.NewReader(f)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	logger.Debug("apiSiteWAFLog: live streaming waf.log for site %d domain=%s", site.ID, domain)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// drain all new lines written since the last tick
+			for {
+				line, err := reader.ReadString('\n')
+				if len(line) > 0 {
+					line = strings.TrimRight(line, "\r\n")
+					if strings.Contains(line, domain) {
+						if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+							return
+						}
+					}
+				}
+				if err == io.EOF {
+					// no more data yet — wait for the next tick
+					break
+				}
+				if err != nil {
+					logger.Error("apiSiteWAFLog: read error: %v", err)
+					return
+				}
+			}
+		}
+	}
+}
+
+// tailWAFLog reads waf.log and returns the last n lines that contain the given domain
+func tailWAFLog(path, domain string, n int) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var matches []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, domain) {
+			matches = append(matches, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	// return only the last n matches
+	if len(matches) > n {
+		matches = matches[len(matches)-n:]
+	}
+	return matches, nil
 }
