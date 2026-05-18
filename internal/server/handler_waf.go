@@ -6,6 +6,7 @@ import (
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/proxy"
 )
 
 // -- request types -----------------------------------------------------------
@@ -135,5 +136,76 @@ func (s *Server) apiUpdateWAFSiteOverride(w http.ResponseWriter, r *http.Request
 	}()
 
 	logger.Debug("apiUpdateWAFSiteOverride: siteID=%d saved and cache refresh triggered", site.ID)
+	apiJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// -- per-site WAF plugins ----------------------------------------------------
+
+// apiListAvailablePlugins returns the .conf filenames present in the local
+// CRS plugins directory — used to populate the plugin selection UI
+func (s *Server) apiListAvailablePlugins(w http.ResponseWriter, r *http.Request) {
+	crsDir := proxy.CRSDir(s.cfg.AppPath)
+	plugins, err := proxy.ListAvailablePlugins(crsDir)
+	if err != nil {
+		logger.Error("apiListAvailablePlugins: %v", err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if plugins == nil {
+		plugins = []string{}
+	}
+
+	logger.Debug("apiListAvailablePlugins: returning %d plugins", len(plugins))
+	apiJSON(w, http.StatusOK, plugins)
+}
+
+// apiGetSitePlugins returns the enabled plugin filenames for a specific site
+func (s *Server) apiGetSitePlugins(w http.ResponseWriter, r *http.Request) {
+	site, ok := s.resolveSite(w, r)
+	if !ok {
+		return
+	}
+
+	plugins, err := db.GetSitePlugins(s.cfg.DB, site.ID)
+	if err != nil {
+		logger.Error("apiGetSitePlugins: siteID=%d %v", site.ID, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	logger.Debug("apiGetSitePlugins: siteID=%d retrieved %d plugins", site.ID, len(plugins))
+	apiJSON(w, http.StatusOK, plugins)
+}
+
+// apiSetSitePlugins replaces the plugin selection for a specific site and
+// recompiles the site WAF engine
+func (s *Server) apiSetSitePlugins(w http.ResponseWriter, r *http.Request) {
+	site, ok := s.resolveSite(w, r)
+	if !ok {
+		return
+	}
+
+	var plugins []string
+	if err := json.NewDecoder(r.Body).Decode(&plugins); err != nil {
+		logger.Error("apiSetSitePlugins: decode: siteID=%d %v", site.ID, err)
+		apiError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := db.SetSitePlugins(s.cfg.DB, site.ID, plugins); err != nil {
+		logger.Error("apiSetSitePlugins: save: siteID=%d %v", site.ID, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// recompile in background — site engine needs rebuilding with updated plugins
+	go func() {
+		if err := s.proxy.WarmWAFCache(); err != nil {
+			logger.Error("apiSetSitePlugins: WAF cache refresh failed: %v", err)
+		}
+	}()
+
+	logger.Debug("apiSetSitePlugins: siteID=%d saved and cache refresh triggered", site.ID)
 	apiJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

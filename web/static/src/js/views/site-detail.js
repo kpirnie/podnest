@@ -27,6 +27,16 @@ function renderWAFOverride() {
                     </select>
                 </div>
                 <div class="uk-margin">
+                    <label class="kp-label">CRS Plugins</label>
+                    <p class="kp-muted uk-text-small uk-margin-small-top">
+                        Select OWASP CRS plugins to enable for this site. Only plugins present in the
+                        local CRS install are shown. Changes recompile the site WAF engine in the background.
+                    </p>
+                    <div id="waf-plugins-list" class="uk-margin-small-top">
+                        <span class="kp-muted uk-text-small">Loading available plugins…</span>
+                    </div>
+                </div>
+                <div class="uk-margin">
                     <label class="kp-label" for="waf-site-exclusions">Additional Rule Exclusions</label>
                     <textarea
                         class="uk-textarea kp-input kp-mono kp-waf-exclusions"
@@ -57,8 +67,34 @@ async function loadWAFTab(id) {
         const data = await api.get(`/sites/${id}/waf`);
         const sel  = document.getElementById("waf-override");
         const exc  = document.getElementById("waf-site-exclusions");
-        if (sel) sel.value        = String(data.Override  ?? 0);
-        if (exc) exc.value        = data.Exclusions ?? '';
+        if (sel) sel.value = String(data.Override ?? 0);
+        if (exc) exc.value = data.Exclusions ?? '';
+
+        // populate plugin checkboxes
+        const pluginsList = document.getElementById("waf-plugins-list");
+        if (pluginsList) {
+            const [available, selected] = await Promise.all([
+                api.get(`/settings/waf/plugins`),
+                api.get(`/sites/${id}/waf/plugins`),
+            ]);
+            const enabledSet = new Set(selected ?? []);
+            if (!available || available.length === 0) {
+                pluginsList.innerHTML = `<span class="kp-muted uk-text-small">No plugins found in local CRS install.</span>`;
+            } else {
+                pluginsList.innerHTML = `
+                    <div class="waf-plugin-pills">
+                        ${available.map(p => `
+                        <span class="waf-plugin-pill ${enabledSet.has(p) ? 'active' : ''}"
+                            data-plugin="${p}">${p}</span>
+                        `).join("")}
+                    </div>`;
+
+                // toggle active state on click
+                pluginsList.querySelectorAll(".waf-plugin-pill").forEach(pill => {
+                    pill.addEventListener("click", () => pill.classList.toggle("active"));
+                });
+            }
+        }
     } catch (e) {
         toast.error("Failed to load WAF settings: " + e.message);
     }
@@ -82,6 +118,12 @@ function wireWAFTab(root, id) {
 
         try {
             await api.put(`/sites/${id}/waf`, body);
+
+            // save plugin selection
+            const plugins = [...document.querySelectorAll(".waf-plugin-pill.active")]
+                .map(p => p.dataset.plugin);
+            await api.put(`/sites/${id}/waf/plugins`, plugins);
+
             toast.success("WAF override saved — engine recompiling in background");
         } catch (err) {
             toast.error(err.message);

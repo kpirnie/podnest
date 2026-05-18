@@ -23,6 +23,38 @@ const (
 	crsUserAgent = "podnest-crs-updater/1.0"
 )
 
+// crsPluginRepos is the list of official CRS plugin repositories to download.
+// Each entry is a "{owner}/{repo}" GitHub path; the plugins/ subdirectory of
+// each repo is fetched via the GitHub Contents API.
+var crsPluginRepos = []string{
+	"coreruleset/template-plugin",
+	"coreruleset/auto-decoding-plugin",
+	"coreruleset/antivirus-plugin",
+	"coreruleset/body-decompress-plugin",
+	"coreruleset/fake-bot-plugin",
+	"coreruleset/google-oauth2-plugin",
+	"coreruleset/drupal-rule-exclusions-plugin",
+	"coreruleset/wordpress-rule-exclusions-plugin",
+	"coreruleset/nextcloud-rule-exclusions-plugin",
+	"coreruleset/dokuwki-rule-exclusions-plugin",
+	"coreruleset/cpanel-rule-exclusions-plugin",
+	"coreruleset/xenforo-rule-exclusions-plugin",
+	"coreruleset/phpbb-rule-exclusions-plugin",
+	"coreruleset/phpmyadmin-rule-exclusions-plugin",
+	"coreruleset/dos-protection-plugin-modsecurity",
+	"coreruleset/machine-learning-integration-plugin",
+	"coreruleset/performance-plugin",
+	"coreruleset/ghost-rule-exclusions-plugin",
+	"EsadCetiner/roundcube-rule-exclusions-plugin",
+	"EsadCetiner/sogo-rule-exclusions-plugin",
+	"EsadCetiner/iredadmin-rule-exclusions-plugin",
+	"eilandert/wordpress-hardening-plugin",
+	"coreruleset/database-logging-plugin",
+	"coreruleset/referer-hardening-plugin",
+	"coreruleset/traffic-observation-plugin",
+	"coreruleset/incubator-plugin",
+}
+
 // CRSDir returns the path where downloaded CRS rule files are stored
 func CRSDir(appPath string) string {
 	return filepath.Join(appPath, "waf", "crs")
@@ -43,6 +75,18 @@ func UpdateCRS(appPath string) error {
 	versionFile := filepath.Join(crsDir, ".version")
 	if current, err := os.ReadFile(versionFile); err == nil && strings.TrimSpace(string(current)) == tag {
 		logger.Info("crs: already up to date (%s)", tag)
+		// sync plugins only when the plugins version file is missing or out of date
+		pluginsVersionFile := filepath.Join(crsDir, ".plugins-version")
+		if pv, err := os.ReadFile(pluginsVersionFile); err != nil || strings.TrimSpace(string(pv)) != tag {
+			logger.Info("crs: plugins out of date — syncing")
+			if err := downloadCRSPlugins(filepath.Join(crsDir, "plugins")); err != nil {
+				logger.Warn("crs: plugin sync failed: %v", err)
+			} else {
+				_ = os.WriteFile(pluginsVersionFile, []byte(tag), 0640)
+			}
+		} else {
+			logger.Info("crs: plugins already up to date (%s)", tag)
+		}
 		return nil
 	}
 
@@ -97,8 +141,14 @@ func UpdateCRS(appPath string) error {
 		return fmt.Errorf("crs: copy rules: %w", err)
 	}
 
-	// record the installed version for update-check on the next run
+	// download all official CRS plugins from GitHub into the staging plugins/ directory
+	if err := downloadCRSPlugins(filepath.Join(stagingDir, "plugins")); err != nil {
+		return fmt.Errorf("crs: download plugins: %w", err)
+	}
+
+	// record the installed versions for update-checks on the next run
 	_ = os.WriteFile(filepath.Join(stagingDir, ".version"), []byte(tag), 0640)
+	_ = os.WriteFile(filepath.Join(stagingDir, ".plugins-version"), []byte(tag), 0640)
 
 	// atomic swap: remove current install and rename staging into place
 	_ = os.RemoveAll(crsDir)
@@ -229,4 +279,83 @@ func crsHTTPGet(url string) (*http.Response, error) {
 	req.Header.Set("User-Agent", crsUserAgent)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	return client.Do(req)
+}
+
+// downloadCRSPlugins fetches all .conf files from the plugins/ directory of
+// each official CRS plugin repository and writes them into pluginsDir
+func downloadCRSPlugins(pluginsDir string) error {
+	if err := os.MkdirAll(pluginsDir, 0750); err != nil {
+		return fmt.Errorf("crs: plugins dir: %w", err)
+	}
+
+	for _, repo := range crsPluginRepos {
+		if err := downloadPluginRepo(repo, pluginsDir); err != nil {
+			// non-fatal — log and continue so one bad repo doesn't block the rest
+			logger.Warn("crs: plugin repo %s: %v — skipping", repo, err)
+		}
+	}
+	return nil
+}
+
+// downloadPluginRepo fetches all .conf files from the plugins/ directory of a
+// single GitHub repository via the Contents API and saves them into destDir
+func downloadPluginRepo(repo, destDir string) error {
+	apiURL := "https://api.github.com/repos/" + repo + "/contents/plugins"
+	resp, err := crsHTTPGet(apiURL)
+	if err != nil {
+		return fmt.Errorf("list: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 404 means this repo has no plugins/ directory — not an error
+	if resp.StatusCode == http.StatusNotFound {
+		logger.Debug("crs: %s has no plugins/ directory — skipping", repo)
+		return nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("list: HTTP %d", resp.StatusCode)
+	}
+
+	var entries []struct {
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		DownloadURL string `json:"download_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return fmt.Errorf("decode: %w", err)
+	}
+
+	for _, e := range entries {
+		if e.Type != "file" || !strings.HasSuffix(e.Name, ".conf") {
+			continue
+		}
+		if err := downloadPluginFile(e.DownloadURL, filepath.Join(destDir, e.Name)); err != nil {
+			logger.Warn("crs: %s/%s: %v — skipping", repo, e.Name, err)
+		} else {
+			logger.Debug("crs: downloaded plugin %s from %s", e.Name, repo)
+		}
+	}
+	return nil
+}
+
+// downloadPluginFile fetches a single raw file URL and writes it to dst
+func downloadPluginFile(url, dst string) error {
+	resp, err := crsHTTPGet(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, resp.Body)
+	return err
 }

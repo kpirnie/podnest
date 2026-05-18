@@ -154,3 +154,83 @@ func GetAllWAFSiteOverrides(db *sql.DB) ([]WAFSiteOverride, error) {
 	logger.Debug("GetAllWAFSiteOverrides: loaded %d overrides", len(out))
 	return out, rows.Err()
 }
+
+// GetSitePlugins returns the list of enabled plugin filenames for a site
+func GetSitePlugins(db *sql.DB, siteID int64) ([]string, error) {
+	rows, err := db.Query(`SELECT plugin FROM kppn_waf_site_plugins WHERE site_id = ? ORDER BY plugin`, siteID)
+	if err != nil {
+		logger.Error("GetSitePlugins: siteID=%d %v", siteID, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			logger.Error("GetSitePlugins: scan: siteID=%d %v", siteID, err)
+			return nil, err
+		}
+		out = append(out, p)
+	}
+
+	logger.Debug("GetSitePlugins: siteID=%d loaded %d plugins", siteID, len(out))
+	return out, rows.Err()
+}
+
+// SetSitePlugins replaces the full plugin selection for a site atomically
+func SetSitePlugins(db *sql.DB, siteID int64, plugins []string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		logger.Error("SetSitePlugins: begin: siteID=%d %v", siteID, err)
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM kppn_waf_site_plugins WHERE site_id = ?`, siteID); err != nil {
+		logger.Error("SetSitePlugins: delete: siteID=%d %v", siteID, err)
+		return err
+	}
+
+	for _, p := range plugins {
+		if _, err := tx.Exec(
+			`INSERT INTO kppn_waf_site_plugins (site_id, plugin) VALUES (?, ?)`, siteID, p,
+		); err != nil {
+			logger.Error("SetSitePlugins: insert: siteID=%d plugin=%s %v", siteID, p, err)
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("SetSitePlugins: commit: siteID=%d %v", siteID, err)
+		return err
+	}
+
+	logger.Debug("SetSitePlugins: siteID=%d saved %d plugins", siteID, len(plugins))
+	return nil
+}
+
+// GetAllSitePlugins returns a map of siteID → plugin filenames for all sites
+// that have at least one plugin enabled — used to warm the proxy WAF cache
+func GetAllSitePlugins(db *sql.DB) (map[int64][]string, error) {
+	rows, err := db.Query(`SELECT site_id, plugin FROM kppn_waf_site_plugins ORDER BY site_id, plugin`)
+	if err != nil {
+		logger.Error("GetAllSitePlugins: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]string)
+	for rows.Next() {
+		var siteID int64
+		var p string
+		if err := rows.Scan(&siteID, &p); err != nil {
+			logger.Error("GetAllSitePlugins: scan: %v", err)
+			return nil, err
+		}
+		out[siteID] = append(out[siteID], p)
+	}
+
+	logger.Debug("GetAllSitePlugins: loaded plugins for %d sites", len(out))
+	return out, rows.Err()
+}

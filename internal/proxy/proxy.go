@@ -279,25 +279,33 @@ func (p *Proxy) WarmWAFCache() error {
 		logger.Warn("proxy: local CRS not found, falling back to embedded coraza-coreruleset")
 	}
 
-	// build the global engine
-	engine, err := NewWAFEngine(settings, "", crsDir)
+	// build the global engine — no plugins loaded at the global level
+	engine, err := NewWAFEngine(settings, "", crsDir, nil)
 	if err != nil {
 		return err
 	}
 
-	// fetch per-site overrides and build site-specific engines where needed
+	// fetch per-site overrides and plugin selections for cache warming
 	siteOverrides, err := db.GetAllWAFSiteOverrides(p.database)
 	if err != nil {
 		logger.Error("proxy: failed to load WAF site overrides: %v", err)
 		return err
 	}
 
+	sitePlugins, err := db.GetAllSitePlugins(p.database)
+	if err != nil {
+		logger.Error("proxy: failed to load WAF site plugins: %v", err)
+		return err
+	}
+
 	overrideMap := make(map[int64]db.WAFSiteOverride, len(siteOverrides))
 	for _, o := range siteOverrides {
 		overrideMap[o.SiteID] = o
-		// only build a site engine when there are additional exclusions to apply
-		if strings.TrimSpace(o.Exclusions) != "" && o.Override != db.WAFOverrideOff {
-			siteEngine, err := NewWAFEngine(settings, o.Exclusions, crsDir)
+		plugins := sitePlugins[o.SiteID] // nil when no plugins selected
+		// build a site engine when there are additional exclusions or plugins to apply
+		needsSiteEngine := strings.TrimSpace(o.Exclusions) != "" || len(plugins) > 0
+		if needsSiteEngine && o.Override != db.WAFOverrideOff {
+			siteEngine, err := NewWAFEngine(settings, o.Exclusions, crsDir, plugins)
 			if err != nil {
 				logger.Error("proxy: WAF site engine build failed siteID=%d: %v", o.SiteID, err)
 				continue

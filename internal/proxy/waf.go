@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +23,9 @@ import (
 // wafMaxBodyBytes is the maximum request body size inspected per request.
 // Bytes beyond this limit are forwarded to the upstream uninspected.
 const wafMaxBodyBytes = 1 << 20 // 1 MB
+
+// pluginSuffixes are the three file types that make up a CRS plugin
+var pluginSuffixes = []string{"-config.conf", "-before.conf", "-after.conf"}
 
 // WAFEngine wraps a compiled Coraza WAF instance and its active operational settings.
 type WAFEngine struct {
@@ -38,11 +43,17 @@ type overlayFS struct {
 
 // Open implements fs.FS. It first tries to open the file from the local FS, and if that fails it falls back to the embedded FS.
 func (o overlayFS) Open(name string) (fs.File, error) {
+	logger.Debug("overlayFS.Open: name=%q", name)
+
+	// strip the leading @ that Coraza preserves in directive paths
+	localName := strings.TrimPrefix(name, "@")
+
 	// remap owasp_crs/* → rules/* to match the downloaded CRS directory layout
-	localName := name
-	if strings.HasPrefix(name, "owasp_crs/") {
-		localName = "rules/" + strings.TrimPrefix(name, "owasp_crs/")
+	if strings.HasPrefix(localName, "owasp_crs/") {
+		localName = "rules/" + strings.TrimPrefix(localName, "owasp_crs/")
 	}
+
+	// plugins/* maps directly — same directory name in local and embedded
 	if f, err := o.local.Open(localName); err == nil {
 		return f, nil
 	}
@@ -52,15 +63,27 @@ func (o overlayFS) Open(name string) (fs.File, error) {
 // NewWAFEngine builds a Coraza WAF engine from the given global settings.
 // extraExclusions is merged on top of s.Exclusions — pass a per-site exclusion
 // list here, or an empty string when building the global engine.
-func NewWAFEngine(s db.WAFSettings, extraExclusions, crsDir string) (*WAFEngine, error) {
+// plugins is the list of plugin names to load (e.g. "wordpress-rule-exclusions");
+// pass nil for the global engine. All three file types for each plugin are
+// included in the correct order: config → before → CRS rules → after.
+func NewWAFEngine(s db.WAFSettings, extraExclusions, crsDir string, plugins []string) (*WAFEngine, error) {
+
+	// resolve per-plugin directives in the correct load order when a local
+	// CRS install is present and plugins have been selected
+	configD, beforeD, afterD := buildPluginDirectives(crsDir, plugins)
 
 	// directives are always @-prefixed; the rootFS determines which files are served —
 	// local CRS takes priority via overlayFS when a local install is present
 	directives := fmt.Sprintf(`
 Include @coraza.conf-recommended
 Include @crs-setup.conf.example
-Include @owasp_crs/*.conf
-%s`, buildDirectives(s.ParanoiaLevel, mergeExclusions(s.Exclusions, extraExclusions)))
+%s%sInclude @owasp_crs/*.conf
+%s%s`,
+		configD,
+		beforeD,
+		afterD,
+		buildDirectives(s.ParanoiaLevel, mergeExclusions(s.Exclusions, extraExclusions)),
+	)
 
 	// use the overlay FS when a local CRS install is present so local rules
 	// take priority over the embedded coraza-coreruleset
@@ -83,7 +106,7 @@ Include @owasp_crs/*.conf
 		return nil, fmt.Errorf("waf: engine init: %w", err)
 	}
 
-	logger.Info("waf: engine ready (mode=%d pl=%d audit=%v)", s.Mode, s.ParanoiaLevel, s.AuditLog)
+	logger.Info("waf: engine ready (mode=%d pl=%d audit=%v plugins=%v)", s.Mode, s.ParanoiaLevel, s.AuditLog, plugins)
 	return &WAFEngine{waf: waf, mode: s.Mode, log: s.AuditLog}, nil
 }
 
@@ -241,4 +264,105 @@ func isNumeric(s string) bool {
 		}
 	}
 	return true
+}
+
+// pluginNameFromFile extracts the plugin name from a plugin filename.
+// Returns ("", false) if the file is not a recognised plugin file.
+func pluginNameFromFile(filename string) (string, bool) {
+	for _, s := range pluginSuffixes {
+		if strings.HasSuffix(filename, s) {
+			return strings.TrimSuffix(filename, s), true
+		}
+	}
+	return "", false
+}
+
+// buildPluginDirectives returns the config, before, and after Include directives
+// for the given plugin names, checking that each file actually exists on disk
+// before including it — missing files are silently skipped
+func buildPluginDirectives(crsDir string, plugins []string) (config, before, after string) {
+	if crsDir == "" || len(plugins) == 0 {
+		return
+	}
+	pluginsDir := filepath.Join(crsDir, "plugins")
+	var cfgB, befB, aftB strings.Builder
+	for _, p := range plugins {
+		for _, suffix := range []string{"-config.conf", "-before.conf", "-after.conf"} {
+			if _, err := os.Stat(filepath.Join(pluginsDir, p+suffix)); err == nil {
+				switch suffix {
+				case "-config.conf":
+					fmt.Fprintf(&cfgB, "Include @plugins/%s%s\n", p, suffix)
+				case "-before.conf":
+					fmt.Fprintf(&befB, "Include @plugins/%s%s\n", p, suffix)
+				case "-after.conf":
+					fmt.Fprintf(&aftB, "Include @plugins/%s%s\n", p, suffix)
+				}
+			}
+		}
+	}
+	return cfgB.String(), befB.String(), aftB.String()
+}
+
+// ListAvailablePlugins returns the unique plugin names present in {crsDir}/plugins/
+// that are compatible with Coraza — each candidate is probe-compiled and silently
+// excluded if it fails. Names are returned sorted.
+func ListAvailablePlugins(crsDir string) ([]string, error) {
+	dir := filepath.Join(crsDir, "plugins")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("waf: list plugins: %w", err)
+	}
+
+	// collect unique plugin names from the directory
+	seen := make(map[string]struct{})
+	var candidates []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if name, ok := pluginNameFromFile(e.Name()); ok {
+			if _, exists := seen[name]; !exists {
+				seen[name] = struct{}{}
+				candidates = append(candidates, name)
+			}
+		}
+	}
+
+	// probe-compile each candidate — exclude any that Coraza cannot load
+	var out []string
+	for _, name := range candidates {
+		if probePlugin(crsDir, name) {
+			out = append(out, name)
+		} else {
+			logger.Debug("waf: plugin %s excluded — not compatible with this Coraza build", name)
+		}
+	}
+
+	if out == nil {
+		out = []string{}
+	}
+	sort.Strings(out)
+	logger.Debug("waf: found %d compatible plugins in %s", len(out), dir)
+	return out, nil
+}
+
+// probePlugin attempts to compile a minimal WAF engine with only the given
+// plugin's files loaded. Returns true if Coraza accepts all the plugin's
+// directives, false if any file fails to compile.
+func probePlugin(crsDir, pluginName string) bool {
+	configD, beforeD, afterD := buildPluginDirectives(crsDir, []string{pluginName})
+
+	directives := fmt.Sprintf(`
+SecRuleEngine DetectionOnly
+%s%s%s`, configD, beforeD, afterD)
+
+	_, err := coraza.NewWAF(
+		coraza.NewWAFConfig().
+			WithRootFS(overlayFS{local: os.DirFS(crsDir), embedded: coreruleset.FS}).
+			WithDirectives(directives),
+	)
+	return err == nil
 }

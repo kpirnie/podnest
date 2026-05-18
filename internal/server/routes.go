@@ -104,9 +104,12 @@ func (s *Server) routes() http.Handler {
 	api.Handle("GET /settings/waf", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetWAFSettings)))
 	api.Handle("PUT /settings/waf", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateWAFSettings)))
 
-	// per-site WAF overrides
+	// per-site WAF overrides & plugins
 	api.HandleFunc("GET /sites/{id}/waf", s.apiGetWAFSiteOverride)
 	api.HandleFunc("PUT /sites/{id}/waf", s.apiUpdateWAFSiteOverride)
+	api.Handle("GET /settings/waf/plugins", auth.RequireAPIAdmin(http.HandlerFunc(s.apiListAvailablePlugins)))
+	api.HandleFunc("GET /sites/{id}/waf/plugins", s.apiGetSitePlugins)
+	api.HandleFunc("PUT /sites/{id}/waf/plugins", s.apiSetSitePlugins)
 
 	// backup management
 	api.HandleFunc("GET /sites/{id}/backup-repo", s.apiGetBackupRepo)

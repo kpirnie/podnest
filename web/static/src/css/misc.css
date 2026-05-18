@@ -39,7 +39,7 @@
 .kp-input-sm          { height: 38px; }
 
 /* -- settings view ---------------------------------------------------------- */
-.kp-settings-wrap         { max-width: 600px; }
+.kp-settings-wrap         { max-width: 100%; }
 .kp-settings-domain-wrap  { align-items: center; gap: 10px; }
 
 /* -- brand heading ---------------------------------------------------------- */
@@ -123,4 +123,37 @@
     color: var(--kp-text-dim);
     font-size: 0.7rem;
     line-height: 1;
+}
+
+.waf-plugin-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.waf-plugin-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--kp-border);
+    color: var(--kp-muted);
+    font-size: 0.75rem;
+    font-family: var(--kp-font-mono, monospace);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.waf-plugin-pill:hover {
+    border-color: var(--kp-primary);
+    color: var(--kp-primary);
+}
+
+.waf-plugin-pill.active {
+    background: var(--kp-primary);
+    border-color: var(--kp-primary);
+    color: #fff;
 }

@@ -324,4 +324,16 @@ CREATE TABLE IF NOT EXISTS kppn_waf_site_overrides (
 );
 
 CREATE INDEX IF NOT EXISTS idx_waf_site_overrides_site ON kppn_waf_site_overrides (site_id);
+
+CREATE INDEX IF NOT EXISTS idx_waf_site_overrides_site ON kppn_waf_site_overrides (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_waf_site_plugins (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    plugin  TEXT    NOT NULL,
+    created DATETIME NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (site_id, plugin)
+);
+
+CREATE INDEX IF NOT EXISTS idx_waf_site_plugins_site ON kppn_waf_site_plugins (site_id);
 `

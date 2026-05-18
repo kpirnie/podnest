@@ -1442,5 +1442,6 @@ The following features are actively planned or currently in development. Contrib
 | Feature | Description |
 |---|---|
 | **Git Deploy** | Push-to-deploy via webhook integration |
+| **Public API** | A token-authenticated REST API for external integrations — create and manage sites, trigger backups, update domains, and query site status programmatically without a browser session. |
 
 [▲ Back to Top](#PodNest)
