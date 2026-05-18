@@ -454,13 +454,6 @@ func (s *Server) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// clear file-based caches before start — stale subdirectory permissions from a
-	// previous container run cause nginx workers to get permission denied on startup
-	siteDir := s.sitesBase() + "/" + site.Name
-	if err := clearDirContents(siteDir + "/nginx/cache"); err != nil {
-		logger.Warn("could not clear nginx cache before start for site %s: %v", site.Name, err)
-	}
-
 	// start up the pod
 	if err := s.podman.StartPod(r.Context(), podman.PodName(site.Name)); err != nil {
 		logger.Error("failed to start pod for site %d: %v", site.ID, err)
@@ -510,13 +503,7 @@ func (s *Server) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("could not stop pod before cache clear for site %d: %v", site.ID, err)
 	}
 
-	// clear file-based caches — stale subdirectory permissions from the previous
-	// container run cause nginx workers to get permission denied on startup
-	siteDir := s.sitesBase() + "/" + site.Name
-	if err := clearDirContents(siteDir + "/nginx/cache"); err != nil {
-		logger.Warn("could not clear nginx cache before restart for site %s: %v", site.Name, err)
-	}
-
+	// start the pod
 	if err := s.podman.StartPod(context.Background(), podman.PodName(site.Name)); err != nil {
 		logger.Error("failed to restart pod for site %d: %v", site.ID, err)
 		_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusError)
@@ -730,8 +717,6 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 		siteDir + "/html",
 		siteDir + "/nginx/conf.d",
 		siteDir + "/nginx/logs",
-		siteDir + "/nginx/cache",
-		siteDir + "/nginx/cache/wp",
 		siteDir + "/php-fpm",
 		siteDir + "/db",
 		siteDir + "/redis",
@@ -783,22 +768,6 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 		logger.Warn("could not chown nginx dir to sftp uid: %v", err)
 	}
 
-	// nginx/cache must be owned by root so the nginx master (root, no DAC_OVERRIDE) can
-	// create the wp subdirectory; nginx/logs stays nginx-owned for log writes
-	if err := os.Chown(siteDir+"/nginx/cache", 0, 0); err != nil {
-		logger.Warn("could not chown nginx/cache to root: %v", err)
-	}
-	if err := os.Chmod(siteDir+"/nginx/cache", 0755); err != nil {
-		logger.Warn("could not chmod nginx/cache: %v", err)
-	}
-	// nginx/cache/wp — pre-created so nginx master never needs to mkdir it;
-	// workers (uid 101) write cache files here
-	if err := os.Chown(siteDir+"/nginx/cache/wp", 101, 101); err != nil {
-		logger.Warn("could not chown nginx/cache/wp to nginx uid: %v", err)
-	}
-	if err := os.Chmod(siteDir+"/nginx/cache/wp", 0750); err != nil {
-		logger.Warn("could not chmod nginx/cache/wp: %v", err)
-	}
 	// nginx/logs — nginx container user (uid 101) writes access/error logs
 	if err := os.Chown(siteDir+"/nginx/logs", 101, 101); err != nil {
 		logger.Warn("could not chown nginx/logs to nginx uid: %v", err)
@@ -954,12 +923,6 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.podman.RemoveSitePod(bgCtx, site.Name); err != nil {
 		logger.Warn("remove pod %s: %v", site.Name, err)
-	}
-
-	// clear file-based caches before recreate — stale subdirectory permissions
-	// from the previous pod run cause nginx workers to get permission denied on startup
-	if err := clearDirContents(siteDir + "/nginx/cache"); err != nil {
-		logger.Warn("could not clear nginx cache before recreate for site %s: %v", site.Name, err)
 	}
 
 	// with the pod stopped (no container writing to html/), clear and switch type if requested

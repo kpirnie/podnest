@@ -568,10 +568,9 @@ func (c *Client) createNginx(ctx context.Context, cfg SiteConfig) error {
 				Options:     []string{"ro", "z"},
 			},
 			{
-				Type:        "bind",
-				Source:      cfg.SiteDir + "/nginx/cache",
+				Type:        "tmpfs",
 				Destination: "/var/cache/nginx",
-				Options:     []string{"z"},
+				Options:     []string{"size=256m", "mode=755"},
 			},
 		},
 		CapDrop: []string{"ALL"},

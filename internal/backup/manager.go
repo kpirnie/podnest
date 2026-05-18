@@ -1132,14 +1132,6 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 			return fmt.Errorf("export: rel path: %w", err)
 		}
 
-		// skip the nginx cache directory — ephemeral and potentially large
-		if strings.HasPrefix(rel, "nginx/cache") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
 		// build the tar header from the file's metadata
 		hdr, err := tar.FileInfoHeader(info, "")
 		if err != nil {
@@ -1243,20 +1235,6 @@ func (m *Manager) fixPostRestorePerms(siteDir string, siteID int64) {
 
 	// nginx dir — siteUID owned
 	os.Chown(siteDir+"/nginx", uid, uid)
-
-	// nginx/cache — root owned, nginx workers need 0755 on parent
-	os.Chown(siteDir+"/nginx/cache", 0, 0)
-	os.Chmod(siteDir+"/nginx/cache", 0755)
-
-	// nginx/cache/wp — clear stale cache files then set nginx uid (101)
-	wpCache := siteDir + "/nginx/cache/wp"
-	if entries, err := os.ReadDir(wpCache); err == nil {
-		for _, e := range entries {
-			os.RemoveAll(filepath.Join(wpCache, e.Name()))
-		}
-	}
-	os.Chown(wpCache, 101, 101)
-	os.Chmod(wpCache, 0750)
 
 	// nginx/logs — nginx uid (101)
 	os.Chown(siteDir+"/nginx/logs", 101, 101)

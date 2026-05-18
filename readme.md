@@ -492,7 +492,6 @@ The following are **not** accessible via SFTP:
 |---|---|
 | `.env` | Auto-generated credentials — root only |
 | `nginx/logs/` | nginx log directory — managed by nginx |
-| `nginx/cache/` | nginx FastCGI cache — managed by nginx |
 
 > **Note:** After editing configuration files via SFTP, a pod restart is required for the changes to take effect inside the running containers.
 

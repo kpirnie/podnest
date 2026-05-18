@@ -316,12 +316,6 @@ func (s *Server) permissionReaper() {
 			os.Chown(siteDir+"/nginx", sftpUID, sftpUID)
 			os.Chmod(siteDir+"/nginx", 0755)
 
-			// nginx/cache — root-owned so the nginx master (no DAC_OVERRIDE) can create subdirs
-			os.Chown(siteDir+"/nginx/cache", 0, 0)
-			os.Chmod(siteDir+"/nginx/cache", 0755)
-			// nginx/cache/wp — nginx workers write cache files here
-			os.Chown(siteDir+"/nginx/cache/wp", 101, 101)
-			os.Chmod(siteDir+"/nginx/cache/wp", 0750)
 			// nginx/logs — nginx container user writes logs
 			os.Chown(siteDir+"/nginx/logs", 101, 101)
 			os.Chmod(siteDir+"/nginx/logs", 0750)
