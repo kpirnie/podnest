@@ -522,18 +522,6 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// determine the nginx cache path based on site type
-	var cachePath string
-	switch site.SiteType {
-	case models.SiteTypeWordPress, models.SiteTypePHP:
-		cachePath = "/var/cache/nginx/wp"
-	case models.SiteTypeNode, models.SiteTypeDotNet:
-		cachePath = "/var/cache/nginx/proxy"
-	default:
-		// static sites have no fastcgi/proxy cache to flush
-		cachePath = ""
-	}
-
 	// flush php opcache for php-based site types
 	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
 		if err := s.podman.FlushPHPCache(r.Context(), podman.ContainerName(site.Name, "php")); err != nil {
