@@ -78,8 +78,10 @@ http {
                         inactive=%s
                         max_size=%s
                         use_temp_path=off;
-    fastcgi_cache_key          "$scheme$request_method$host$request_uri";
-    fastcgi_cache_use_stale    error timeout invalid_header http_500;
+    fastcgi_cache_key          "$remote_addr$scheme$request_method$host$request_uri";
+    fastcgi_cache_use_stale    error timeout invalid_header http_500 http_403 http_404;
+    fastcgi_cache_lock         on;
+    fastcgi_cache_lock_timeout 5s;
     fastcgi_ignore_headers     Cache-Control Expires Set-Cookie;
 
     limit_req_zone  $binary_remote_addr zone=wp_login:10m rate=%s;
@@ -615,6 +617,11 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 
         fastcgi_cache        wp_cache;
         fastcgi_cache_valid  %s;
+        fastcgi_cache_valid  301 60m;
+        fastcgi_cache_valid  302 0m;
+        fastcgi_cache_valid  404 0m;
+        fastcgi_cache_valid  403 0m;
+        fastcgi_cache_valid  500 502 503 504 0m;
         fastcgi_cache_bypass $skip_cache;
         fastcgi_no_cache     $skip_cache;
         add_header           X-Cache $upstream_cache_status always;

@@ -453,6 +453,15 @@ func (s *Server) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 		logger.Error("failed to resolve site: %v", r)
 		return
 	}
+
+	// clear file-based caches before start — stale subdirectory permissions from a
+	// previous container run cause nginx workers to get permission denied on startup
+	siteDir := s.sitesBase() + "/" + site.Name
+	if err := clearDirContents(siteDir + "/nginx/cache"); err != nil {
+		logger.Warn("could not clear nginx cache before start for site %s: %v", site.Name, err)
+	}
+
+	// start up the pod
 	if err := s.podman.StartPod(r.Context(), podman.PodName(site.Name)); err != nil {
 		logger.Error("failed to start pod for site %d: %v", site.ID, err)
 		_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusError)
@@ -495,7 +504,20 @@ func (s *Server) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRestarting)
-	if err := s.podman.RestartPod(context.Background(), podman.PodName(site.Name)); err != nil {
+
+	// stop first so the cache directories are not being written to during clear
+	if err := s.podman.StopPod(context.Background(), podman.PodName(site.Name)); err != nil {
+		logger.Warn("could not stop pod before cache clear for site %d: %v", site.ID, err)
+	}
+
+	// clear file-based caches — stale subdirectory permissions from the previous
+	// container run cause nginx workers to get permission denied on startup
+	siteDir := s.sitesBase() + "/" + site.Name
+	if err := clearDirContents(siteDir + "/nginx/cache"); err != nil {
+		logger.Warn("could not clear nginx cache before restart for site %s: %v", site.Name, err)
+	}
+
+	if err := s.podman.StartPod(context.Background(), podman.PodName(site.Name)); err != nil {
 		logger.Error("failed to restart pod for site %d: %v", site.ID, err)
 		_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusError)
 		apiError(w, http.StatusInternalServerError, err)
@@ -934,10 +956,10 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("remove pod %s: %v", site.Name, err)
 	}
 
-	// clear nginx fastcgi cache before recreate — stale subdirectory permissions
+	// clear file-based caches before recreate — stale subdirectory permissions
 	// from the previous pod run cause nginx workers to get permission denied on startup
-	if err := clearDirContents(siteDir + "/nginx/cache/wp"); err != nil {
-		logger.Warn("could not clear nginx cache for site %s: %v", site.Name, err)
+	if err := clearDirContents(siteDir + "/nginx/cache"); err != nil {
+		logger.Warn("could not clear nginx cache before recreate for site %s: %v", site.Name, err)
 	}
 
 	// with the pod stopped (no container writing to html/), clear and switch type if requested

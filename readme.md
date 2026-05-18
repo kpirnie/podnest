@@ -31,7 +31,7 @@ Each pod is provisioned with nginx as the reverse proxy and optionally Varnish a
 | WordPress | PHP 8.2, 8.3, 8.4, 8.5 |
 | PHP | PHP 8.2, 8.3, 8.4, 8.5 |
 | Static HTML | nginx only |
-| Node.js | Node 22, 24, 25 |
+| Node.js | Node 22, 24, 25, 26 |
 | .NET | .NET 8.0, 9.0, 10.0 |
 
 Each pod is provisioned with nginx as the reverse proxy. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx only.
@@ -1252,7 +1252,7 @@ Clears the session cookie and invalidates the server-side session.
 
 **PHP version values:** `3` = 8.2 *(default)*, `4` = 8.3, `5` = 8.4, `6` = 8.5
 
-**Node runtime version values:** `2` = 22 *(default)*, `4` = 24, `5` = 25
+**Node runtime version values:** `2` = 22 *(default)*, `4` = 24, `5` = 25, `6` = 26
 
 **.NET runtime version values:** `1` = 8.0 *(default)*, `2` = 9.0, `3` = 10.0
 
