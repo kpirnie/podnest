@@ -72,12 +72,11 @@ http {
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
-    fastcgi_cache_path  /var/cache/nginx/wp
+    fastcgi_cache_path  /var/cache/nginx
                         levels=1:2
-                        keys_zone=wp_cache:100m
+                        keys_zone=pn_cache:128m
                         inactive=%s
                         max_size=%s
-                        use_temp_path=off;
     fastcgi_cache_key          "$remote_addr$scheme$request_method$host$request_uri";
     fastcgi_cache_use_stale    error timeout invalid_header http_500 http_403 http_404;
     fastcgi_cache_lock         on;
@@ -615,7 +614,7 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
         fastcgi_buffers         16 16k;
         fastcgi_busy_buffers_size 32k;
 
-        fastcgi_cache        wp_cache;
+        fastcgi_cache        pn_cache;
         fastcgi_cache_valid  %s;
         fastcgi_cache_valid  301 60m;
         fastcgi_cache_valid  302 0m;
