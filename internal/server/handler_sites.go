@@ -534,15 +534,6 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 		cachePath = ""
 	}
 
-	// flush nginx fastcgi cache
-	if cachePath != "" {
-		if err := s.podman.FlushCache(r.Context(), podman.ContainerName(site.Name, "nginx"), cachePath); err != nil {
-			logger.Error("failed to flush nginx cache for site %d: %v", site.ID, err)
-			apiError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
 	// flush php opcache for php-based site types
 	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
 		if err := s.podman.FlushPHPCache(r.Context(), podman.ContainerName(site.Name, "php")); err != nil {
@@ -551,6 +542,8 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
+	// flush redis cache
 
 	// flush varnish cache if enabled for this site
 	varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)

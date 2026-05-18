@@ -425,7 +425,7 @@ From the site detail view, the following actions are available:
 | **Start** | Starts the site pod and all its containers |
 | **Stop** | Gracefully stops the site pod |
 | **Restart** | Stops and restarts the site pod |
-| **Flush Cache** | Clears the nginx FastCGI cache, PHP OPcache, and Varnish cache (if enabled) for the site |
+| **Flush Cache** | Clears the PHP OPcache, Redis, and Varnish cache (if enabled) for the site |
 | **Update Images** | Pulls the latest versions of all container images used by the site |
 | **Recreate Pod** | Stops and removes the existing pod, pulls the latest images, and provisions a fresh pod using the existing site data and credentials |
 
@@ -582,9 +582,6 @@ Applies to all site types.
 | `gzip` | `on` | Enable gzip compression |
 | `gzip_comp_level` | `6` | Compression level (1–9) |
 | `gzip_min_length` | `256` | Minimum response size to compress |
-| `fastcgi_cache_size` | `2g` | FastCGI cache zone size |
-| `fastcgi_cache_inactive` | `60m` | Remove cached items unused for this duration |
-| `fastcgi_cache_valid` | `200 60m` | Cache 200 responses for 60 minutes |
 | `rate_limit_login` | `5r/m` | Rate limit for login endpoints |
 | `rate_limit_xmlrpc` | `2r/m` | Rate limit for xmlrpc.php |
 | `rate_limit_general` | `50r/s` | General request rate limit |
@@ -1240,7 +1237,7 @@ Clears the session cookie and invalidates the server-side session.
 | `POST` | `/api/sites/{id}/start` | Session | Start the site pod |
 | `POST` | `/api/sites/{id}/stop` | Session | Stop the site pod |
 | `POST` | `/api/sites/{id}/restart` | Session | Restart the site pod |
-| `POST` | `/api/sites/{id}/flush` | Session | Flush nginx FastCGI cache |
+| `POST` | `/api/sites/{id}/flush` | Session | Flush the pod cache |
 | `POST` | `/api/sites/{id}/update` | Session | Pull latest container images |
 | `POST` | `/api/sites/{id}/recreate` | Session | Recreate the pod from scratch |
 | `GET` | `/api/sites/{id}/status` | Session | Raw pod inspect payload from Podman |

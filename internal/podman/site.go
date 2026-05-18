@@ -567,11 +567,6 @@ func (c *Client) createNginx(ctx context.Context, cfg SiteConfig) error {
 				Destination: "/etc/nginx/conf.d",
 				Options:     []string{"ro", "z"},
 			},
-			{
-				Type:        "tmpfs",
-				Destination: "/var/cache/nginx",
-				Options:     []string{"size=256m", "mode=755"},
-			},
 		},
 		CapDrop: []string{"ALL"},
 		CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},

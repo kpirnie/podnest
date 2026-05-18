@@ -72,15 +72,6 @@ http {
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
-    fastcgi_cache_path  /var/cache/nginx
-                        levels=1:2
-                        keys_zone=pn_cache:128m
-                        inactive=%s
-                        max_size=%s
-    fastcgi_cache_key          "$remote_addr$scheme$request_method$host$request_uri";
-    fastcgi_cache_use_stale    error timeout invalid_header http_500 http_403 http_404;
-    fastcgi_cache_lock         on;
-    fastcgi_cache_lock_timeout 5s;
     fastcgi_ignore_headers     Cache-Control Expires Set-Cookie;
 
     limit_req_zone  $binary_remote_addr zone=wp_login:10m rate=%s;
@@ -120,8 +111,6 @@ http {
 		v("gzip"),
 		v("gzip_comp_level"),
 		v("gzip_min_length"),
-		v("fastcgi_cache_inactive"),
-		v("fastcgi_cache_size"),
 		v("rate_limit_login"),
 		v("rate_limit_xmlrpc"),
 		v("rate_limit_general"),
@@ -583,16 +572,6 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
     limit_conn addr %s;
     limit_req  zone=general burst=100 nodelay;
 
-    set $skip_cache 0;
-    if ($request_method = POST)  { set $skip_cache 1; }
-    if ($query_string != "")     { set $skip_cache 1; }
-    if ($request_uri ~* "/wp-admin/|/wp-login\.php|/xmlrpc\.php|/feed/") {
-        set $skip_cache 1;
-    }
-    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") {
-        set $skip_cache 1;
-    }
-
     location / {
         try_files $uri $uri/ /index.php?$args;
     }
@@ -613,17 +592,6 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
         fastcgi_buffer_size     32k;
         fastcgi_buffers         16 16k;
         fastcgi_busy_buffers_size 32k;
-
-        fastcgi_cache        pn_cache;
-        fastcgi_cache_valid  %s;
-        fastcgi_cache_valid  301 60m;
-        fastcgi_cache_valid  302 0m;
-        fastcgi_cache_valid  404 0m;
-        fastcgi_cache_valid  403 0m;
-        fastcgi_cache_valid  500 502 503 504 0m;
-        fastcgi_cache_bypass $skip_cache;
-        fastcgi_no_cache     $skip_cache;
-        add_header           X-Cache $upstream_cache_status always;
     }
 
     location = /wp-login.php {
@@ -661,7 +629,6 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 `,
 		listenPort,
 		v("limit_conn_addr"),
-		v("fastcgi_cache_valid"),
 	), nil
 }
 
