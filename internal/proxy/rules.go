@@ -245,23 +245,30 @@ func checkUA(ua string, global, site ruleSet) bool {
 	return true
 }
 
-// parseClientIP extracts the real client IP from the request, preferring
-// X-Forwarded-For when present, falling back to RemoteAddr.
-func parseClientIP(remoteAddr, forwarded string) net.IP {
-
-	// prefer the first entry in X-Forwarded-For when set by a trusted upstream
-	if forwarded != "" {
-		parts := strings.SplitN(forwarded, ",", 2)
-		if ip := net.ParseIP(strings.TrimSpace(parts[0])); ip != nil {
-			return ip
-		}
-	}
+// parseClientIP extracts the real client IP from the request. X-Forwarded-For
+// is only trusted when RemoteAddr falls within a known trusted proxy range —
+// otherwise RemoteAddr is used directly to prevent header spoofing.
+func parseClientIP(remoteAddr, forwarded string, trustedProxies []*net.IPNet) net.IP {
 
 	// strip port from RemoteAddr and parse
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		host = remoteAddr
 	}
+	remote := net.ParseIP(host)
 
-	return net.ParseIP(host)
+	// only honour X-Forwarded-For when the connection arrives from a trusted proxy
+	if forwarded != "" && remote != nil {
+		for _, network := range trustedProxies {
+			if network.Contains(remote) {
+				parts := strings.SplitN(forwarded, ",", 2)
+				if ip := net.ParseIP(strings.TrimSpace(parts[0])); ip != nil {
+					return ip
+				}
+				break
+			}
+		}
+	}
+
+	return remote
 }

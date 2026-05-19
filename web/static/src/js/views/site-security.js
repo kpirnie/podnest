@@ -96,12 +96,51 @@ export function renderSecurityPanel(siteId = null) {
             </div>
 
             ${!siteId ? `
+            <div class="kp-card uk-padding-small uk-margin-bottom">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Trusted Proxy Ranges</h3>
+                    <div class="uk-flex" style="gap:8px">
+                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/trusted-proxies/export" download="podnest-trusted-proxies.csv" uk-tooltip="Export trusted proxies">
+                            <span uk-icon="download"></span>
+                        </a>
+                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import trusted proxies from CSV">
+                            <span uk-icon="upload"></span>
+                            <input type="file" id="sec-tp-import" accept=".csv" style="display:none">
+                        </label>
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-tp-save" uk-tooltip="Save Trusted Proxy Ranges">
+                            <span uk-icon="check"></span>
+                        </button>
+                    </div>
+                </div>
+                <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                    Custom IP ranges (one CIDR per line) to trust in addition to the
+                    auto-fetched Cloudflare, Fastly, and CloudFront ranges.
+                    <code>X-Forwarded-For</code> is only honoured when a request arrives
+                    from one of these addresses.
+                </p>
+                <textarea class="uk-textarea kp-textarea kp-mono" id="sec-tp-cidrs" rows="15"
+                    placeholder="192.168.1.0/24"></textarea>
+                <p class="kp-muted uk-text-small uk-margin-small-top">
+                    One IPv4 or IPv6 CIDR per line. Auto-fetched provider ranges are
+                    managed automatically and do not need to be entered here.
+                </p>
+            </div>
+
             <div class="kp-card uk-padding-small">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">Web Application Firewall</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-waf-save" uk-tooltip="Save WAF Settings">
-                        <span uk-icon="check"></span>
-                    </button>
+                    <div class="uk-flex" style="gap:8px">
+                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/waf/export" download="podnest-waf-settings.json" uk-tooltip="Export WAF settings">
+                            <span uk-icon="download"></span>
+                        </a>
+                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import WAF settings from JSON">
+                            <span uk-icon="upload"></span>
+                            <input type="file" id="sec-waf-import" accept=".json" style="display:none">
+                        </label>
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-waf-save" uk-tooltip="Save WAF Settings">
+                            <span uk-icon="check"></span>
+                        </button>
+                    </div>
                 </div>
                 <p class="kp-muted uk-text-small uk-margin-small-bottom">
                     Inspects all proxied requests using the OWASP Core Rule Set.
@@ -168,8 +207,8 @@ export async function loadSecurityPanel(root) {
 
     try {
         const fetches = [api.get(ipBase), api.get(uaBase)];
-        if (!panel.dataset.siteId) fetches.push(api.get(wafBase));
-        const [ip, ua, waf] = await Promise.all(fetches);
+        if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"));
+        const [ip, ua, waf, tp] = await Promise.all(fetches);
 
         root.querySelector("#sec-ip-whitelist").value = ip.whitelist ?? "";
         root.querySelector("#sec-ip-blacklist").value = ip.blacklist ?? "";
@@ -187,6 +226,11 @@ export async function loadSecurityPanel(root) {
             if (mode)     mode.value       = String(waf.Mode          ?? 0);
             if (paranoia) paranoia.value   = String(waf.ParanoiaLevel ?? 1);
             if (excl)     excl.value       = waf.Exclusions ?? "";
+        }
+
+        if (tp) {
+            const cidrs = root.querySelector("#sec-tp-cidrs");
+            if (cidrs) cidrs.value = tp.trusted_proxies_custom ?? "";
         }
 
     } catch (e) {
@@ -240,6 +284,44 @@ export function wireSecurityPanel(root) {
         } finally {
             btn.disabled  = false;
             btn.innerHTML = orig;
+        }
+    });
+
+    // save trusted proxy CIDRs
+    root.querySelector("#sec-tp-save")?.addEventListener("click", async () => {
+        const btn  = root.querySelector("#sec-tp-save");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            await api.put("/settings/trusted-proxies", {
+                trusted_proxies_custom: root.querySelector("#sec-tp-cidrs").value.trim(),
+            });
+            toast.success("Trusted proxy ranges saved");
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            btn.disabled  = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // import trusted proxy CIDRs from CSV
+    root.querySelector("#sec-tp-import")?.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+            const res  = await fetch("/api/settings/trusted-proxies/import", { method: "POST", body: fd });
+            const data = res.status === 204 ? null : await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+            await loadSecurityPanel(root);
+            toast.success("Trusted proxies imported");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            e.target.value = "";
         }
     });
 
@@ -297,6 +379,25 @@ export function wireSecurityPanel(root) {
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
             await loadSecurityPanel(root);
             toast.success("UA rules imported");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            e.target.value = "";
+        }
+    });
+
+    // global WAF JSON import
+    root.querySelector("#sec-waf-import")?.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+            const res  = await fetch("/api/settings/waf/import", { method: "POST", body: fd });
+            const data = res.status === 204 ? null : await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+            await loadSecurityPanel(root);
+            toast.success("WAF settings imported");
         } catch (err) {
             toast.error(err.message);
         } finally {

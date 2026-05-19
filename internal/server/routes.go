@@ -101,10 +101,14 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /sites/{id}/security/ua/import", s.apiImportSiteUARules)
 
 	// WAF settings — admin only
+	api.Handle("GET /settings/waf/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportWAFSettings)))
+	api.Handle("POST /settings/waf/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportWAFSettings)))
 	api.Handle("GET /settings/waf", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetWAFSettings)))
 	api.Handle("PUT /settings/waf", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateWAFSettings)))
 
 	// per-site WAF overrides & plugins
+	api.HandleFunc("GET /sites/{id}/waf/export", s.apiExportWAFSiteOverride)
+	api.HandleFunc("POST /sites/{id}/waf/import", s.apiImportWAFSiteOverride)
 	api.HandleFunc("GET /sites/{id}/waf", s.apiGetWAFSiteOverride)
 	api.HandleFunc("PUT /sites/{id}/waf", s.apiUpdateWAFSiteOverride)
 	api.Handle("GET /settings/waf/plugins", auth.RequireAPIAdmin(http.HandlerFunc(s.apiListAvailablePlugins)))
@@ -122,6 +126,12 @@ func (s *Server) routes() http.Handler {
 	api.Handle("PUT /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateBackupSettings)))
 	api.HandleFunc("GET /sites/{id}/backups/restore-status", s.apiRestoreStatus)
 	api.HandleFunc("GET /sites/{id}/backups/{bid}/download", s.apiDownloadBackup)
+
+	// trusted proxy settings — admin only
+	api.Handle("GET /settings/trusted-proxies", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetTrustedProxies)))
+	api.Handle("PUT /settings/trusted-proxies", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateTrustedProxies)))
+	api.Handle("GET /settings/trusted-proxies/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportTrustedProxies)))
+	api.Handle("POST /settings/trusted-proxies/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportTrustedProxies)))
 
 	// WebSockets log tail
 	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)

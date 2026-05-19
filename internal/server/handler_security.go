@@ -86,6 +86,118 @@ func (s *Server) apiSaveSiteUARules(w http.ResponseWriter, r *http.Request) {
 	s.saveUARules(w, r, &site.ID)
 }
 
+// -- trusted proxies ---------------------------------------------------------
+
+// apiExportTrustedProxies streams the custom trusted proxy CIDRs as a CSV download
+func (s *Server) apiExportTrustedProxies(w http.ResponseWriter, r *http.Request) {
+	raw, err := db.GetTrustedProxiesCustom(s.cfg.DB)
+	if err != nil {
+		logger.Error("apiExportTrustedProxies: %v", err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var rows [][]string
+	for _, line := range strings.Split(raw, "\n") {
+		if cidr := strings.TrimSpace(line); cidr != "" {
+			// list_type is intentionally empty — trusted proxies have no whitelist/blacklist concept
+			rows = append(rows, []string{"", cidr})
+		}
+	}
+
+	exportCSV(w, "podnest-trusted-proxies.csv", []string{"list_type", "cidr"}, rows)
+	logger.Debug("apiExportTrustedProxies: exported %d CIDRs", len(rows))
+}
+
+// apiImportTrustedProxies reads a CSV file upload and replaces the custom trusted proxy CIDRs
+func (s *Server) apiImportTrustedProxies(w http.ResponseWriter, r *http.Request) {
+	records, err := importCSV(r)
+	if err != nil {
+		logger.Error("apiImportTrustedProxies: %v", err)
+		apiErrorMsg(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// collect CIDRs from the value column, ignoring list_type
+	var lines []string
+	for _, rec := range records {
+		if cidr := strings.TrimSpace(rec[1]); cidr != "" {
+			lines = append(lines, cidr)
+		}
+	}
+
+	if err := db.SetTrustedProxiesCustom(s.cfg.DB, strings.Join(lines, "\n")); err != nil {
+		logger.Error("apiImportTrustedProxies: persist: %v", err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// re-warm the proxy trusted proxy cache
+	if cidrs, err := db.GetTrustedProxies(s.cfg.DB); err != nil {
+		logger.Warn("apiImportTrustedProxies: warm failed: %v", err)
+	} else {
+		s.proxy.WarmTrustedProxies(cidrs)
+	}
+
+	logger.Debug("apiImportTrustedProxies: imported %d CIDRs", len(lines))
+	apiJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// -- shared CSV helpers ------------------------------------------------------
+
+// exportCSV writes a CSV file to the response with the given filename, header row, and data rows
+func exportCSV(w http.ResponseWriter, filename string, header []string, rows [][]string) {
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	cw := csv.NewWriter(w)
+	_ = cw.Write(header)
+	for _, row := range rows {
+		_ = cw.Write(row)
+	}
+	cw.Flush()
+}
+
+// importCSV parses a multipart file upload and returns all data rows (header skipped).
+// Expects exactly two columns: list_type and value.
+func importCSV(r *http.Request) ([][]string, error) {
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		return nil, fmt.Errorf("failed to parse multipart form: %w", err)
+	}
+
+	f, _, err := r.FormFile("file")
+	if err != nil {
+		return nil, fmt.Errorf("file field is required")
+	}
+	defer f.Close()
+
+	cr := csv.NewReader(io.LimitReader(f, 1<<20))
+	cr.FieldsPerRecord = 2
+	cr.Comment = '#'
+
+	// read and optionally discard the header row
+	first, err := cr.Read()
+	if err != nil {
+		return nil, fmt.Errorf("invalid CSV")
+	}
+
+	var records [][]string
+
+	// treat first row as data if it is not a header
+	if strings.ToLower(first[0]) != "list_type" {
+		records = append(records, first)
+	}
+
+	for {
+		rec, err := cr.Read()
+		if err != nil {
+			break
+		}
+		records = append(records, rec)
+	}
+
+	return records, nil
+}
+
 // -- shared helpers ----------------------------------------------------------
 
 // getIPRules fetches IP rules for the given scope and writes them as a JSON
@@ -98,7 +210,6 @@ func (s *Server) getIPRules(w http.ResponseWriter, r *http.Request, siteID *int6
 		return
 	}
 
-	// partition into whitelist and blacklist, collect CIDRs into strings
 	var wl, bl []string
 	for _, rule := range rules {
 		if rule.ListType == models.RuleWhitelist {
@@ -125,7 +236,6 @@ func (s *Server) saveIPRules(w http.ResponseWriter, r *http.Request, siteID *int
 		return
 	}
 
-	// parse whitelist and blacklist entries, skipping blank lines
 	rules := parseIPRules(req.Whitelist, models.RuleWhitelist)
 	rules = append(rules, parseIPRules(req.Blacklist, models.RuleBlacklist)...)
 
@@ -135,7 +245,6 @@ func (s *Server) saveIPRules(w http.ResponseWriter, r *http.Request, siteID *int
 		return
 	}
 
-	// reload the proxy security cache so changes take effect immediately
 	if err := s.refreshSecurityCache(); err != nil {
 		logger.Error("saveIPRules: cache refresh failed: %v", err)
 	}
@@ -154,7 +263,6 @@ func (s *Server) getUARules(w http.ResponseWriter, r *http.Request, siteID *int6
 		return
 	}
 
-	// partition into whitelist and blacklist, collect patterns into strings
 	var wl, bl []string
 	for _, rule := range rules {
 		if rule.ListType == models.RuleWhitelist {
@@ -181,7 +289,6 @@ func (s *Server) saveUARules(w http.ResponseWriter, r *http.Request, siteID *int
 		return
 	}
 
-	// parse whitelist and blacklist entries, skipping blank lines
 	rules := parseUARules(req.Whitelist, models.RuleWhitelist)
 	rules = append(rules, parseUARules(req.Blacklist, models.RuleBlacklist)...)
 
@@ -191,7 +298,6 @@ func (s *Server) saveUARules(w http.ResponseWriter, r *http.Request, siteID *int
 		return
 	}
 
-	// reload the proxy security cache so changes take effect immediately
 	if err := s.refreshSecurityCache(); err != nil {
 		logger.Error("saveUARules: cache refresh failed: %v", err)
 	}
@@ -259,8 +365,6 @@ func (s *Server) apiExportSiteIPRules(w http.ResponseWriter, r *http.Request) {
 
 // exportIPRules is the shared implementation for IP rule CSV export
 func (s *Server) exportIPRules(w http.ResponseWriter, r *http.Request, siteID *int64, filename string) {
-
-	// fetch the rules for the given scope
 	rules, err := db.GetIPRules(s.cfg.DB, siteID)
 	if err != nil {
 		logger.Error("exportIPRules: failed to fetch rules: %v", err)
@@ -268,21 +372,16 @@ func (s *Server) exportIPRules(w http.ResponseWriter, r *http.Request, siteID *i
 		return
 	}
 
-	// stream as a CSV attachment
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-
-	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"list_type", "cidr"})
+	var rows [][]string
 	for _, rule := range rules {
-		listType := "blacklist"
+		lt := "blacklist"
 		if rule.ListType == models.RuleWhitelist {
-			listType = "whitelist"
+			lt = "whitelist"
 		}
-		_ = cw.Write([]string{listType, rule.CIDR})
+		rows = append(rows, []string{lt, rule.CIDR})
 	}
-	cw.Flush()
 
+	exportCSV(w, filename, []string{"list_type", "cidr"}, rows)
 	logger.Debug("exportIPRules: exported %d rules to %s", len(rules), filename)
 }
 
@@ -302,72 +401,30 @@ func (s *Server) apiImportSiteIPRules(w http.ResponseWriter, r *http.Request) {
 
 // importIPRules is the shared implementation for IP rule CSV import
 func (s *Server) importIPRules(w http.ResponseWriter, r *http.Request, siteID *int64) {
-
-	// parse the multipart form — limit to 1MB
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		logger.Error("importIPRules: failed to parse multipart form: %v", err)
-		apiError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	// pull the uploaded file from the "file" field
-	f, _, err := r.FormFile("file")
+	records, err := importCSV(r)
 	if err != nil {
-		logger.Error("importIPRules: missing file field: %v", err)
-		apiErrorMsg(w, http.StatusBadRequest, "file field is required")
-		return
-	}
-	defer f.Close()
-
-	// parse the CSV rows into an IPRule slice
-	cr := csv.NewReader(io.LimitReader(f, 1<<20))
-	cr.FieldsPerRecord = 2
-	cr.Comment = '#'
-
-	// read and discard the header row if present
-	header, err := cr.Read()
-	if err != nil {
-		logger.Error("importIPRules: failed to read CSV: %v", err)
-		apiErrorMsg(w, http.StatusBadRequest, "invalid CSV")
+		logger.Error("importIPRules: %v", err)
+		apiErrorMsg(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	var rules []db.IPRule
-
-	// process first row as data if it is not a header
-	if strings.ToLower(header[0]) != "list_type" {
-		lt := models.RuleBlacklist
-		if strings.ToLower(header[0]) == "whitelist" {
-			lt = models.RuleWhitelist
-		}
-		rules = append(rules, db.IPRule{ListType: lt, CIDR: strings.TrimSpace(header[1])})
-	}
-
-	// process remaining rows
-	for {
-		rec, err := cr.Read()
-		if err != nil {
-			break
-		}
+	for _, rec := range records {
 		lt := models.RuleBlacklist
 		if strings.ToLower(rec[0]) == "whitelist" {
 			lt = models.RuleWhitelist
 		}
-		cidr := strings.TrimSpace(rec[1])
-		if cidr == "" {
-			continue
+		if cidr := strings.TrimSpace(rec[1]); cidr != "" {
+			rules = append(rules, db.IPRule{ListType: lt, CIDR: cidr})
 		}
-		rules = append(rules, db.IPRule{ListType: lt, CIDR: cidr})
 	}
 
-	// atomically replace the rules for this scope
 	if err := db.ReplaceIPRules(s.cfg.DB, siteID, rules); err != nil {
 		logger.Error("importIPRules: replace failed: %v", err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// reload the proxy security cache so changes take effect immediately
 	if err := s.refreshSecurityCache(); err != nil {
 		logger.Error("importIPRules: cache refresh failed: %v", err)
 	}
@@ -392,8 +449,6 @@ func (s *Server) apiExportSiteUARules(w http.ResponseWriter, r *http.Request) {
 
 // exportUARules is the shared implementation for UA rule CSV export
 func (s *Server) exportUARules(w http.ResponseWriter, r *http.Request, siteID *int64, filename string) {
-
-	// fetch the rules for the given scope
 	rules, err := db.GetUARules(s.cfg.DB, siteID)
 	if err != nil {
 		logger.Error("exportUARules: failed to fetch rules: %v", err)
@@ -401,21 +456,16 @@ func (s *Server) exportUARules(w http.ResponseWriter, r *http.Request, siteID *i
 		return
 	}
 
-	// stream as a CSV attachment
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-
-	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"list_type", "pattern"})
+	var rows [][]string
 	for _, rule := range rules {
-		listType := "blacklist"
+		lt := "blacklist"
 		if rule.ListType == models.RuleWhitelist {
-			listType = "whitelist"
+			lt = "whitelist"
 		}
-		_ = cw.Write([]string{listType, rule.Pattern})
+		rows = append(rows, []string{lt, rule.Pattern})
 	}
-	cw.Flush()
 
+	exportCSV(w, filename, []string{"list_type", "pattern"}, rows)
 	logger.Debug("exportUARules: exported %d rules to %s", len(rules), filename)
 }
 
@@ -435,75 +485,30 @@ func (s *Server) apiImportSiteUARules(w http.ResponseWriter, r *http.Request) {
 
 // importUARules is the shared implementation for UA rule CSV import
 func (s *Server) importUARules(w http.ResponseWriter, r *http.Request, siteID *int64) {
-
-	// parse the multipart form — limit to 1MB
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		logger.Error("importUARules: failed to parse multipart form: %v", err)
-		apiError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	// pull the uploaded file from the "file" field
-	f, _, err := r.FormFile("file")
+	records, err := importCSV(r)
 	if err != nil {
-		logger.Error("importUARules: missing file field: %v", err)
-		apiErrorMsg(w, http.StatusBadRequest, "file field is required")
-		return
-	}
-	defer f.Close()
-
-	// parse the CSV rows into a UARule slice
-	cr := csv.NewReader(io.LimitReader(f, 1<<20))
-	cr.FieldsPerRecord = 2
-	cr.Comment = '#'
-
-	// read and discard the header row if present
-	header, err := cr.Read()
-	if err != nil {
-		logger.Error("importUARules: failed to read CSV: %v", err)
-		apiErrorMsg(w, http.StatusBadRequest, "invalid CSV")
+		logger.Error("importUARules: %v", err)
+		apiErrorMsg(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	var rules []db.UARule
-
-	// process first row as data if it is not a header
-	if strings.ToLower(header[0]) != "list_type" {
-		lt := models.RuleBlacklist
-		if strings.ToLower(header[0]) == "whitelist" {
-			lt = models.RuleWhitelist
-		}
-		pattern := strings.TrimSpace(header[1])
-		if pattern != "" {
-			rules = append(rules, db.UARule{ListType: lt, Pattern: pattern})
-		}
-	}
-
-	// process remaining rows
-	for {
-		rec, err := cr.Read()
-		if err != nil {
-			break
-		}
+	for _, rec := range records {
 		lt := models.RuleBlacklist
 		if strings.ToLower(rec[0]) == "whitelist" {
 			lt = models.RuleWhitelist
 		}
-		pattern := strings.TrimSpace(rec[1])
-		if pattern == "" {
-			continue
+		if pattern := strings.TrimSpace(rec[1]); pattern != "" {
+			rules = append(rules, db.UARule{ListType: lt, Pattern: pattern})
 		}
-		rules = append(rules, db.UARule{ListType: lt, Pattern: pattern})
 	}
 
-	// atomically replace the rules for this scope
 	if err := db.ReplaceUARules(s.cfg.DB, siteID, rules); err != nil {
 		logger.Error("importUARules: replace failed: %v", err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// reload the proxy security cache so changes take effect immediately
 	if err := s.refreshSecurityCache(); err != nil {
 		logger.Error("importUARules: cache refresh failed: %v", err)
 	}

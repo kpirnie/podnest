@@ -48,7 +48,14 @@ function renderWAFOverride() {
                         Merged on top of global exclusions. Useful for WooCommerce, contact forms, or file upload paths that trigger false positives.
                     </p>
                 </div>
-                <div class="uk-flex uk-flex-right uk-margin-top">
+                <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
+                    <a class="uk-button kp-btn-ghost" id="waf-export-btn" href="#" uk-tooltip="Export WAF settings">
+                        <span uk-icon="download"></span>
+                    </a>
+                    <label class="uk-button kp-btn-ghost" style="cursor:pointer" uk-tooltip="Import WAF settings">
+                        <span uk-icon="upload"></span>
+                        <input type="file" id="waf-import" accept=".json" style="display:none">
+                    </label>
                     <button type="submit" class="uk-button kp-btn-primary">
                         <span uk-icon="check"></span> Save
                     </button>
@@ -62,6 +69,8 @@ async function loadWAFTab(id) {
     const panel = document.getElementById("waf-tab-panel");
     if (!panel) return;
     panel.innerHTML = renderWAFOverride();
+    const exportBtn = document.getElementById("waf-export-btn");
+    if (exportBtn) exportBtn.href = `/api/sites/${id}/waf/export`;
 
     try {
         const data = await api.get(`/sites/${id}/waf`);
@@ -130,6 +139,25 @@ function wireWAFTab(root, id) {
         } finally {
             btn.disabled = false;
             btn.innerHTML = orig;
+        }
+    });
+
+    // WAF JSON import
+    root.querySelector("#waf-import")?.addEventListener("change", async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+            const res  = await fetch(`/api/sites/${id}/waf/import`, { method: "POST", body: fd });
+            const data = res.status === 204 ? null : await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+            await loadWAFTab(id);
+            toast.success("WAF settings imported");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            e.target.value = "";
         }
     });
 }

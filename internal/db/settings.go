@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	"podnest/internal/logger"
@@ -47,4 +48,73 @@ func SetSetting(db *sql.DB, key, value string) error {
 
 	logger.Debug("upserted setting '%s'", key)
 	return nil
+}
+
+// GetAllSettings returns all key/value pairs from kppn_settings as a map
+func GetAllSettings(db *sql.DB) (map[string]string, error) {
+	rows, err := db.Query(`SELECT key, value FROM kppn_settings ORDER BY key`)
+	if err != nil {
+		logger.Error("GetAllSettings: query failed: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			logger.Error("GetAllSettings: scan failed: %v", err)
+			return nil, err
+		}
+		out[k] = v
+	}
+
+	logger.Debug("GetAllSettings: loaded %d settings", len(out))
+	return out, rows.Err()
+}
+
+// GetTrustedProxies merges the auto-fetched and admin-defined custom CIDR lists
+// into a single deduplicated slice ready for net.IPNet parsing
+func GetTrustedProxies(db *sql.DB) ([]string, error) {
+	auto, err := GetSetting(db, "trusted_proxies_auto")
+	if err != nil {
+		return nil, err
+	}
+
+	custom, err := GetSetting(db, "trusted_proxies_custom")
+	if err != nil {
+		return nil, err
+	}
+
+	// merge both lists, deduplicating by CIDR string
+	seen := make(map[string]struct{})
+	var cidrs []string
+	for _, src := range []string{auto, custom} {
+		for _, line := range strings.Split(src, "\n") {
+			if cidr := strings.TrimSpace(line); cidr != "" {
+				if _, dup := seen[cidr]; !dup {
+					seen[cidr] = struct{}{}
+					cidrs = append(cidrs, cidr)
+				}
+			}
+		}
+	}
+
+	logger.Debug("GetTrustedProxies: %d merged entries", len(cidrs))
+	return cidrs, nil
+}
+
+// GetTrustedProxiesCustom returns only the admin-defined custom CIDR entries
+func GetTrustedProxiesCustom(db *sql.DB) (string, error) {
+	return GetSetting(db, "trusted_proxies_custom")
+}
+
+// SetTrustedProxiesAuto persists the auto-fetched CIDR list from provider endpoints
+func SetTrustedProxiesAuto(db *sql.DB, value string) error {
+	return SetSetting(db, "trusted_proxies_auto", value)
+}
+
+// SetTrustedProxiesCustom persists the admin-defined custom CIDR list
+func SetTrustedProxiesCustom(db *sql.DB, value string) error {
+	return SetSetting(db, "trusted_proxies_custom", value)
 }

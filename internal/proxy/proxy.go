@@ -87,6 +87,7 @@ type Proxy struct {
 	wafEngine      atomic.Pointer[WAFEngine]                    // global compiled engine
 	wafSiteEngines sync.Map                                     // int64(siteID) → *WAFEngine
 	wafOverrides   atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
+	trustedProxies atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy; write-rarely, read-heavy
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
@@ -125,11 +126,17 @@ func New(cfg Config) *Proxy {
 	emptyDomain := make(map[string]domainEntry)
 	p.cache.Store(&emptyDomain)
 
+	// setup the initial empty security cache with no rules or per-site overrides
 	emptySec := securityCache{perSite: make(map[int64]ruleSet)}
 	p.secCache.Store(&emptySec)
 
+	// seed an empty WAF cache with no global engine, no site engines, and no overrides
 	emptyOverrides := make(map[int64]db.WAFSiteOverride)
 	p.wafOverrides.Store(&emptyOverrides)
+
+	// seed an initial empty trusted proxy list so Load() never returns nil
+	emptyProxies := make([]*net.IPNet, 0)
+	p.trustedProxies.Store(&emptyProxies)
 
 	// open or create the structured proxy access log for Fail2Ban to watch
 	logDir := cfg.CertDir + "/../logs"
@@ -241,6 +248,24 @@ func (p *Proxy) WarmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) {
 	cache := buildSecurityCache(ipRules, uaRules)
 	p.secCache.Store(&cache)
 	logger.Info("proxy: security cache warmed — %d IP rules, %d UA rules", len(ipRules), len(uaRules))
+}
+
+// WarmTrustedProxies loads trusted proxy CIDRs from the database, compiles them
+// into net.IPNet ranges, and atomically installs the result. Called on startup,
+// after a settings change, and by StartTrustedProxyRefresher after each fetch.
+func (p *Proxy) WarmTrustedProxies(cidrs []string) {
+	nets := make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			// bare IPs are not valid proxy ranges — log and skip
+			logger.Warn("WarmTrustedProxies: skipping invalid CIDR '%s': %v", cidr, err)
+			continue
+		}
+		nets = append(nets, network)
+	}
+	p.trustedProxies.Store(&nets)
+	logger.Info("proxy: trusted proxies warmed — %d ranges", len(nets))
 }
 
 // WarmWAFCache loads WAF settings and per-site overrides from the database,
@@ -384,7 +409,7 @@ func (p *Proxy) SetAdminDomain(domain string) {
 // structured access log regardless of outcome.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"))
+	clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
 
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {

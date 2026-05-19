@@ -171,6 +171,14 @@ func (s *Server) Start() error {
 		logger.Warn("WAF cache warm failed, WAF will be inactive: %v", err)
 	}
 
+	// warm the trusted proxy ranges and start the weekly auto-refresh goroutine
+	if cidrs, err := db.GetTrustedProxies(s.cfg.DB); err != nil {
+		logger.Warn("trusted proxy warm failed: %v", err)
+	} else {
+		px.WarmTrustedProxies(cidrs)
+	}
+	proxy.StartTrustedProxyRefresher(s.cfg.DB, 7*24*time.Hour)
+
 	// run the proxy
 	go func() {
 		if err := px.Start(); err != nil && err != http.ErrServerClosed {
