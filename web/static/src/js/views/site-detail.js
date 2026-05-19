@@ -162,6 +162,87 @@ function wireWAFTab(root, id) {
     });
 }
 
+// renderRoutesTab returns the static HTML shell for the reverse proxy routes tab
+function renderRoutesTab() {
+    return `
+        <div class="kp-card uk-padding uk-margin-top">
+            <h3 class="kp-view-title uk-margin-bottom">Upstream Routes</h3>
+            <p class="kp-muted uk-text-small uk-margin-bottom">
+                Each domain maps to one or more upstream URLs. Multiple upstreams for the same
+                domain are load-balanced via round-robin.
+            </p>
+            <div id="rp-routes-list"></div>
+            <button class="uk-button kp-btn-ghost uk-margin-small-top" id="rp-add-row">
+                <span uk-icon="plus"></span> Add Route
+            </button>
+            <div class="uk-flex uk-flex-right uk-margin-top">
+                <button class="uk-button kp-btn-primary" id="rp-save-btn">
+                    <span uk-icon="check"></span> Save Routes
+                </button>
+            </div>
+        </div>`;
+}
+
+// renderRouteRow returns a single editable domain→upstream row
+function renderRouteRow(domain = "", upstream = "") {
+    return `
+        <div class="rp-route-row uk-flex uk-flex-middle uk-margin-small-bottom" style="gap:8px">
+            <input class="uk-input kp-input" style="flex:1" placeholder="example.com" value="${domain}" data-field="domain">
+            <input class="uk-input kp-input" style="flex:2" placeholder="https://10.0.0.1:8080" value="${upstream}" data-field="upstream">
+            <button class="uk-button kp-btn-ghost kp-btn-sm rp-remove-row" uk-tooltip="Remove"><span uk-icon="trash"></span></button>
+        </div>`;
+}
+
+// loadRoutesTab fetches existing routes and populates the routes editor
+async function loadRoutesTab(id) {
+    const list = document.getElementById("rp-routes-list");
+    if (!list) return;
+    try {
+        const routes = await api.get(`/sites/${id}/rp-routes`);
+        list.innerHTML = routes.length
+            ? routes.map(r => renderRouteRow(r.Domain, r.Upstream)).join("")
+            : renderRouteRow();
+    } catch (e) {
+        toast.error("Failed to load routes: " + e.message);
+    }
+}
+
+// wireRoutesTab binds add-row, remove-row, and save actions for the routes editor
+function wireRoutesTab(root, id) {
+    root.addEventListener("click", async (e) => {
+        if (e.target.closest("#rp-add-row")) {
+            document.getElementById("rp-routes-list")
+                .insertAdjacentHTML("beforeend", renderRouteRow());
+            return;
+        }
+        if (e.target.closest(".rp-remove-row")) {
+            e.target.closest(".rp-route-row").remove();
+            return;
+        }
+        if (!e.target.closest("#rp-save-btn")) return;
+
+        const btn  = e.target.closest("#rp-save-btn");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
+
+        const routes = [...document.querySelectorAll(".rp-route-row")].map(row => ({
+            Domain:   row.querySelector('[data-field="domain"]').value.trim(),
+            Upstream: row.querySelector('[data-field="upstream"]').value.trim(),
+        })).filter(r => r.Domain && r.Upstream);
+
+        try {
+            await api.put(`/sites/${id}/rp-routes`, routes);
+            toast.success("Routes saved");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+}
+
 export async function viewSiteDetail(root, { id }) {
     // fetch site detail and full site list in parallel for the nav selector
     const [{ site, domains, sftp }, allSites, configs] = await Promise.all([
@@ -170,6 +251,7 @@ export async function viewSiteDetail(root, { id }) {
         api.get(`/sites/${id}/configs`),
     ]);
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
+    const isRP    = site.SiteType === 6;
 
     root.innerHTML = `
         <div class="kp-view-header">
@@ -181,19 +263,29 @@ export async function viewSiteDetail(root, { id }) {
                     </select>
                     <span class="kp-site-nav-arrow">&#9660;</span>
                 </div>
-                ${statusBadge(site.SiteStatus)}
+                ${!isRP ? statusBadge(site.SiteStatus) : ""}
             </div>
             <div class="uk-flex" style="gap:8px;flex-wrap:wrap">
+                ${!isRP ? `
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="start" data-id="${id}" uk-tooltip="Start the Site"><span uk-icon="play"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="stop" data-id="${id}" uk-tooltip="Stop the Site"><span uk-icon="ban"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="restart" data-id="${id}" uk-tooltip="Restart the Site"><span uk-icon="refresh"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="flush" data-id="${id}" uk-tooltip="Flush the Caches"><span uk-icon="bolt"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="update" data-id="${id}" uk-tooltip="Update the Pod Images"><span uk-icon="cloud-upload"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-recreate" uk-tooltip="Recreate the Pod"><span uk-icon="history"></span></button>
+                ` : ""}
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-edit" uk-tooltip="Edit the Site"><span uk-icon="pencil"></span></button>
             </div>
         </div>
 
+        ${isRP ? `
+        <ul uk-tab class="uk-margin-medium-bottom">
+            <li><a href="#">Routes</a></li>
+        </ul>
+        <ul class="uk-switcher">
+            <li>${renderRoutesTab()}</li>
+        </ul>
+        ` : `
         <ul uk-tab class="uk-margin-medium-bottom">
             <li><a href="#">Overview</a></li>
             <li><a href="#">Nginx</a></li>
@@ -218,12 +310,25 @@ export async function viewSiteDetail(root, { id }) {
             <li>${renderLogsTab(id, site.SiteType)}</li>
             <li>${renderSecurityPanel(id)}</li>
             <li id="waf-tab-panel"></li>
-            ${site.SiteType === 1 ? `<li>${renderWPCLITab(id)}</li>` : ""}            
+            ${site.SiteType === 1 ? `<li>${renderWPCLITab(id)}</li>` : ""}
             <li>${renderBackupsTab(id)}</li>
-        </ul>`;
+        </ul>`}`;
 
     document.getElementById("sd-back").addEventListener("click", () => router.go("sites"));
     document.getElementById("sd-edit").addEventListener("click", () => showEditSiteModal(site));
+
+    // navigate to selected site when the dropdown changes
+    document.getElementById("sd-site-nav")?.addEventListener("change", (e) => {
+        router.go("site-detail", { id: e.target.value });
+    });
+
+    // reverse proxy sites only need route management — skip all pod wiring
+    if (isRP) {
+        wireRoutesTab(root, id);
+        loadRoutesTab(id);
+        return;
+    }
+
     document.getElementById("sd-recreate").addEventListener("click", async () => {
         showProgressModal("Recreating Pod", "Recreating containers for this site...");
         try {
@@ -235,11 +340,6 @@ export async function viewSiteDetail(root, { id }) {
             hideProgressModal();
             toast.error(e.message);
         }
-    });
-
-    // navigate to selected site when the dropdown changes
-    document.getElementById("sd-site-nav")?.addEventListener("change", (e) => {
-        router.go("site-detail", { id: e.target.value });
     });
 
     // wire toolbar action buttons (start, stop, restart, flush, update)

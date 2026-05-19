@@ -24,6 +24,7 @@ export function showCreateSiteModal() {
                                 <option value="3">Static HTML</option>
                                 <option value="4">Node.js</option>
                                 <option value="5">.NET</option>
+                                <option value="6">Reverse Proxy</option>
                             </select>
                         </div>
                         <div class="uk-width-1-2@s" id="cs-php-version-wrap">
@@ -59,9 +60,12 @@ export function showCreateSiteModal() {
                         <div class="uk-width-1-1" id="cs-wordpress-wrap">
                             <label><input class="uk-checkbox" type="checkbox" name="install_wordpress" checked> Install WordPress</label>
                         </div>
-                        <div class="uk-width-1-1">
+                        <div class="uk-width-1-1" id="cs-domains-wrap">
                             <label class="kp-label">Domains (one per line)</label>
                             <textarea class="uk-textarea kp-textarea" name="domains" rows="3" placeholder="example.com&#10;www.example.com"></textarea>
+                        </div>
+                        <div class="uk-width-1-1 uk-hidden" id="cs-rp-note">
+                            <p class="kp-muted uk-text-small">Configure domain → upstream mappings in the Routes tab after creation.</p>
                         </div>
                     </div>
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
@@ -85,13 +89,18 @@ export function showCreateSiteModal() {
 
     modal.show();
 
+    const domainsWrap = document.getElementById("cs-domains-wrap");
+    const rpNote      = document.getElementById("cs-rp-note");
+
     typeSelect.addEventListener("change", () => {
         const t = parseInt(typeSelect.value);
-        phpWrap.classList.toggle("uk-hidden",       t !== 1 && t !== 2);
+        phpWrap.classList.toggle("uk-hidden",       t !== 1 && t !== 2 || t === 6);
         nodeWrap.classList.toggle("uk-hidden",      t !== 4);
         dotnetWrap.classList.toggle("uk-hidden",    t !== 5);
         startWrap.classList.toggle("uk-hidden",     t !== 4 && t !== 5);
-        wordpressWrap.classList.toggle("uk-hidden", t !== 1);
+        wordpressWrap.classList.toggle("uk-hidden", t !== 1 || t === 6);
+        domainsWrap.classList.toggle("uk-hidden", t === 6);
+        rpNote.classList.toggle("uk-hidden", t !== 6);
     });
 
     document.getElementById("create-site-form").addEventListener("submit", async (e) => {
@@ -119,7 +128,10 @@ export function showCreateSiteModal() {
 
         modal.hide();
         document.getElementById("kp-create-site-modal")?.remove();
-        showProgressModal("Creating Site", `Setting up '${body.name}' — pulling images and provisioning containers...`);
+        const progressMsg = siteType === 6
+            ? `Setting up '${body.name}' as a reverse proxy...`
+            : `Setting up '${body.name}' — pulling images and provisioning containers...`;
+        showProgressModal("Creating Site", progressMsg);
 
         try {
             await api.post("/sites", body);

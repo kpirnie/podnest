@@ -409,6 +409,12 @@ func (s *Server) syncPodStatuses() {
 			return
 		}
 		for _, site := range sites {
+
+			// reverse proxy sites have no pod — skip status sync
+			if site.SiteType == models.SiteTypeReverseProxy {
+				continue
+			}
+
 			podName := podman.PodName(site.Name)
 			inspect, err := s.podman.InspectPod(context.Background(), podName)
 			if err != nil {

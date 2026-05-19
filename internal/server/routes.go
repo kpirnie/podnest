@@ -55,6 +55,10 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /sites/{id}/domains", s.apiAddDomain)
 	api.HandleFunc("DELETE /sites/{id}/domains/{did}", s.apiDeleteDomain)
 
+	// reverse proxy route management
+	api.HandleFunc("GET /sites/{id}/rp-routes", s.apiGetRPRoutes)
+	api.HandleFunc("PUT /sites/{id}/rp-routes", s.apiUpdateRPRoutes)
+
 	// config management
 	api.HandleFunc("GET /sites/{id}/configs", s.apiGetConfigs)
 	api.HandleFunc("PUT /sites/{id}/configs/{type}", s.apiUpdateConfig)

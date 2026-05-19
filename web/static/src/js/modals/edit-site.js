@@ -24,6 +24,7 @@ export async function showEditSiteModal(site) {
                                 <option value="3" ${site.SiteType===3?"selected":""}>Static HTML</option>
                                 <option value="4" ${site.SiteType===4?"selected":""}>Node.js</option>
                                 <option value="5" ${site.SiteType===5?"selected":""}>.NET</option>
+                                <option value="6" ${site.SiteType===6?"selected":""}>Reverse Proxy</option>
                             </select>
                         </div>
                         <div class="uk-width-1-2@s" id="es-php-version-wrap">
@@ -80,7 +81,7 @@ export async function showEditSiteModal(site) {
     modal.show();
 
     const updateVisibility = (t) => {
-        phpWrap.classList.toggle("uk-hidden",       t !== 1 && t !== 2);
+        phpWrap.classList.toggle("uk-hidden",       (t !== 1 && t !== 2) || t === 6);
         nodeWrap.classList.toggle("uk-hidden",      t !== 4);
         dotnetWrap.classList.toggle("uk-hidden",    t !== 5);
         startWrap.classList.toggle("uk-hidden",     t !== 4 && t !== 5);
@@ -116,14 +117,18 @@ export async function showEditSiteModal(site) {
             await api.put(`/sites/${site.ID}`, body);
             modal.hide();
             document.getElementById("kp-edit-site-modal")?.remove();
-            showProgressModal("Applying Changes", "Saving changes and recreating pod...");
-            try {
-                await api.post(`/sites/${site.ID}/recreate`, { install_wordpress: installWordPress });
-                hideProgressModal();
-                toast.success("Site updated and pod recreated");
-            } catch (err) {
-                hideProgressModal();
-                toast.error("Site saved but pod recreate failed: " + err.message);
+            if (siteType !== 6) {
+                showProgressModal("Applying Changes", "Saving changes and recreating pod...");
+                try {
+                    await api.post(`/sites/${site.ID}/recreate`, { install_wordpress: installWordPress });
+                    hideProgressModal();
+                    toast.success("Site updated and pod recreated");
+                } catch (err) {
+                    hideProgressModal();
+                    toast.error("Site saved but pod recreate failed: " + err.message);
+                }
+            } else {
+                toast.success("Site updated");
             }
             router.go("site-detail", { id: String(site.ID) });
         } catch (err) {

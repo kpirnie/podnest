@@ -91,12 +91,15 @@ func (s *Server) apiGetSite(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug("retrieved site %d with %d domains", site.ID, len(domains))
 
-	// get the sftp credentials to be sent with the response
-	sftpCred, err := db.GetSFTPCredBySite(s.cfg.DB, site.ID)
-	if err != nil {
-		logger.Error("failed to fetch SFTP cred for site %d: %v", site.ID, err)
-		apiError(w, http.StatusInternalServerError, err)
-		return
+	// reverse proxy sites have no SFTP credentials
+	var sftpCred *models.SFTPCred
+	if site.SiteType != models.SiteTypeReverseProxy {
+		sftpCred, err = db.GetSFTPCredBySite(s.cfg.DB, site.ID)
+		if err != nil {
+			logger.Error("failed to fetch SFTP cred for site %d: %v", site.ID, err)
+			apiError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	apiJSON(w, http.StatusOK, map[string]any{
@@ -138,7 +141,7 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 
 	// derive the PMA port for non-static sites
 	pmaPort := 0
-	if req.SiteType != models.SiteTypeStatic {
+	if req.SiteType != models.SiteTypeStatic && req.SiteType != models.SiteTypeReverseProxy {
 		pmaPort = port + 10000
 	}
 
@@ -188,6 +191,28 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	if err := db.CreateSite(s.cfg.DB, site); err != nil {
 		logger.Error("failed to create site record for '%s': %v", req.Name, err)
 		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// reverse proxy sites need no pod, SFTP, or configs — return immediately
+	if site.SiteType == models.SiteTypeReverseProxy {
+
+		// persist any requested domains and warm the proxy cache
+		for _, d := range req.Domains {
+			d = strings.TrimSpace(d)
+			if d == "" {
+				continue
+			}
+			if err := db.CreateDomain(s.cfg.DB, &models.Domain{SiteID: site.ID, Domain: d}); err != nil {
+				logger.Error("saving domain %s for reverse proxy site %s: %v", d, site.Name, err)
+			}
+			s.proxy.AddDomain(d, site.Port, site.ID)
+			s.proxy.ObtainCert(d)
+		}
+		_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRunning)
+		site.SiteStatus = models.StatusRunning
+		logger.Debug("reverse proxy site '%s' created", site.Name)
+		apiJSON(w, http.StatusCreated, site)
 		return
 	}
 
@@ -397,19 +422,24 @@ func (s *Server) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	bgCtx := context.Background()
 	siteDir := s.sitesBase() + "/" + site.Name
 
-	// stop the pod; log warnings but continue regardless of error
-	if err := s.podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
-		logger.Warn("stop pod %s: %v", site.Name, err)
-	}
+	// reverse proxy sites have no pod or SFTP user to tear down
+	if site.SiteType != models.SiteTypeReverseProxy {
 
-	// remove the pod; log warnings but continue regardless of error
-	if err := s.podman.RemoveSitePod(bgCtx, site.Name); err != nil {
-		logger.Warn("remove pod %s: %v", site.Name, err)
-	}
+		// stop the pod; log warnings but continue regardless of error
+		if err := s.podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
+			logger.Warn("stop pod %s: %v", site.Name, err)
+		}
 
-	// remove SFTP user before deleting site
-	if err := s.sftp.RemoveUser(bgCtx, site.Name); err != nil {
-		logger.Warn("failed to remove SFTP user for site %s: %v", site.Name, err)
+		// remove the pod; log warnings but continue regardless of error
+		if err := s.podman.RemoveSitePod(bgCtx, site.Name); err != nil {
+			logger.Warn("remove pod %s: %v", site.Name, err)
+		}
+
+		// remove SFTP user before deleting site
+		if err := s.sftp.RemoveUser(bgCtx, site.Name); err != nil {
+			logger.Warn("failed to remove SFTP user for site %s: %v", site.Name, err)
+		}
+
 	}
 
 	// fetch domains before the cascade delete wipes them — needed for cache eviction

@@ -69,3 +69,5 @@
     color: var(--kp-text);
     box-shadow: 0 40px 100px rgba(0,0,0,0.6);
 }
+
+.kp-site-card[data-type="6"] { background:#020615; }

@@ -59,19 +59,21 @@ var SiteStatusMap = map[int]string{
 
 // site types
 const (
-	SiteTypeWordPress = 1
-	SiteTypePHP       = 2
-	SiteTypeStatic    = 3
-	SiteTypeNode      = 4
-	SiteTypeDotNet    = 5
+	SiteTypeWordPress    = 1
+	SiteTypePHP          = 2
+	SiteTypeStatic       = 3
+	SiteTypeNode         = 4
+	SiteTypeDotNet       = 5
+	SiteTypeReverseProxy = 6
 )
 
 var SiteTypeMap = map[int]string{
-	SiteTypeWordPress: "PHP",
-	SiteTypePHP:       "", // this was the PHP type
-	SiteTypeStatic:    "Static HTML",
-	SiteTypeNode:      "Node.js",
-	SiteTypeDotNet:    ".NET",
+	SiteTypeWordPress:    "PHP",
+	SiteTypePHP:          "", // this was the PHP type
+	SiteTypeStatic:       "Static HTML",
+	SiteTypeNode:         "Node.js",
+	SiteTypeDotNet:       ".NET",
+	SiteTypeReverseProxy: "Reverse Proxy",
 }
 
 // config types

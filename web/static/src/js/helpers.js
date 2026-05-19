@@ -30,15 +30,16 @@ export const phpLabel = (v) =>
     ({ 3: "8.2", 4: "8.3", 5: "8.4", 6: "8.5" })[v] || "?";
 
 export const siteTypeLabel = (t) =>
-    ({ 1: "WordPress", 2: "PHP", 3: "Static", 4: "Node.js", 5: ".NET" })[t] || "?";
+    ({ 1: "WordPress", 2: "PHP", 3: "Static", 4: "Node.js", 5: ".NET", 6: "Reverse Proxy" })[t] || "?";
 
 export const isAdmin = () => window.KP.user.role === window.KP.roles.admin;
 
 export const versionLabel = (site) => {
     switch (site.SiteType) {
         case 1: case 2: return `PHP ${phpLabel(site.PHPVersion)}`;
-        case 4: return `Node ${{ 1: "20", 2: "22", 3: "23" }[site.RuntimeVersion] || "?"}`;
+        case 4: return `Node ${{ 2: "22", 4: "24", 5: "25", 6: "26" }[site.RuntimeVersion] || "?"}`;
         case 5: return `.NET ${{ 1: "8.0", 2: "9.0", 3: "10.0" }[site.RuntimeVersion] || "?"}`;
+        case 6: return "Reverse Proxy";
         default: return "";
     }
 };

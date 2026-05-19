@@ -484,4 +484,15 @@ CREATE TABLE IF NOT EXISTS kppn_waf_site_plugins (
 );
 
 CREATE INDEX IF NOT EXISTS idx_waf_site_plugins_site ON kppn_waf_site_plugins (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_rp_routes (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id  INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    domain   TEXT    NOT NULL,
+    upstream TEXT    NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rp_routes_site ON kppn_rp_routes (site_id);
 `

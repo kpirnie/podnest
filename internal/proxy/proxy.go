@@ -34,6 +34,7 @@ import (
 type domainEntry struct {
 	port   int
 	siteID int64
+	pool   *UpstreamPool // non-nil for reverse_proxy sites; nil for container-based sites
 }
 
 // statusWriter wraps http.ResponseWriter to capture the status code and byte
@@ -237,7 +238,46 @@ func (p *Proxy) WarmCache() error {
 	for domain, e := range entries {
 		m[domain] = domainEntry{port: e.Port, siteID: e.SiteID}
 	}
+
+	// cache the domain→port+siteID mappings first
 	p.cache.Store(&m)
+
+	// load RP routes and attach upstream pools to matching cache entries
+	routes, err := db.GetAllRPRoutes(p.database)
+	if err != nil {
+		logger.Error("proxy: failed to load RP routes: %v", err)
+		return err
+	}
+
+	// group upstreams by domain for pool construction; domains without RP routes will be skipped
+	poolMap := make(map[string][]string)
+	for _, r := range routes {
+		poolMap[r.Domain] = append(poolMap[r.Domain], r.Upstream)
+	}
+
+	// build and attach upstream pools for domains with RP routes; log and skip any pool build failures
+	if len(poolMap) > 0 {
+		next := make(map[string]domainEntry, len(m))
+		for k, v := range m {
+			next[k] = v
+		}
+		for domain, upstreams := range poolMap {
+			if e, ok := next[domain]; ok {
+				pool, err := newUpstreamPool(upstreams)
+				if err != nil {
+					logger.Error("proxy: failed to build upstream pool for '%s': %v", domain, err)
+					continue
+				}
+				e.pool = pool
+				next[domain] = e
+			}
+		}
+
+		// atomically install the updated cache with attached pools
+		p.cache.Store(&next)
+		logger.Info("proxy: RP routes loaded — %d domains with upstream pools", len(poolMap))
+	}
+
 	logger.Info("proxy: domain cache warmed with %d entries", len(m))
 	return nil
 }
@@ -411,11 +451,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
 
+	// extract the host without port for routing and admin domain checks; the port is not relevant since
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
 
+	// check if the request is for the admin domain before any cache lookups
 	p.adminMu.RLock()
 	adminDomain := p.adminDomain
 	p.adminMu.RUnlock()
@@ -424,16 +466,22 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var (
 		port   int
 		siteID int64
+		rpPool *UpstreamPool
 	)
+
+	// admin domain bypasses the cache and routes directly to the admin port; all other domains require a cache lookup
 	if adminDomain != "" && host == adminDomain {
 		port = p.adminPort
 	} else {
-		port, siteID = p.lookupPortAndSite(host)
-		if port == 0 {
+		entry, ok := p.lookupEntry(host)
+		if !ok || entry.port == 0 {
 			http.Error(w, "domain not registered", http.StatusNotFound)
 			p.writeAccessLog(r, http.StatusNotFound, 0, time.Since(start), clientIP.String())
 			return
 		}
+		port = entry.port
+		siteID = entry.siteID
+		rpPool = entry.pool
 	}
 
 	// load the compiled security cache — single atomic load, no lock
@@ -475,6 +523,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// wrap the writer to capture status + byte count for the access log
 	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+
+	// reverse proxy sites bypass container routing — proxy directly to the upstream pool
+	if rpPool != nil {
+		newReverseProxy(rpPool.Next()).ServeHTTP(sw, r)
+		p.writeAccessLog(r, sw.status, sw.bytes, time.Since(start), clientIP.String())
+		return
+	}
+
 	p.siteProxy(sw, r, port)
 	p.writeAccessLog(r, sw.status, sw.bytes, time.Since(start), clientIP.String())
 }
@@ -508,14 +564,20 @@ func (p *Proxy) ObtainCert(domain string) {
 
 // -- internal ----------------------------------------------------------------
 
+// lookupEntry returns the full domainEntry for a domain, and whether it was found.
+func (p *Proxy) lookupEntry(domain string) (domainEntry, bool) {
+	ptr := p.cache.Load()
+	if ptr == nil {
+		return domainEntry{}, false
+	}
+	e, ok := (*ptr)[domain]
+	return e, ok
+}
+
 // lookupPortAndSite returns the host port and site ID for a domain.
 // Returns 0, 0 if the domain is not registered.
 func (p *Proxy) lookupPortAndSite(domain string) (int, int64) {
-	ptr := p.cache.Load()
-	if ptr == nil {
-		return 0, 0
-	}
-	e := (*ptr)[domain]
+	e, _ := p.lookupEntry(domain)
 	return e.port, e.siteID
 }
 
