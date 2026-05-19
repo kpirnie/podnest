@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"podnest/internal/logger"
@@ -157,29 +156,9 @@ func DefaultsForType(configType int) (map[string]string, error) {
 	}
 }
 
-// MarshalDefaults returns the JSON blob for a given config type
-func MarshalDefaults(configType int) (string, error) {
-
-	// get the defaults for the type
-	defaults, err := DefaultsForType(configType)
-	if err != nil {
-		logger.Error("failed to get defaults for type %d: %v", configType, err)
-		return "", err
-	}
-
-	// marshal to JSON
-	b, err := json.Marshal(defaults)
-	if err != nil {
-		logger.Error("failed to marshal defaults for type %d: %v", configType, err)
-		return "", fmt.Errorf("failed to marshal defaults for type %d: %w", configType, err)
-	}
-
-	// return the JSON string
-	return string(b), nil
-}
-
-// SeedSiteConfigs inserts default config rows for all four types for a new site
-func SeedSiteConfigs(siteID int64, siteType int) ([]*models.Config, error) {
+// SeedSiteConfigs returns default KV maps for all config types applicable to a
+// given site type, keyed by config type constant
+func SeedSiteConfigs(siteType int) (map[int]map[string]string, error) {
 
 	// all site types get nginx and varnish (disabled by default)
 	types := []int{models.ConfigNginx, models.ConfigVarnish}
@@ -194,29 +173,17 @@ func SeedSiteConfigs(siteID int64, siteType int) ([]*models.Config, error) {
 		// nginx only
 	}
 
-	// create the config rows for the site
-	var configs []*models.Config
-
-	// loop through the types and create a config row for each
+	// build the map of config type → default KV map
+	out := make(map[int]map[string]string)
 	for _, t := range types {
-
-		// marshal the defaults for the type to a JSON blob
-		blob, err := MarshalDefaults(t)
+		defaults, err := DefaultsForType(t)
 		if err != nil {
-			logger.Error("failed to marshal defaults for type %d: %v", t, err)
+			logger.Error("SeedSiteConfigs: failed to get defaults for type %d: %v", t, err)
 			return nil, err
 		}
-
-		// create the config row and add it to the slice
-		configs = append(configs, &models.Config{
-			SiteID: siteID,
-			Type:   t,
-			Config: blob,
-		})
+		out[t] = defaults
 	}
 
-	logger.Debug("created config rows for site %d", siteID)
-
-	// return the slice of config rows
-	return configs, nil
+	logger.Debug("SeedSiteConfigs: seeded %d config types for site type %d", len(out), siteType)
+	return out, nil
 }

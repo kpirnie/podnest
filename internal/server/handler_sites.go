@@ -216,16 +216,16 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// seed and persist default configs for the site type
-	configs, err := config.SeedSiteConfigs(site.ID, site.SiteType)
+	configs, err := config.SeedSiteConfigs(site.SiteType)
 	if err != nil {
 		logger.Error("failed to seed configs for site %d: %v", site.ID, err)
 		_ = db.DeleteSite(s.cfg.DB, site.ID)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
-	for _, c := range configs {
-		if err := db.UpsertConfig(s.cfg.DB, c); err != nil {
-			log.Printf("ERROR upserting config type %d for site %s: %v", c.Type, site.Name, err)
+	for t, kv := range configs {
+		if err := db.SetConfigs(s.cfg.DB, site.ID, t, kv); err != nil {
+			logger.Error("failed to set config type %d for site %s: %v", t, site.Name, err)
 			_ = db.DeleteSite(s.cfg.DB, site.ID)
 			apiError(w, http.StatusInternalServerError, err)
 			return
@@ -296,11 +296,9 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// build a config map to extract varnish settings for the pod config
-	cfgMapForPod := make(map[int]string)
-	for _, c := range configs {
-		cfgMapForPod[c.Type] = c.Config
-	}
+	// marshal the varnish KV map to JSON for the pod config
+	varnishBlob, _ := json.Marshal(configs[models.ConfigVarnish])
+	varnishBlobStr := string(varnishBlob)
 
 	// provision the Podman pod with all required containers
 	podCfg := podman.SiteConfig{
@@ -312,8 +310,8 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		DBPass:         dbPass,
 		DBRootPass:     dbRootPass,
 		RedisPass:      redisPass,
-		VarnishEnabled: config.VarnishEnabled(cfgMapForPod[models.ConfigVarnish]),
-		VarnishMemory:  config.VarnishMemorySize(cfgMapForPod[models.ConfigVarnish]),
+		VarnishEnabled: config.VarnishEnabled(varnishBlobStr),
+		VarnishMemory:  config.VarnishMemorySize(varnishBlobStr),
 	}
 	podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer podCancel()
@@ -532,14 +530,27 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// flush redis cache
+	if site.SiteType != models.SiteTypeStatic {
+		redisPass, err := readEnvValue(s.sitesBase()+"/"+site.Name+"/.env", "REDIS_PASS")
+		if err != nil {
+			logger.Warn("apiSiteFlush: could not read REDIS_PASS for site %d: %v", site.ID, err)
+		} else {
+			if err := s.podman.FlushRedisCache(r.Context(), podman.ContainerName(site.Name, "redis"), redisPass); err != nil {
+				logger.Warn("redis flush failed for site %d (pod may be stopped): %v", site.ID, err)
+			}
+		}
+	}
 
 	// flush varnish cache if enabled for this site
-	varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
-	if varnishCfg != nil && config.VarnishEnabled(varnishCfg.Config) {
-		if err := s.podman.FlushVarnishCache(r.Context(), podman.ContainerName(site.Name, "varnish")); err != nil {
-			logger.Error("failed to flush varnish cache for site %d: %v", site.ID, err)
-			apiError(w, http.StatusInternalServerError, err)
-			return
+	varnishKV, _ := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
+	if len(varnishKV) > 0 {
+		vb, _ := json.Marshal(varnishKV)
+		if config.VarnishEnabled(string(vb)) {
+			if err := s.podman.FlushVarnishCache(r.Context(), podman.ContainerName(site.Name, "varnish")); err != nil {
+				logger.Error("failed to flush varnish cache for site %d: %v", site.ID, err)
+				apiError(w, http.StatusInternalServerError, err)
+				return
+			}
 		}
 	}
 
@@ -691,7 +702,7 @@ require_once ABSPATH . 'wp-settings.php';
 
 // scaffoldSiteDir writes all config files to disk for a new site.
 // siteUID is the numeric SFTP uid — used so PHP-FPM runs as that user.
-func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config, dbUser, dbPass, dbRootPass, redisPass string, siteUID int) error {
+func scaffoldSiteDir(siteDir string, site *models.Site, configs map[int]map[string]string, dbUser, dbPass, dbRootPass, redisPass string, siteUID int) error {
 
 	// create the required directory structure for the site
 	dirs := []string{
@@ -757,17 +768,20 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 		logger.Warn("could not chmod nginx/logs: %v", err)
 	}
 
-	// build a map of config type to JSON blob for easy lookup
-	cfgMap := make(map[int]string)
-	for _, c := range configs {
-		cfgMap[c.Type] = c.Config
+	// marshal a KV map to a JSON blob for the render functions; returns '{}' on nil
+	marshalCfg := func(kv map[string]string) string {
+		if kv == nil {
+			return "{}"
+		}
+		b, _ := json.Marshal(kv)
+		return string(b)
 	}
 
 	// determine if varnish is enabled for this site
-	vEnabled := config.VarnishEnabled(cfgMap[models.ConfigVarnish])
+	vEnabled := config.VarnishEnabled(marshalCfg(configs[models.ConfigVarnish]))
 
 	// render and write the nginx main config
-	nginxMain, err := config.RenderNginxMain(cfgMap[models.ConfigNginx])
+	nginxMain, err := config.RenderNginxMain(marshalCfg(configs[models.ConfigNginx]))
 	if err != nil {
 		logger.Error("failed to create nginx config")
 		return err
@@ -778,7 +792,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 	}
 
 	// render and write the nginx site server block
-	nginxSite, err := config.RenderNginxSite(cfgMap[models.ConfigNginx], site.SiteType, vEnabled)
+	nginxSite, err := config.RenderNginxSite(marshalCfg(configs[models.ConfigNginx]), site.SiteType, vEnabled)
 	if err != nil {
 		logger.Error("failed to create nginx site block")
 		return err
@@ -790,7 +804,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 
 	// render and write PHP configs for WordPress and PHP site types
 	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
-		phpFPM, err := config.RenderPHPFPM(cfgMap[models.ConfigPHP], siteUID)
+		phpFPM, err := config.RenderPHPFPM(marshalCfg(configs[models.ConfigPHP]), siteUID)
 		if err != nil {
 			logger.Error("failed to create php config")
 			return err
@@ -799,7 +813,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 			logger.Error("failed to write php config file")
 			return err
 		}
-		phpIni, err := config.RenderPHPIni(cfgMap[models.ConfigPHP])
+		phpIni, err := config.RenderPHPIni(marshalCfg(configs[models.ConfigPHP]))
 		if err != nil {
 			logger.Error("failed to create php ini")
 			return err
@@ -823,7 +837,6 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 
 	// write wp-config.php for WordPress sites so the WP entrypoint can be skipped
 	// entirely and php-fpm runs as siteUID without ownership conflicts
-	// write wp-config.php
 	if site.SiteType == models.SiteTypeWordPress {
 		wpConfig := generateWPConfig(site.Name, dbUser, dbPass, redisPass)
 		if err := os.WriteFile(siteDir+"/html/wp-config.php", []byte(wpConfig), 0640); err != nil {
@@ -843,7 +856,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 
 	// render and write MariaDB and Redis configs for all non-static site types
 	if site.SiteType != models.SiteTypeStatic {
-		mariaDB, err := config.RenderMariaDB(cfgMap[models.ConfigMariaDB])
+		mariaDB, err := config.RenderMariaDB(marshalCfg(configs[models.ConfigMariaDB]))
 		if err != nil {
 			logger.Error("failed to create mariadb config")
 			return err
@@ -853,7 +866,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 			return err
 		}
 		redisPassFromEnv, _ := readEnvValue(siteDir+"/.env", "REDIS_PASS")
-		redisCfg, err := config.RenderRedis(cfgMap[models.ConfigRedis], redisPassFromEnv)
+		redisCfg, err := config.RenderRedis(marshalCfg(configs[models.ConfigRedis]), redisPassFromEnv)
 		if err != nil {
 			logger.Error("failed to create redis config")
 			return err
@@ -866,7 +879,7 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs []*models.Config
 
 	// always write the VCL file so the bind mount target exists on disk;
 	// varnish will only be started if enabled in the pod config
-	vclContent, err := config.RenderVarnish(cfgMap[models.ConfigVarnish])
+	vclContent, err := config.RenderVarnish(marshalCfg(configs[models.ConfigVarnish]))
 	if err != nil {
 		logger.Error("failed to render varnish VCL")
 		return err
@@ -942,20 +955,18 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	dbRootPass, _ := readEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
 	redisPass, _ := readEnvValue(siteDir+"/.env", "REDIS_PASS")
 
-	// fetch the varnish config to determine if it should be provisioned
-	varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
+	// fetch the varnish KV map to determine if it should be provisioned
+	varnishKV, _ := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
 	var varnishCfgJSON string
-	if varnishCfg != nil {
-		varnishCfgJSON = varnishCfg.Config
+	if len(varnishKV) > 0 {
+		vb, _ := json.Marshal(varnishKV)
+		varnishCfgJSON = string(vb)
 	} else {
 		// seed default varnish config for sites that predate this feature
-		blob, _ := config.MarshalDefaults(models.ConfigVarnish)
-		_ = db.UpsertConfig(s.cfg.DB, &models.Config{
-			SiteID: site.ID,
-			Type:   models.ConfigVarnish,
-			Config: blob,
-		})
-		varnishCfgJSON = blob
+		defaults, _ := config.DefaultsForType(models.ConfigVarnish)
+		_ = db.SetConfigs(s.cfg.DB, site.ID, models.ConfigVarnish, defaults)
+		vb, _ := json.Marshal(defaults)
+		varnishCfgJSON = string(vb)
 		logger.Debug("seeded default varnish config for pre-existing site %d", site.ID)
 	}
 

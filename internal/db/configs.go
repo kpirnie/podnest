@@ -5,142 +5,198 @@ import (
 	"time"
 
 	"podnest/internal/logger"
-	"podnest/internal/models"
 )
 
-// CreateConfig inserts a new config record for a site
-func CreateConfig(db *sql.DB, c *models.Config) error {
+// GetConfigsBySiteAndType returns all key/value pairs for a site+type as a map
+func GetConfigsBySiteAndType(db *sql.DB, siteID int64, configType int) (map[string]string, error) {
 
-	// Set created and updated timestamps
-	res, err := db.Exec(`
-		INSERT INTO kppn_configs (siteid, type, config)
-		VALUES (?, ?, ?)`,
-		c.SiteID, c.Type, c.Config,
-	)
-	if err != nil {
-		logger.Error("failed to create config: %v", err)
-		return err
-	}
-
-	// Get the auto-generated ID of the new record
-	c.ID, _ = res.LastInsertId()
-	logger.Debug("config created with ID: %d", c.ID)
-
-	// return nil if successful
-	return nil
-}
-
-// GetConfigBySiteAndType retrieves a single config by site ID and type
-func GetConfigBySiteAndType(db *sql.DB, siteID int64, configType int) (*models.Config, error) {
-
-	// setup a new Config struct to hold the result
-	c := &models.Config{}
-
-	// Query the database for the config record matching the site ID and type
-	err := db.QueryRow(`
-		SELECT id, siteid, type, config, created, updated
-		FROM kppn_configs WHERE siteid = ? AND type = ?`, siteID, configType,
-	).Scan(&c.ID, &c.SiteID, &c.Type, &c.Config, &c.Created, &c.Updated)
-	if err == sql.ErrNoRows {
-		logger.Error("no config found for site ID %d and type %d", siteID, configType)
-		return nil, nil
-	}
-
-	// return the config and any error that occurred during the query
-	logger.Debug("config found for site ID %d and type %d", siteID, configType)
-	return c, err
-}
-
-// GetConfigsBySite returns all config records for a site
-func GetConfigsBySite(db *sql.DB, siteID int64) ([]*models.Config, error) {
-
-	// Query the database for all config records matching the site ID
+	// query all KV rows for this site+type
 	rows, err := db.Query(`
-		SELECT id, siteid, type, config, created, updated
-		FROM kppn_configs WHERE siteid = ? ORDER BY type ASC`, siteID,
+		SELECT key, value FROM kppn_configs
+		WHERE site_id = ? AND type = ? ORDER BY key ASC`, siteID, configType,
 	)
 	if err != nil {
-		logger.Error("failed to get configs for site ID %d: %v", siteID, err)
+		logger.Error("GetConfigsBySiteAndType: failed to query site %d type %d: %v", siteID, configType, err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	// setup a slice to hold the results
-	var configs []*models.Config
-
-	// Iterate over the query results and populate the slice
+	// populate the map from the result set
+	kv := make(map[string]string)
 	for rows.Next() {
-
-		// setup a new Config struct for each row
-		c := &models.Config{}
-		if err := rows.Scan(
-			&c.ID, &c.SiteID, &c.Type, &c.Config, &c.Created, &c.Updated,
-		); err != nil {
-			logger.Error("failed to scan config row for site ID %d: %v", siteID, err)
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			logger.Error("GetConfigsBySiteAndType: failed to scan row for site %d type %d: %v", siteID, configType, err)
 			return nil, err
 		}
-		configs = append(configs, c)
+		kv[k] = v
 	}
 
-	// return the slice of configs and any error that occurred during iteration
-	logger.Debug("found %d configs for site ID %d", len(configs), siteID)
-	return configs, rows.Err()
+	logger.Debug("GetConfigsBySiteAndType: found %d keys for site %d type %d", len(kv), siteID, configType)
+	return kv, rows.Err()
 }
 
-// UpdateConfig replaces the JSON blob for an existing config record
-func UpdateConfig(db *sql.DB, c *models.Config) error {
+// GetAllConfigsBySite returns all config types for a site as a map of type → KV map
+func GetAllConfigsBySite(db *sql.DB, siteID int64) (map[int]map[string]string, error) {
 
-	// Set the updated timestamp to now
-	now := time.Now().UTC()
-
-	// Update the config record in the database with the new JSON blob and updated timestamp
-	_, err := db.Exec(`
-		UPDATE kppn_configs SET config=?, updated=? WHERE id=?`,
-		c.Config, now, c.ID,
-	)
-
-	// return any error that occurred during the update
-	logger.Debug("config updated with ID: %d", c.ID)
-	return err
-}
-
-// UpsertConfig inserts or replaces a config record for a site+type combination
-func UpsertConfig(db *sql.DB, c *models.Config) error {
-
-	// Set the updated timestamp to now
-	now := time.Now().UTC()
-
-	// Use an upsert query to insert or update the config record based on the site ID and type
-	_, err := db.Exec(`
-		INSERT INTO kppn_configs (siteid, type, config, created, updated)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT (siteid, type) DO UPDATE SET config=excluded.config, updated=excluded.updated`,
-		c.SiteID, c.Type, c.Config, now, now,
+	// query all KV rows for this site ordered by type then key
+	rows, err := db.Query(`
+		SELECT type, key, value FROM kppn_configs
+		WHERE site_id = ? ORDER BY type ASC, key ASC`, siteID,
 	)
 	if err != nil {
-		logger.Error("failed to upsert config for site ID %d and type %d: %v", c.SiteID, c.Type, err)
+		logger.Error("GetAllConfigsBySite: failed to query site %d: %v", siteID, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	// populate the nested map from the result set
+	out := make(map[int]map[string]string)
+	for rows.Next() {
+		var t int
+		var k, v string
+		if err := rows.Scan(&t, &k, &v); err != nil {
+			logger.Error("GetAllConfigsBySite: failed to scan row for site %d: %v", siteID, err)
+			return nil, err
+		}
+		if out[t] == nil {
+			out[t] = make(map[string]string)
+		}
+		out[t][k] = v
+	}
+
+	logger.Debug("GetAllConfigsBySite: found %d config types for site %d", len(out), siteID)
+	return out, rows.Err()
+}
+
+// GetConfigValue returns a single value for a site+type+key; the bool indicates
+// whether the key was present
+func GetConfigValue(db *sql.DB, siteID int64, configType int, key string) (string, bool, error) {
+
+	// query the single KV row
+	var value string
+	err := db.QueryRow(`
+		SELECT value FROM kppn_configs
+		WHERE site_id = ? AND type = ? AND key = ?`, siteID, configType, key,
+	).Scan(&value)
+	if err == sql.ErrNoRows {
+		logger.Debug("GetConfigValue: key %q not found for site %d type %d", key, siteID, configType)
+		return "", false, nil
+	}
+	if err != nil {
+		logger.Error("GetConfigValue: failed to query site %d type %d key %q: %v", siteID, configType, key, err)
+		return "", false, err
+	}
+
+	logger.Debug("GetConfigValue: found key %q for site %d type %d", key, siteID, configType)
+	return value, true, nil
+}
+
+// SetConfig upserts a single key/value pair for a site+type
+func SetConfig(db *sql.DB, siteID int64, configType int, key, value string) error {
+
+	// upsert the single KV row
+	now := time.Now().UTC()
+	_, err := db.Exec(`
+		INSERT INTO kppn_configs (site_id, type, key, value, created, updated)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (site_id, type, key) DO UPDATE SET value=excluded.value, updated=excluded.updated`,
+		siteID, configType, key, value, now, now,
+	)
+	if err != nil {
+		logger.Error("SetConfig: failed to upsert site %d type %d key %q: %v", siteID, configType, key, err)
 		return err
 	}
 
-	// return nil if successful
-	logger.Debug("config upserted for site ID %d and type %d", c.SiteID, c.Type)
+	logger.Debug("SetConfig: upserted key %q for site %d type %d", key, siteID, configType)
 	return nil
 }
 
-// DeleteConfig removes a config record by ID
-func DeleteConfig(db *sql.DB, id int64) error {
+// SetConfigs replaces all key/value pairs for a site+type in a single transaction;
+// keys present in the DB but absent from kvs are deleted
+func SetConfigs(db *sql.DB, siteID int64, configType int, kvs map[string]string) error {
 
-	// Delete the config record from the database by ID
-	_, err := db.Exec(`DELETE FROM kppn_configs WHERE id=?`, id)
-	logger.Debug("config deleted with ID: %d", id)
-	return err
+	// wrap delete + insert in a transaction so the replace is atomic
+	tx, err := db.Begin()
+	if err != nil {
+		logger.Error("SetConfigs: failed to begin transaction for site %d type %d: %v", siteID, configType, err)
+		return err
+	}
+
+	// delete all existing KV rows for this site+type
+	if _, err := tx.Exec(`DELETE FROM kppn_configs WHERE site_id = ? AND type = ?`, siteID, configType); err != nil {
+		tx.Rollback()
+		logger.Error("SetConfigs: failed to delete existing rows for site %d type %d: %v", siteID, configType, err)
+		return err
+	}
+
+	// insert one row per key in the incoming map
+	now := time.Now().UTC()
+	stmt, err := tx.Prepare(`
+		INSERT INTO kppn_configs (site_id, type, key, value, created, updated)
+		VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		tx.Rollback()
+		logger.Error("SetConfigs: failed to prepare insert for site %d type %d: %v", siteID, configType, err)
+		return err
+	}
+	defer stmt.Close()
+
+	for k, v := range kvs {
+		if _, err := stmt.Exec(siteID, configType, k, v, now, now); err != nil {
+			tx.Rollback()
+			logger.Error("SetConfigs: failed to insert key %q for site %d type %d: %v", k, siteID, configType, err)
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("SetConfigs: failed to commit for site %d type %d: %v", siteID, configType, err)
+		return err
+	}
+
+	logger.Debug("SetConfigs: replaced %d keys for site %d type %d", len(kvs), siteID, configType)
+	return nil
 }
 
-// DeleteConfigsBySite removes all config records for a site
+// DeleteConfig removes a single key for a site+type
+func DeleteConfig(db *sql.DB, siteID int64, configType int, key string) error {
+
+	// delete the single KV row
+	_, err := db.Exec(`DELETE FROM kppn_configs WHERE site_id = ? AND type = ? AND key = ?`, siteID, configType, key)
+	if err != nil {
+		logger.Error("DeleteConfig: failed to delete key %q for site %d type %d: %v", key, siteID, configType, err)
+		return err
+	}
+
+	logger.Debug("DeleteConfig: deleted key %q for site %d type %d", key, siteID, configType)
+	return nil
+}
+
+// DeleteConfigsByType removes all keys for a site+type
+func DeleteConfigsByType(db *sql.DB, siteID int64, configType int) error {
+
+	// delete all KV rows for this site+type
+	_, err := db.Exec(`DELETE FROM kppn_configs WHERE site_id = ? AND type = ?`, siteID, configType)
+	if err != nil {
+		logger.Error("DeleteConfigsByType: failed to delete configs for site %d type %d: %v", siteID, configType, err)
+		return err
+	}
+
+	logger.Debug("DeleteConfigsByType: deleted all keys for site %d type %d", siteID, configType)
+	return nil
+}
+
+// DeleteConfigsBySite removes all config rows for a site across all types
 func DeleteConfigsBySite(db *sql.DB, siteID int64) error {
 
-	// Delete all config records from the database for the given site ID
-	_, err := db.Exec(`DELETE FROM kppn_configs WHERE siteid=?`, siteID)
-	logger.Debug("configs deleted for site ID %d", siteID)
-	return err
+	// delete all KV rows for this site
+	_, err := db.Exec(`DELETE FROM kppn_configs WHERE site_id = ?`, siteID)
+	if err != nil {
+		logger.Error("DeleteConfigsBySite: failed to delete configs for site %d: %v", siteID, err)
+		return err
+	}
+
+	logger.Debug("DeleteConfigsBySite: deleted all configs for site %d", siteID)
+	return nil
 }

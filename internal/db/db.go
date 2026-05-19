@@ -3,6 +3,7 @@ package db
 import (
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +50,11 @@ func Open(path string) (*sql.DB, error) {
 // Migrate runs the DDL to create all tables and applies any column migrations
 func Migrate(db *sql.DB) error {
 
+	// migrate configs first — must run before schema DDL which references site_id
+	if err := MigrateConfigs(db); err != nil {
+		return err
+	}
+
 	// execute the schema to create tables if they don't exist
 	if _, err := db.Exec(schema); err != nil {
 		logger.Error("failed to execute schema: %v", err)
@@ -93,6 +99,147 @@ func migrateColumns(db *sql.DB) error {
 	}
 
 	logger.Debug("column migrations applied")
+	return nil
+}
+
+// MigrateConfigs detects the old single-blob kppn_configs schema and migrates
+// all existing rows to the new EAV structure (one row per key/value pair)
+func MigrateConfigs(db *sql.DB) error {
+
+	// check whether the old 'config' column still exists
+	infoRows, err := db.Query(`PRAGMA table_info(kppn_configs)`)
+	if err != nil {
+		logger.Error("MigrateConfigs: failed to read table_info: %v", err)
+		return err
+	}
+
+	hasOldSchema := false
+	for infoRows.Next() {
+		var cid, notNull, pk int
+		var name, colType string
+		var dfltVal interface{}
+		if err := infoRows.Scan(&cid, &name, &colType, &notNull, &dfltVal, &pk); err != nil {
+			infoRows.Close()
+			logger.Error("MigrateConfigs: failed to scan table_info: %v", err)
+			return err
+		}
+		if name == "config" {
+			hasOldSchema = true
+		}
+	}
+	infoRows.Close()
+	if err := infoRows.Err(); err != nil {
+		return err
+	}
+	if !hasOldSchema {
+		logger.Debug("MigrateConfigs: EAV schema already in place, skipping")
+		return nil
+	}
+
+	logger.Debug("MigrateConfigs: old blob schema detected — migrating to EAV")
+
+	// read all existing blob rows before opening the transaction
+	type oldRow struct {
+		siteid int64
+		typ    int
+		config string
+	}
+	blobRows, err := db.Query(`SELECT siteid, type, config FROM kppn_configs`)
+	if err != nil {
+		logger.Error("MigrateConfigs: failed to read existing configs: %v", err)
+		return err
+	}
+	var old []oldRow
+	for blobRows.Next() {
+		var r oldRow
+		if err := blobRows.Scan(&r.siteid, &r.typ, &r.config); err != nil {
+			blobRows.Close()
+			logger.Error("MigrateConfigs: failed to scan config row: %v", err)
+			return err
+		}
+		old = append(old, r)
+	}
+	blobRows.Close()
+	if err := blobRows.Err(); err != nil {
+		return err
+	}
+
+	// rebuild the table as EAV inside a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		logger.Error("MigrateConfigs: failed to begin transaction: %v", err)
+		return err
+	}
+
+	// create the replacement table alongside the old one
+	if _, err := tx.Exec(`
+		CREATE TABLE kppn_configs_new (
+		    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		    site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+		    type    INTEGER NOT NULL,
+		    key     TEXT    NOT NULL,
+		    value   TEXT    NOT NULL DEFAULT '',
+		    created DATETIME NOT NULL DEFAULT (datetime('now')),
+		    updated DATETIME,
+		    UNIQUE (site_id, type, key)
+		)`); err != nil {
+		tx.Rollback()
+		logger.Error("MigrateConfigs: failed to create new table: %v", err)
+		return err
+	}
+
+	// prepare the insert for KV rows
+	stmt, err := tx.Prepare(`
+		INSERT INTO kppn_configs_new (site_id, type, key, value)
+		VALUES (?, ?, ?, ?)`)
+	if err != nil {
+		tx.Rollback()
+		logger.Error("MigrateConfigs: failed to prepare insert: %v", err)
+		return err
+	}
+
+	// unmarshal each blob and insert one row per key
+	for _, r := range old {
+		var kv map[string]string
+		if err := json.Unmarshal([]byte(r.config), &kv); err != nil {
+			logger.Warn("MigrateConfigs: skipping unparseable blob for site %d type %d: %v", r.siteid, r.typ, err)
+			continue
+		}
+		for k, v := range kv {
+			if _, err := stmt.Exec(r.siteid, r.typ, k, v); err != nil {
+				stmt.Close()
+				tx.Rollback()
+				logger.Error("MigrateConfigs: failed to insert KV row: %v", err)
+				return err
+			}
+		}
+	}
+	stmt.Close()
+
+	// swap old table for the new one
+	if _, err := tx.Exec(`DROP TABLE kppn_configs`); err != nil {
+		tx.Rollback()
+		logger.Error("MigrateConfigs: failed to drop old table: %v", err)
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE kppn_configs_new RENAME TO kppn_configs`); err != nil {
+		tx.Rollback()
+		logger.Error("MigrateConfigs: failed to rename new table: %v", err)
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("MigrateConfigs: failed to commit migration: %v", err)
+		return err
+	}
+
+	// index after commit — DDL outside a transaction is fine for SQLite
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_configs_site_type ON kppn_configs (site_id, type)`); err != nil {
+		logger.Error("MigrateConfigs: failed to create index: %v", err)
+		return err
+	}
+
+	logger.Debug("MigrateConfigs: complete — %d blob rows migrated", len(old))
 	return nil
 }
 
@@ -200,15 +347,16 @@ CREATE INDEX IF NOT EXISTS idx_domains_siteid ON kppn_domains (siteid);
 
 CREATE TABLE IF NOT EXISTS kppn_configs (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    siteid  INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
     type    INTEGER NOT NULL,
-    config  TEXT    NOT NULL DEFAULT '{}',
+    key     TEXT    NOT NULL,
+    value   TEXT    NOT NULL DEFAULT '',
     created DATETIME NOT NULL DEFAULT (datetime('now')),
     updated DATETIME,
-    UNIQUE (siteid, type)
+    UNIQUE (site_id, type, key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_configs_siteid ON kppn_configs (siteid);
+CREATE INDEX IF NOT EXISTS idx_configs_site_type ON kppn_configs (site_id, type);
 
 CREATE TABLE IF NOT EXISTS kppn_pma_tokens (
     token      TEXT    PRIMARY KEY,

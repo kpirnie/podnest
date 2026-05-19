@@ -446,6 +446,29 @@ func (c *Client) FlushVarnishCache(ctx context.Context, containerName string) er
 	return nil
 }
 
+// FlushRedisCache runs FLUSHALL inside the Redis container to clear all cached data
+func (c *Client) FlushRedisCache(ctx context.Context, containerName, password string) error {
+	spec := map[string]any{
+		"AttachStdout": false,
+		"AttachStderr": false,
+		"Detach":       true,
+		"Cmd":          []string{"redis-cli", "-a", password, "--no-auth-warning", "FLUSHALL"},
+	}
+	var execResp struct {
+		ID string `json:"Id"`
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+containerName+"/exec", spec, &execResp); err != nil {
+		logger.Error("FlushRedisCache: failed to create exec in %s: %v", containerName, err)
+		return err
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
+		logger.Error("FlushRedisCache: failed to start exec in %s: %v", containerName, err)
+		return err
+	}
+	logger.Debug("FlushRedisCache: FLUSHALL issued in %s", containerName)
+	return nil
+}
+
 // KillContainer sends a signal to a running container; used to trigger
 // hot-reloads without a full pod recreate (e.g. SIGHUP for nginx, SIGUSR2 for php-fpm)
 func (c *Client) KillContainer(ctx context.Context, name, signal string) error {

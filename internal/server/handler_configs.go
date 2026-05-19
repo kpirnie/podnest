@@ -18,64 +18,51 @@ import (
 	"podnest/internal/sftp"
 )
 
-// get the configs for a site, grouped by type, and return them as a JSON object of the form {type: {key: value}}
+// apiGetConfigs returns all configs for a site grouped by type as {type: {key: value}}
 func (s *Server) apiGetConfigs(w http.ResponseWriter, r *http.Request) {
 
-	// grab the site and all configs for that site from the DB
+	// grab the site from the request path
 	site, ok := s.resolveSite(w, r)
 	if !ok {
 		logger.Error("failed to resolve site for config fetch: %v", r)
 		return
 	}
 
-	// grab the configs for the site ID
-	configs, err := db.GetConfigsBySite(s.cfg.DB, site.ID)
+	// fetch all KV pairs for the site grouped by type
+	out, err := db.GetAllConfigsBySite(s.cfg.DB, site.ID)
 	if err != nil {
 		logger.Error("failed to fetch configs for site %d: %v", site.ID, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// setup a map of config type to KV map, and unmarshal each config blob into the appropriate place in the map
-	out := make(map[int]map[string]string)
-
-	// iterate over the configs, unmarshal the blob into a KV map, and add it to the output map under the appropriate type
-	for _, c := range configs {
-		var m map[string]string
-		if err := json.Unmarshal([]byte(c.Config), &m); err != nil {
-			logger.Error("failed to unmarshal config for site %d, type %d: %v", site.ID, c.Type, err)
-			apiError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		// add the config map to the output under the appropriate type
-		logger.Debug("fetched config for site %d, type %d: %v", site.ID, c.Type, m)
-		out[c.Type] = m
+	// return an empty map rather than null if the site has no configs yet
+	if out == nil {
+		out = make(map[int]map[string]string)
 	}
 
-	// log the final output map and write it to the response
-	logger.Debug("fetched configs for site %d: %v", site.ID, out)
+	logger.Debug("fetched configs for site %d: %d types", site.ID, len(out))
 	apiJSON(w, http.StatusOK, out)
 }
 
-// update a config by merging the incoming KV map over the existing config blob, writing the merged result back to the DB, and re-rendering the appropriate config file(s) to disk
+// apiUpdateConfig replaces all keys for a site+type with the incoming map —
+// keys absent from the payload are deleted from the DB
 func (s *Server) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
-	// grab the site all configs for that site from the DB
+	// grab the site and config type from the request path
 	site, ok := s.resolveSite(w, r)
 	if !ok {
 		logger.Error("failed to resolve site for config update: %v", r)
 		return
 	}
 
-	// resolve the config type from the path
 	configType, err := resolveConfigType(w, r)
 	if err != nil {
 		logger.Error("failed to resolve config type for config update: %v", r)
 		return
 	}
 
-	// setup the incoming KV map and decode the request body into it — this will be merged over the existing config blob
+	// decode the incoming KV map — this IS the complete config, no merging
 	var incoming map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 		logger.Error("failed to decode request body for config update: %v", err)
@@ -83,152 +70,98 @@ func (s *Server) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// fetch the existing config blob from the DB, unmarshal it into a KV map, merge the incoming map over it, marshal the merged result back to a blob, and write it back to the DB
-	existing, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, configType)
+	// full replace — keys absent from incoming are deleted from the DB
+	if err := db.SetConfigs(s.cfg.DB, site.ID, configType, incoming); err != nil {
+		logger.Error("failed to set configs for site %d type %d: %v", site.ID, configType, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// marshal the KV map to JSON for the render functions
+	blob, err := json.Marshal(incoming)
 	if err != nil {
-		logger.Error("failed to fetch existing config for site %d, type %d: %v", site.ID, configType, err)
+		logger.Error("failed to marshal config for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// setup a base map to hold the existing config values, unmarshal the existing blob into it if it exists, and merge the incoming values over it (deleting any keys where the incoming value is an empty string)
-	base := make(map[string]string)
-	if existing != nil {
-		if err := json.Unmarshal([]byte(existing.Config), &base); err != nil {
-			logger.Error("failed to unmarshal existing config for site %d, type %d: %v", site.ID, configType, err)
-			apiError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
-	// merge the incoming values over the existing values, deleting any keys where the incoming value is an empty string
-	for k, v := range incoming {
-		if v == "" {
-			delete(base, k)
-		} else {
-			base[k] = v
-		}
-	}
-
-	// marshal the merged config back to a blob and write it back to the DB
-	blob, err := json.Marshal(base)
-	if err != nil {
-		logger.Error("failed to marshal merged config for site %d, type %d: %v", site.ID, configType, err)
-		apiError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	// setup the config model
-	cfg := &models.Config{
-		SiteID: site.ID,
-		Type:   configType,
-		Config: string(blob),
-	}
-
-	// upsert the config back to the DB
-	if err := db.UpsertConfig(s.cfg.DB, cfg); err != nil {
-		logger.Error("failed to upsert merged config for site %d, type %d: %v", site.ID, configType, err)
-		apiError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	// rewrite the appropriate config file(s) to disk based on the merged config blob
+	// rewrite the config file(s) on disk
 	if err := s.rewriteConfigFile(site, configType, string(blob)); err != nil {
-		logger.Error("failed to rewrite config file for site %d, type %d: %v", site.ID, configType, err)
+		logger.Error("failed to rewrite config file for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// setup a response map of the merged config values and write it to the response
-	var out map[string]string
-
-	// unmarshal the merged config blob into the response map and write it to the response
-	if err := json.Unmarshal(blob, &out); err != nil {
-		logger.Error("failed to unmarshal merged config for site %d, type %d: %v", site.ID, configType, err)
-		apiError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	// we made it this far, reply back with the json
-	logger.Debug("updated config for site: %d", site.ID)
-	apiJSON(w, http.StatusOK, out)
+	logger.Debug("updated config for site %d type %d", site.ID, configType)
+	apiJSON(w, http.StatusOK, incoming)
 }
 
-// reset a config by writing the default config blob to the DB and re-rendering the appropriate config file(s) to disk
+// apiResetConfig restores defaults for a site+type and rewrites the config file(s) on disk
 func (s *Server) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 
-	// grab the site all configs for that site from the DB
+	// grab the site and config type from the request path
 	site, ok := s.resolveSite(w, r)
 	if !ok {
 		logger.Error("failed to resolve site for config reset: %v", r)
 		return
 	}
 
-	// resolve the config type from the path
 	configType, err := resolveConfigType(w, r)
 	if err != nil {
 		logger.Error("failed to resolve config type for config reset: %v", r)
 		return
 	}
 
-	// get the default config blob for the config type, write it to the DB, and rewrite the appropriate config file(s) to disk
-	blob, err := config.MarshalDefaults(configType)
+	// get the default KV map for this config type
+	defaults, err := config.DefaultsForType(configType)
 	if err != nil {
-		logger.Error("failed to marshal default config for site %d, type %d: %v", site.ID, configType, err)
+		logger.Error("failed to get defaults for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// setup the config model
-	cfg := &models.Config{
-		SiteID: site.ID,
-		Type:   configType,
-		Config: blob,
-	}
-
-	// upsert the config back to the DB
-	if err := db.UpsertConfig(s.cfg.DB, cfg); err != nil {
-		logger.Error("failed to upsert default config for site %d, type %d: %v", site.ID, configType, err)
+	// full replace with defaults
+	if err := db.SetConfigs(s.cfg.DB, site.ID, configType, defaults); err != nil {
+		logger.Error("failed to set default configs for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// rewrite the appropriate config file(s) to disk based on the default config blob
-	if err := s.rewriteConfigFile(site, configType, blob); err != nil {
-		logger.Error("failed to rewrite config file for site %d, type %d: %v", site.ID, configType, err)
+	// marshal for the render functions
+	blob, err := json.Marshal(defaults)
+	if err != nil {
+		logger.Error("failed to marshal defaults for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// setup a response map of the merged config values and write it to the response
-	var out map[string]string
-
-	// unmarshal the default config blob into the response map and write it to the response
-	if err := json.Unmarshal([]byte(blob), &out); err != nil {
-		logger.Error("failed to unmarshal default config for site %d, type %d: %v", site.ID, configType, err)
+	// rewrite the config file(s) on disk
+	if err := s.rewriteConfigFile(site, configType, string(blob)); err != nil {
+		logger.Error("failed to rewrite config file for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// we made it this far, reply back with the json
-	logger.Debug("reset site config for site id: %d", site.ID)
-	apiJSON(w, http.StatusOK, out)
+	logger.Debug("reset site config for site %d type %d", site.ID, configType)
+	apiJSON(w, http.StatusOK, defaults)
 }
 
-// rewriteConfigFile renders and writes the appropriate config file(s) to disk
+// rewriteConfigFile renders and writes the appropriate config file(s) to disk;
+// blob is a JSON-marshaled map[string]string for the given config type
 func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob string) error {
 
 	// setup the site directory path based on the site name
 	siteDir := s.sitesBase() + "/" + site.Name
 
-	// switch on the config type and render/write the appropriate config file(s) to disk based on the merged config blob
 	switch configType {
 	case models.ConfigNginx:
-		// load the varnish config to determine the correct nginx listen port
-		varnishCfg, _ := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
+
+		// load the varnish KV map to determine the correct nginx listen port
+		varnishKV, _ := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
 		vEnabled := false
-		if varnishCfg != nil {
-			vEnabled = config.VarnishEnabled(varnishCfg.Config)
+		if len(varnishKV) > 0 {
+			vb, _ := json.Marshal(varnishKV)
+			vEnabled = config.VarnishEnabled(string(vb))
 		}
 
 		main, err := config.RenderNginxMain(blob)
@@ -257,27 +190,21 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 
 	case models.ConfigPHP:
 
-		// render the php-fpm and php.ini config files based on the merged config blob and write them to disk
+		// render the php-fpm and php.ini config files and write them to disk
 		fpm, err := config.RenderPHPFPM(blob, sftp.UIDForSite(site.ID))
 		if err != nil {
 			logger.Error("failed to render php-fpm config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// write the php-fpm config file to disk
 		if err := writeFile(siteDir+"/php-fpm/www.conf", fpm, 0644); err != nil {
 			logger.Error("failed to write php-fpm config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// render the php.ini config file based on the merged config blob and write it to disk
 		ini, err := config.RenderPHPIni(blob)
 		if err != nil {
 			logger.Error("failed to render php.ini config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// try to write php configs
 		if err := writeFile(siteDir+"/php-fpm/php.ini", ini, 0644); err != nil {
 			logger.Error("failed to write php.ini config for site %d: %v", site.ID, err)
 			return err
@@ -290,14 +217,12 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 
 	case models.ConfigMariaDB:
 
-		// render the mariadb config file based on the merged config blob and write it to disk
+		// render the mariadb config file and write it to disk
 		my, err := config.RenderMariaDB(blob)
 		if err != nil {
 			logger.Error("failed to render mariadb config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// write the mariadb config file to disk
 		if err := writeFile(siteDir+"/db/my.cnf", my, 0640); err != nil {
 			logger.Error("failed to write mariadb config for site %d: %v", site.ID, err)
 			return err
@@ -310,21 +235,17 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 
 	case models.ConfigRedis:
 
-		// redis needs the password — read it from the .env file
+		// redis needs the password from the .env file
 		redisPass, err := readEnvValue(siteDir+"/.env", "REDIS_PASS")
 		if err != nil {
 			logger.Error("failed to read REDIS_PASS from .env for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// render the redis config file based on the merged config blob and write it to disk
 		redisCfg, err := config.RenderRedis(blob, redisPass)
 		if err != nil {
 			logger.Error("failed to render redis config for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// write the redis config file to disk
 		if err := writeFile(siteDir+"/redis/redis.conf", redisCfg, 0640); err != nil {
 			logger.Error("failed to write redis config for site %d: %v", site.ID, err)
 			return err
@@ -347,14 +268,20 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 			logger.Error("failed to write varnish VCL for site %d: %v", site.ID, err)
 			return err
 		}
+
 		// rewrite nginx so its listen port reflects the updated varnish enabled state
-		nginxCfg, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, models.ConfigNginx)
-		if err != nil || nginxCfg == nil {
+		nginxKV, err := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, models.ConfigNginx)
+		if err != nil || len(nginxKV) == 0 {
 			logger.Error("failed to fetch nginx config during varnish rewrite for site %d: %v", site.ID, err)
 			return err
 		}
+		nginxBlob, err := json.Marshal(nginxKV)
+		if err != nil {
+			logger.Error("failed to marshal nginx config during varnish rewrite for site %d: %v", site.ID, err)
+			return err
+		}
 		vEnabled := config.VarnishEnabled(blob)
-		main, err := config.RenderNginxMain(nginxCfg.Config)
+		main, err := config.RenderNginxMain(string(nginxBlob))
 		if err != nil {
 			logger.Error("failed to render nginx main during varnish rewrite for site %d: %v", site.ID, err)
 			return err
@@ -363,13 +290,11 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 			logger.Error("failed to write nginx main during varnish rewrite for site %d: %v", site.ID, err)
 			return err
 		}
-		site_, err := config.RenderNginxSite(nginxCfg.Config, site.SiteType, vEnabled)
+		site_, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, vEnabled)
 		if err != nil {
 			logger.Error("failed to render nginx site block during varnish rewrite for site %d: %v", site.ID, err)
 			return err
 		}
-
-		// write the and hot-restart
 		if err := writeFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644); err != nil {
 			logger.Error("failed to write nginx site block during varnish rewrite for site %d: %v", site.ID, err)
 			return err
@@ -384,7 +309,7 @@ func (s *Server) rewriteConfigFile(site *models.Site, configType int, blob strin
 		return nil
 	}
 
-	// if we somehow got here, the config type is invalid — log an error and return nil since there's no file to write
+	// if we somehow got here, the config type is invalid
 	logger.Error("invalid config type for site %d: %d", site.ID, configType)
 	return nil
 }
@@ -403,7 +328,6 @@ func resolveConfigType(w http.ResponseWriter, r *http.Request) (int, error) {
 		return 0, err
 	}
 
-	// if we got here, the type is valid — return it
 	logger.Debug("resolved config type from path: %d", t)
 	return t, nil
 }
@@ -424,22 +348,12 @@ func (s *Server) apiExportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// fetch the config blob from the DB
-	existing, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, configType)
+	// fetch the KV map from the DB
+	kv, err := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, configType)
 	if err != nil {
 		logger.Error("apiExportConfig: failed to fetch config for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
-	}
-
-	// unmarshal the blob into a KV map
-	var cfg map[string]string
-	if existing != nil {
-		if err := json.Unmarshal([]byte(existing.Config), &cfg); err != nil {
-			logger.Error("apiExportConfig: failed to unmarshal config: %v", err)
-			apiError(w, http.StatusInternalServerError, err)
-			return
-		}
 	}
 
 	// stream as a CSV attachment
@@ -449,7 +363,7 @@ func (s *Server) apiExportConfig(w http.ResponseWriter, r *http.Request) {
 
 	cw := csv.NewWriter(w)
 	_ = cw.Write([]string{"key", "value"})
-	for k, v := range cfg {
+	for k, v := range kv {
 		_ = cw.Write([]string{k, v})
 	}
 	cw.Flush()
@@ -457,7 +371,7 @@ func (s *Server) apiExportConfig(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("apiExportConfig: exported config for site %d type %d", site.ID, configType)
 }
 
-// apiImportConfig reads a CSV file upload and merges it over the existing config for a site+type
+// apiImportConfig reads a CSV upload and replaces the existing config for a site+type
 func (s *Server) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 
 	// grab the site and config type from the path
@@ -489,20 +403,15 @@ func (s *Server) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	// fetch the existing config blob and unmarshal it as the merge base
-	base := make(map[string]string)
-	existing, err := db.GetConfigBySiteAndType(s.cfg.DB, site.ID, configType)
+	// fetch the existing KV map as the merge base
+	base, err := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, configType)
 	if err != nil {
 		logger.Error("apiImportConfig: failed to fetch existing config: %v", err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if existing != nil {
-		if err := json.Unmarshal([]byte(existing.Config), &base); err != nil {
-			logger.Error("apiImportConfig: failed to unmarshal existing config: %v", err)
-			apiError(w, http.StatusInternalServerError, err)
-			return
-		}
+	if base == nil {
+		base = make(map[string]string)
 	}
 
 	// parse the CSV and merge rows into the base map
@@ -539,22 +448,17 @@ func (s *Server) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// marshal the merged result back to a blob
-	blob, err := json.Marshal(base)
-	if err != nil {
-		logger.Error("apiImportConfig: failed to marshal merged config: %v", err)
+	// full replace with the merged result
+	if err := db.SetConfigs(s.cfg.DB, site.ID, configType, base); err != nil {
+		logger.Error("apiImportConfig: failed to set config for site %d type %d: %v", site.ID, configType, err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	// upsert the merged config to the DB
-	cfg := &models.Config{
-		SiteID: site.ID,
-		Type:   configType,
-		Config: string(blob),
-	}
-	if err := db.UpsertConfig(s.cfg.DB, cfg); err != nil {
-		logger.Error("apiImportConfig: failed to upsert config for site %d type %d: %v", site.ID, configType, err)
+	// marshal for the render functions
+	blob, err := json.Marshal(base)
+	if err != nil {
+		logger.Error("apiImportConfig: failed to marshal config: %v", err)
 		apiError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -566,14 +470,6 @@ func (s *Server) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// return the merged config as confirmation
-	var out map[string]string
-	if err := json.Unmarshal(blob, &out); err != nil {
-		logger.Error("apiImportConfig: failed to unmarshal response: %v", err)
-		apiError(w, http.StatusInternalServerError, err)
-		return
-	}
-
 	logger.Debug("apiImportConfig: imported config for site %d type %d", site.ID, configType)
-	apiJSON(w, http.StatusOK, out)
+	apiJSON(w, http.StatusOK, base)
 }

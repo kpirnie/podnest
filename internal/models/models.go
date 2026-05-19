@@ -183,12 +183,13 @@ type Domain struct {
 	Updated *time.Time
 }
 
-// config data structure
+// Config holds a single EAV key/value pair for a site config type
 type Config struct {
 	ID      int64
 	SiteID  int64
 	Type    int
-	Config  string
+	Key     string
+	Value   string
 	Created time.Time
 	Updated *time.Time
 }
