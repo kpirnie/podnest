@@ -16,7 +16,7 @@ A hardened, high-performance web hosting pod manager built on Podman. Provision 
 
 ---
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ---
 
@@ -46,7 +46,7 @@ The recommended and fully supported deployment method is as a container. The bin
 
 ## Requirements
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 **For container deployment (recommended):**
 - Podman installed and running on the host
@@ -78,7 +78,7 @@ systemctl --user start podman.socket
 
 ## Running as a Container
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 This is the **recommended** way to run PodNest. A pre-built image is published to the GitHub Container Registry — no compilation required.
 
@@ -236,7 +236,7 @@ When a host running PodNest reboots, PodNest restarts automatically via systemd.
 
 ## Running the Binary
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 > Container deployment is the recommended approach. The binary path is here for advanced users who prefer it.
 
@@ -310,7 +310,7 @@ Both `init` and `serve` share the following persistent flags:
 
 ## First Login
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ### Container
 
@@ -333,7 +333,7 @@ If you used `podnest init`, log in with the credentials you provided during setu
 
 ## Directory Structure
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 Once PodNest is running with a persistent volume, the following structure is created at your mounted path (or at `--app-path` for binary deployments):
 
@@ -384,7 +384,7 @@ The `sftp/users.conf` file is managed automatically by PodNest. Do not edit it m
 
 ## Managing Sites
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 All site management is handled through the PodNest web UI or via the API. Access the UI at `http://your-host:PORT` after startup.
 
@@ -455,7 +455,7 @@ From the site detail view, select **Delete Site** and confirm. This will:
 
 ## SFTP Access
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 All sites share a single global SFTP container listening on port **2222**. Each site gets its own isolated user account automatically created when the site is provisioned.
 
@@ -507,7 +507,7 @@ A global Fail2Ban container monitors the SFTP log for repeated authentication fa
 
 ## Built-in Reverse Proxy
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest includes a built-in reverse proxy that routes incoming traffic by domain to the appropriate site pod — no separate nginx layer required.
 
@@ -552,7 +552,7 @@ You can configure a dedicated admin domain for the PodNest management UI under *
 
 ## Site Configurations
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 Each site has up to five configuration sections, editable directly in the UI. Changes are saved to the database and applied immediately — no manual file editing required.
 
@@ -711,7 +711,7 @@ Any configuration section can be reset to its original defaults from the UI. Thi
 
 ## Security Rules
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest provides IP and User-Agent (UA) filtering at two levels: global rules that apply to all sites, and per-site rules that apply to individual sites only. Rules are enforced by the built-in reverse proxy and take effect immediately — no restart required.
 
@@ -778,7 +778,7 @@ IP and UA rule sets can be exported to CSV and imported from CSV, separately at 
 
 ## WAF
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest includes a built-in Web Application Firewall (WAF) powered by [Coraza](https://coraza.io/) with the [OWASP Core Rule Set (CRS)](https://coreruleset.org/). The WAF inspects every proxied request and can detect or block common web attacks including SQL injection, XSS, LFI, RFI, RCE, and scanner activity.
 
@@ -848,7 +848,7 @@ Lines beginning with `#` and blank lines are ignored.
 
 ## Live Logs
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest streams live container logs directly to the UI via WebSocket. From the site detail view, select the **Logs** tab and choose which container to tail:
 
@@ -868,7 +868,7 @@ The log stream defaults to the last 100 lines and follows in real time. The tail
 
 ## WP-CLI Terminal
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 WordPress sites include a built-in WP-CLI terminal accessible directly from the UI. From the site detail view, select the **WP-CLI** tab to open a browser-based terminal that streams command output in real time over WebSocket.
 
@@ -901,7 +901,7 @@ PodNest automatically prepends `wp` and runs the command inside the site's PHP c
 
 ## phpMyAdmin
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 WordPress, PHP, Node.js, and .NET sites include a phpMyAdmin instance for database management, accessible directly from the PodNest UI. Static HTML sites do not include a database and therefore do not have phpMyAdmin available.
 
@@ -923,7 +923,7 @@ phpMyAdmin is proxied through PodNest at `/pma/{site-id}`. It is never directly 
 
 ## User Management
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest has two user roles:
 
@@ -993,7 +993,7 @@ Open the edit user modal and click **Disable TOTP** in the Two-Factor Authentica
 
 ## Settings
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 The **Settings** panel is accessible to Admin users only. Settings are divided into three sections.
 
@@ -1040,7 +1040,7 @@ The entire settings set (general + backup) can be exported to a JSON file and im
 
 ## Backup & Restore
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest includes a fully integrated backup and restore system powered by [restic](https://restic.net/). Backups are incremental, deduplicated, and encrypted at rest. Each site maintains its own isolated restic repository per destination.
 
@@ -1119,9 +1119,42 @@ Click the delete icon on any snapshot and confirm. The snapshot is permanently r
 
 ---
 
+## Cron Jobs
+
+Per-site scheduled commands executed inside the site's runtime container on a standard 5-field cron schedule. Supported for PHP, Node.js, and .NET sites.
+
+### Managing Cron Jobs
+
+Open the **Crons** tab on any supported site's detail page. From there you can add, edit, enable/disable, and delete jobs, as well as trigger a manual run.
+
+### Schedule Format
+
+Jobs use standard 5-field cron expressions: `minute hour dom month dow`
+
+| Expression | Meaning |
+|---|---|
+| `0 3 * * *` | Daily at 03:00 |
+| `*/15 * * * *` | Every 15 minutes |
+| `0 0 * * 0` | Weekly on Sunday at midnight |
+| `0 9 1 * *` | First day of every month at 09:00 |
+
+### Execution
+
+Commands run inside the site's runtime container (`php`, `node`, or `dotnet`) as the site's system user. Output and any errors from the last run are captured and visible in the job list.
+
+### Notes
+
+- Cron jobs are not available for Static or Reverse Proxy sites
+- Each job has a 30-minute execution timeout
+- Enabling or disabling a job takes effect immediately without a restart
+
+[▲ Back to Top](#PodNest)
+
+---
+
 ## Security
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest is built with security in mind at every layer. The following protections are active out of the box.
 
@@ -1174,7 +1207,7 @@ All API endpoints require a valid session. Admin-only endpoints (`/api/users`, `
 
 ## Updating
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 ### Update Notifications
 
@@ -1190,7 +1223,7 @@ See [UPDATE.md](UPDATE.md) for full step-by-step instructions for your deploymen
 
 ## API Reference
 
-[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
+[OVERVIEW](#overview) | [REQUIREMENTS](#requirements) | [RUNNING AS A CONTAINER](#running-as-a-container) | [RUNNING THE BINARY](#running-the-binary) | [FIRST LOGIN](#first-login) | [DIRECTORY STRUCTURE](#directory-structure) | [MANAGING SITES](#managing-sites) | [SFTP ACCESS](#sftp-access) | [BUILT-IN REVERSE PROXY](#built-in-reverse-proxy) | [SITE CONFIGURATIONS](#site-configurations) | [SECURITY RULES](#security-rules) | [WAF](#waf) | [LIVE LOGS](#live-logs) | [WP-CLI TERMINAL](#wp-cli-terminal) | [PHPMYADMIN](#phpmyadmin) | [USER MANAGEMENT](#user-management) | [SETTINGS](#settings) | [CRON JOBS](#cron-jobs) | [BACKUP & RESTORE](#backup--restore) | [SECURITY](#security) | [UPDATING](#updating) | [API REFERENCE](#api-reference) | [LICENSE](#license) | [SUPPORT](#support)
 
 PodNest exposes a JSON REST API under `/api/`. All endpoints require a valid session obtained by logging in via the UI or the `/login` endpoint. The session is maintained via a cookie that must be included in all subsequent requests.
 
@@ -1356,6 +1389,19 @@ Clears the session cookie and invalidates the server-side session.
 | `GET` | `/api/sites/{id}/backups/{bid}/download` | Session | Download snapshot as `.tar.gz` |
 | `DELETE` | `/api/sites/{id}/backups/{bid}` | Session | Delete a snapshot |
 | `GET` | `/api/sites/{id}/backups/restore-status` | Session | Check if a restore is in progress |
+
+---
+
+### Cron Jobs
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/sites/{id}/crons` | Session | List all cron jobs for a site |
+| `POST` | `/api/sites/{id}/crons` | Session | Create a new cron job |
+| `PUT` | `/api/sites/{id}/crons/{cid}` | Session | Update a cron job |
+| `DELETE` | `/api/sites/{id}/crons/{cid}` | Session | Delete a cron job |
+| `PATCH` | `/api/sites/{id}/crons/{cid}/toggle` | Session | Enable or disable a cron job |
+| `POST` | `/api/sites/{id}/crons/{cid}/run` | Session | Run a cron job immediately |
 
 ---
 
