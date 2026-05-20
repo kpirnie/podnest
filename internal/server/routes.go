@@ -137,6 +137,14 @@ func (s *Server) routes() http.Handler {
 	api.Handle("GET /settings/trusted-proxies/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportTrustedProxies)))
 	api.Handle("POST /settings/trusted-proxies/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportTrustedProxies)))
 
+	// cron job management
+	api.HandleFunc("GET /sites/{id}/crons", s.apiListCrons)
+	api.HandleFunc("POST /sites/{id}/crons", s.apiCreateCron)
+	api.HandleFunc("PUT /sites/{id}/crons/{cid}", s.apiUpdateCron)
+	api.HandleFunc("DELETE /sites/{id}/crons/{cid}", s.apiDeleteCron)
+	api.HandleFunc("PATCH /sites/{id}/crons/{cid}/toggle", s.apiToggleCron)
+	api.HandleFunc("POST /sites/{id}/crons/{cid}/run", s.apiRunCronNow)
+
 	// WebSockets log tail
 	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)
 	api.HandleFunc("GET /sites/{id}/logs/waf", s.apiSiteWAFLog)

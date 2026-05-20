@@ -10,6 +10,7 @@ import (
 
 	"podnest/internal/auth"
 	"podnest/internal/backup"
+	"podnest/internal/cron"
 	"podnest/internal/db"
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
@@ -32,6 +33,7 @@ type Config struct {
 	CertDir         string
 	AdminDomain     string
 	BackupManager   *backup.Manager
+	CronManager     *cron.Manager
 }
 
 // Server is the main HTTP server
@@ -43,6 +45,7 @@ type Server struct {
 	http     *http.Server
 	proxy    *proxy.Proxy
 	backup   *backup.Manager
+	cron     *cron.Manager
 }
 
 // New initialises the server and registers all routes
@@ -53,6 +56,7 @@ func New(cfg Config) *Server {
 		sftp:     cfg.SFTPManager,
 		fail2ban: cfg.Fail2BanManager,
 		backup:   cfg.BackupManager,
+		cron:     cfg.CronManager,
 	}
 
 	s.http = &http.Server{
@@ -123,6 +127,9 @@ func (s *Server) Start() error {
 
 	// start the backup scheduler
 	s.backup.StartScheduler(context.Background())
+
+	// start the per-site cron scheduler
+	s.cron.Start(context.Background())
 
 	// read the admin domain from the database, falling back to the flag value
 	adminDomain := s.cfg.AdminDomain

@@ -133,3 +133,23 @@
     min-height: 36px;
     padding: 0;
 }
+
+/* prevent icon SVGs from shrinking below a usable tap size on mobile */
+.kp-btn-primary [uk-icon] svg,
+.kp-btn-secondary [uk-icon] svg,
+.kp-btn-ghost [uk-icon] svg,
+.kp-btn-danger [uk-icon] svg,
+.kp-btn-icon [uk-icon] svg {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    min-height: 20px;
+    flex-shrink: 0;
+}
+
+.kp-btn-sm [uk-icon] svg {
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+}

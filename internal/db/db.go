@@ -495,4 +495,21 @@ CREATE TABLE IF NOT EXISTS kppn_rp_routes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rp_routes_site ON kppn_rp_routes (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_site_crons (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id     INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    label       TEXT    NOT NULL DEFAULT '',
+    command     TEXT    NOT NULL,
+    schedule    TEXT    NOT NULL,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    last_run    DATETIME,
+    last_output TEXT    NOT NULL DEFAULT '',
+    last_error  TEXT    NOT NULL DEFAULT '',
+    created     DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated     DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_site_crons_site    ON kppn_site_crons (site_id);
+CREATE INDEX IF NOT EXISTS idx_site_crons_enabled ON kppn_site_crons (enabled);
 `

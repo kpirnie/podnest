@@ -227,6 +227,21 @@ type Backup struct {
 	Created    time.Time
 }
 
+// SiteCron represents a scheduled command for a site
+type SiteCron struct {
+	ID         int64
+	SiteID     int64
+	Label      string
+	Command    string
+	Schedule   string
+	Enabled    bool
+	LastRun    *time.Time
+	LastOutput string
+	LastError  string
+	Created    time.Time
+	Updated    *time.Time
+}
+
 // GenerateUHash produces a cryptographically random 64-char hex string
 func GenerateUHash() (string, error) {
 

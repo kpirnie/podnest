@@ -7,6 +7,7 @@ import { router } from '../router.js';
 import { toast } from '../toast.js';
 import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-backups.js';
 import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
+import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
@@ -62,6 +63,46 @@ function renderWAFOverride() {
                 </div>
             </form>
         </div>`;
+}
+
+// initMobileTabSelect builds and syncs a mobile-friendly tab selector
+function initMobileTabSelect(root) {
+    const tabBar  = root.querySelector(".kp-tab-bar");
+    if (!tabBar) return;
+
+    const anchors = Array.from(tabBar.querySelectorAll(":scope > li > a"));
+    if (!anchors.length) return;
+
+    // build wrapper + select
+    const wrap = document.createElement("div");
+    wrap.className = "kp-tab-select-wrap";
+    wrap.innerHTML = `<span uk-icon="chevron-down"></span>`;
+
+    const sel = document.createElement("select");
+    sel.className = "kp-tab-select";
+    anchors.forEach((a, i) => {
+        const opt = document.createElement("option");
+        opt.value = i;
+        opt.textContent = a.textContent.trim();
+        sel.appendChild(opt);
+    });
+    wrap.insertBefore(sel, wrap.firstChild);
+
+    // insert before the tab bar
+    tabBar.parentNode.insertBefore(wrap, tabBar);
+
+    // select → UIkit tab
+    sel.addEventListener("change", () => {
+        UIkit.tab(tabBar).show(parseInt(sel.value, 10));
+    });
+
+    // UIkit tab → select
+    UIkit.util.on(tabBar, "shown", (e) => {
+        const li    = e.target;
+        const items = Array.from(tabBar.querySelectorAll(":scope > li"));
+        const idx   = items.indexOf(li);
+        if (idx !== -1) sel.value = idx;
+    });
 }
 
 // loadWAFTab fetches the current WAF override for the site and populates the form
@@ -252,6 +293,7 @@ export async function viewSiteDetail(root, { id }) {
     ]);
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
     const isRP    = site.SiteType === 6;
+    const showCrons = [1, 2, 4, 5].includes(site.SiteType);
 
     root.innerHTML = `
         <div class="kp-view-header">
@@ -279,14 +321,14 @@ export async function viewSiteDetail(root, { id }) {
         </div>
 
         ${isRP ? `
-        <ul uk-tab class="uk-margin-medium-bottom">
+        <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
             <li><a href="#">Routes</a></li>
         </ul>
         <ul class="uk-switcher">
             <li>${renderRoutesTab()}</li>
         </ul>
         ` : `
-        <ul uk-tab class="uk-margin-medium-bottom">
+        <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
             <li><a href="#">Overview</a></li>
             <li><a href="#">Nginx</a></li>
             ${showPHP ? `<li><a href="#">PHP</a></li>` : ""}
@@ -298,6 +340,7 @@ export async function viewSiteDetail(root, { id }) {
             <li><a href="#">WAF</a></li>
             ${site.SiteType === 1 ? `<li><a href="#">WP-CLI</a></li>` : ""}
             <li><a href="#">Backups</a></li>
+            ${showCrons ? `<li><a href="#">Crons</a></li>` : ""}
         </ul>
 
         <ul class="uk-switcher">
@@ -312,6 +355,7 @@ export async function viewSiteDetail(root, { id }) {
             <li id="waf-tab-panel"></li>
             ${site.SiteType === 1 ? `<li>${renderWPCLITab(id)}</li>` : ""}
             <li>${renderBackupsTab(id)}</li>
+            ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
         </ul>`}`;
 
     document.getElementById("sd-back").addEventListener("click", () => router.go("sites"));
@@ -380,7 +424,8 @@ export async function viewSiteDetail(root, { id }) {
     wireOverviewTab(root, id);
     wireBackupsPanel(root, id);
     loadBackupsPanel(root, id);
-
+    if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
+    initMobileTabSelect(root);
     // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);
 }
