@@ -252,6 +252,8 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 	if repo.S3Enabled && s3 != nil {
 		s3Repo := s3RepoURL(s3.endpoint, s3.bucket, site.Name)
 		s3Env := resticEnv(repo.RepoPassword, s3)
+		logger.Info("Backup: starting S3 backup for site %d (%s)", site.ID, site.Name) // ← add
+
 		if err := initRepo(ctx, s3Repo, s3Env); err != nil {
 			return 0, err
 		}
@@ -372,6 +374,8 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	if err != nil {
 		return fmt.Errorf("backupDB: stdout pipe: %w", err)
 	}
+
+	logger.Info("backupDB: starting DB stream to restic for site %s", site.Name)
 
 	if err := dumpCmd.Start(); err != nil {
 		return fmt.Errorf("backupDB: start mysqldump: %w", err)

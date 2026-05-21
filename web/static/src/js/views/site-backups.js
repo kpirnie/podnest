@@ -187,7 +187,7 @@ export function wireBackupsPanel(root, siteId) {
         showProgressModal("Backup Running", "Snapshotting files and database — this may take a few minutes.");
 
         // poll every 4 seconds until a new backup record appears, or 10 min timeout
-        const deadline = Date.now() + 10 * 60 * 1000;
+        const deadline = Date.now() + 30 * 60 * 1000;
         const poll = setInterval(async () => {
             try {
                 const backups = await api.get(`/sites/${siteId}/backups`);
@@ -195,7 +195,12 @@ export function wireBackupsPanel(root, siteId) {
                     clearInterval(poll);
                     hideProgressModal();
                     await loadBackupsPanel(root, siteId);
-                    if (Date.now() <= deadline) toast.success("Backup complete");
+                    if (Date.now() <= deadline) {
+                        toast.success("Backup complete");
+                    } else {
+                        // backup is still running in the background — check logs
+                        toast.error("Backup is taking longer than expected — check server logs for status");
+                    }
                 }
             } catch (_) { /* keep polling on transient errors */ }
         }, 4000);
