@@ -11,7 +11,7 @@ import (
 
 // siteColumns is the canonical SELECT column list for all site queries
 const siteColumns = `
-	id, uid, name, port, php_version, site_status, site_type, runtime_version,
+	id, uid, parent_id, name, port, php_version, site_status, site_type, runtime_version,
 	start_command, pma_port, created, updated`
 
 // scanSite returns a slice of pointers into s matching siteColumns order
@@ -20,7 +20,7 @@ func scanSite(s *models.Site) []any {
 	// Note: the order of these must match siteColumns exactly
 	// returning a slice of pointers allows us to reuse the same scanSite helper for all site queries
 	return []any{
-		&s.ID, &s.UID, &s.Name, &s.Port,
+		&s.ID, &s.UID, &s.ParentID, &s.Name, &s.Port,
 		&s.PHPVersion, &s.SiteStatus, &s.SiteType, &s.RuntimeVersion,
 		&s.StartCommand, &s.PMAPort,
 		&s.Created, &s.Updated,
@@ -33,10 +33,10 @@ func CreateSite(db *sql.DB, s *models.Site) error {
 	// create the site record — the ID is needed for domain and config records, so we create the site first and cascade deletes to the related tables
 	res, err := db.Exec(`
 		INSERT INTO kppn_sites
-			(uid, name, port, php_version, site_status, site_type, runtime_version,
+			(uid, parent_id, name, port, php_version, site_status, site_type, runtime_version,
 			 start_command, pma_port)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.UID, s.Name, s.Port, s.PHPVersion, s.SiteStatus, s.SiteType,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.UID, s.ParentID, s.Name, s.Port, s.PHPVersion, s.SiteStatus, s.SiteType,
 		s.RuntimeVersion, s.StartCommand, s.PMAPort,
 	)
 	if err != nil {

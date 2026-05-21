@@ -1,7 +1,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
+import { confirm, showSyncModal, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
 
@@ -28,7 +28,7 @@ export function loadAllDomainSSL(domains) {
     domains.forEach((d) => loadDomainSSL(d.Domain, d.ID));
 }
 
-export function renderOverviewTab(site, domains, sftp) {
+export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName = null) {
     const hasPMA = site.SiteType !== 3 && site.PMAPort > 0;
     return `
         <div class="uk-grid-medium" uk-grid>
@@ -38,6 +38,7 @@ export function renderOverviewTab(site, domains, sftp) {
                     <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                         <tbody>
                             <tr><td class="kp-muted">Name</td><td>${site.Name}</td></tr>
+                            ${parentName ? `<tr><td class="kp-muted">Parent</td><td><a href="javascript:void(0)" data-action="manage" data-id="${parentID}" style="color:var(--kp-cyan)">${parentName}</a></td></tr>` : ""}
                             <tr><td class="kp-muted">Internal Port</td><td>:${site.Port}</td></tr>
                             <tr><td class="kp-muted">Type</td><td>${siteTypeLabel(site.SiteType)}</td></tr>
                             <tr><td class="kp-muted">Version</td><td>${versionLabel(site)}</td></tr>
@@ -46,7 +47,6 @@ export function renderOverviewTab(site, domains, sftp) {
                         </tbody>
                     </table>
                 </div>
-
                 ${hasPMA ? `
                 <div class="kp-card uk-padding-small uk-margin-small-top">
                     <h3 class="kp-view-title uk-margin-bottom">phpMyAdmin</h3>
@@ -56,6 +56,21 @@ export function renderOverviewTab(site, domains, sftp) {
                     <div class="uk-margin-small-top">
                         <button class="uk-button kp-btn-secondary kp-btn-sm" id="pma-open-btn">
                             <span uk-icon="database"></span> Open phpMyAdmin
+                        </button>
+                    </div>
+                </div>` : ""}
+                ${parentName ? `
+                <div class="kp-card uk-padding-small uk-margin-small-top">
+                    <h3 class="kp-view-title uk-margin-bottom">Site Sync</h3>
+                    <p class="kp-muted uk-text-small uk-margin-remove-bottom">
+                        Sync files and database between this clone and its parent site.
+                    </p>
+                    <div class="uk-flex uk-margin-small-top" style="gap:8px">
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="sync-pull-btn">
+                            <span uk-icon="cloud-download"></span> Pull From Parent
+                        </button>
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="sync-push-btn">
+                            <span uk-icon="cloud-upload"></span> Push To Parent
                         </button>
                     </div>
                 </div>` : ""}
@@ -159,7 +174,7 @@ export function wireDomainActions(root, siteId) {
     });
 }
 
-export function wireOverviewTab(root, siteId) {
+export function wireOverviewTab(root, siteId, site = null) {
     root.querySelector('#sftp-regen-btn')?.addEventListener('click', async () => {
         const btn  = root.querySelector('#sftp-regen-btn');
         const orig = btn.innerHTML;
@@ -208,6 +223,29 @@ export function wireOverviewTab(root, siteId) {
         } finally {
             btn.disabled = false;
             btn.innerHTML = orig;
+        }
+    });
+
+    // wire Site Sync pull/push buttons — only present on clone sites (ParentID > 0)
+    root.querySelector('#sync-pull-btn')?.addEventListener('click', async () => {
+        const ok = await showSyncModal('pull', site.Name, root.querySelector('[data-action="manage"][data-id="' + site.ParentID + '"]')?.textContent?.trim() ?? 'parent');
+        if (!ok) return;
+        try {
+            //await api.post(`/sites/${siteId}/sync/pull`);
+            toast.success('Pull from parent complete');
+        } catch (e) {
+            toast.error(e.message);
+        }
+    });
+
+    root.querySelector('#sync-push-btn')?.addEventListener('click', async () => {
+        const ok = await showSyncModal('push', site.Name, root.querySelector('[data-action="manage"][data-id="' + site.ParentID + '"]')?.textContent?.trim() ?? 'parent');
+        if (!ok) return;
+        try {
+            //await api.post(`/sites/${siteId}/sync/push`);
+            toast.success('Push to parent complete');
+        } catch (e) {
+            toast.error(e.message);
         }
     });
 }

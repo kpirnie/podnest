@@ -120,6 +120,7 @@ func (m *Manager) loadS3Config() (*s3Config, error) {
 // resticEnv builds the environment slice for a restic command
 func resticEnv(password string, s3 *s3Config) []string {
 	env := append(os.Environ(), "RESTIC_PASSWORD="+password)
+	env = append(env, "TMPDIR=/var/tmp")
 	if s3 != nil {
 		env = append(env,
 			"AWS_ACCESS_KEY_ID="+s3.accessKey,

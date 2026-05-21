@@ -47,6 +47,7 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /sites/{id}/update", s.apiSiteUpdate)
 	api.HandleFunc("GET /sites/{id}/status", s.apiSiteStatus)
 	api.HandleFunc("POST /sites/{id}/recreate", s.apiSiteRecreate)
+	api.HandleFunc("POST /sites/{id}/clone", s.apiSiteClone)
 	api.HandleFunc("POST /sites/{id}/pma-token", s.apiIssuePMAToken)
 	api.HandleFunc("POST /sites/{id}/sftp-regen", s.apiRegenerateSFTPPassword)
 

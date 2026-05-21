@@ -1,7 +1,7 @@
 "use strict";
 
 import { api } from './api.js';
-import { confirm, hideProgressModal, showProgressModal } from './helpers.js';
+import { confirm, hideProgressModal, showCloneModal, showProgressModal } from './helpers.js';
 import { showEditSiteModal } from './modals/edit-site.js';
 import { parseHash, router } from './router.js';
 import { toast } from './toast.js';
@@ -56,6 +56,21 @@ document.addEventListener("click", async (e) => {
         case "edit": {
             const siteData = await api.get(`/sites/${id}`);
             showEditSiteModal(siteData.site);
+            break;
+        }
+        case "clone": {
+            const name = await showCloneModal(btn.dataset.name ?? id);
+            if (!name) break;
+            showProgressModal("Cloning Site", "Copying files and database — this may take a few minutes...");
+            try {
+                await api.post(`/sites/${id}/clone`, { name });
+                hideProgressModal();
+                toast.success(`Site cloned as '${name}'`);
+                router.go("sites");
+            } catch (e) {
+                hideProgressModal();
+                toast.error(e.message);
+            }
             break;
         }
         case "delete":

@@ -85,6 +85,7 @@ func migrateColumns(db *sql.DB) error {
 		// backup failure tracking
 		`ALTER TABLE kppn_backup_repos ADD COLUMN last_error TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE kppn_backup_repos ADD COLUMN last_error_at DATETIME`,
+		`ALTER TABLE kppn_sites ADD COLUMN parent_id INTEGER NOT NULL DEFAULT 0`,
 	}
 
 	for _, m := range migrations {

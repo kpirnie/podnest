@@ -1,7 +1,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { hideProgressModal, showProgressModal, statusBadge } from '../helpers.js';
+import { hideProgressModal, showCloneModal, showProgressModal, statusBadge } from '../helpers.js';
 import { showEditSiteModal } from '../modals/edit-site.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
@@ -286,11 +286,12 @@ function wireRoutesTab(root, id) {
 
 export async function viewSiteDetail(root, { id }) {
     // fetch site detail and full site list in parallel for the nav selector
-    const [{ site, domains, sftp }, allSites, configs] = await Promise.all([
+    const [{ site, domains, sftp }, rawSites, configs] = await Promise.all([
         api.get(`/sites/${id}`),
         api.get("/sites"),
         api.get(`/sites/${id}/configs`),
     ]);
+    const allSites = Array.isArray(rawSites) ? rawSites : [];
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
     const isRP    = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5].includes(site.SiteType);
@@ -315,6 +316,7 @@ export async function viewSiteDetail(root, { id }) {
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="flush" data-id="${id}" uk-tooltip="Flush the Caches"><span uk-icon="bolt"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="update" data-id="${id}" uk-tooltip="Update the Pod Images"><span uk-icon="cloud-upload"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-recreate" uk-tooltip="Recreate the Pod"><span uk-icon="history"></span></button>
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-clone" uk-tooltip="Clone the Site"><span uk-icon="copy"></span></button>
                 ` : ""}
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-edit" uk-tooltip="Edit the Site"><span uk-icon="pencil"></span></button>
             </div>
@@ -344,7 +346,7 @@ export async function viewSiteDetail(root, { id }) {
         </ul>
 
         <ul class="uk-switcher">
-            <li>${renderOverviewTab(site, domains ?? [], sftp)}</li>
+            <li>${renderOverviewTab(site, domains ?? [], sftp, site.ParentID ?? 0, allSites.find(s => s.ID === site.ParentID)?.Name ?? null)}</li>
             <li>${renderConfigTab(id, 1, configs["1"])}</li>
             ${showPHP ? `<li>${renderConfigTab(id, 2, configs["2"])}</li>` : ""}
             <li>${renderConfigTab(id, 3, configs["3"])}</li>
@@ -386,6 +388,21 @@ export async function viewSiteDetail(root, { id }) {
         }
     });
 
+    document.getElementById("sd-clone")?.addEventListener("click", async () => {
+        const name = await showCloneModal(site.Name);
+        if (!name) return;
+        showProgressModal("Cloning Site", "Copying files and database — this may take a few minutes...");
+        try {
+            await api.post(`/sites/${id}/clone`, { name });
+            hideProgressModal();
+            toast.success(`Site cloned as '${name}'`);
+            router.go("sites");
+        } catch (e) {
+            hideProgressModal();
+            toast.error(e.message);
+        }
+    });
+
     // wire toolbar action buttons (start, stop, restart, flush, update)
     root.querySelectorAll("[data-action]").forEach((btn) => {
         btn.addEventListener("click", async () => {
@@ -421,7 +438,7 @@ export async function viewSiteDetail(root, { id }) {
     loadSecurityPanel(root);
     wireWAFTab(root, id);
     loadWAFTab(id);
-    wireOverviewTab(root, id);
+    wireOverviewTab(root, id, site);
     wireBackupsPanel(root, id);
     loadBackupsPanel(root, id);
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }

@@ -146,6 +146,7 @@ type Session struct {
 type Site struct {
 	ID             int64
 	UID            int64
+	ParentID       int64 // 0 = no parent; >0 = ID of the site this was cloned from
 	Name           string
 	Port           int
 	PHPVersion     int

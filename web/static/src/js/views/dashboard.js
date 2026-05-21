@@ -68,7 +68,7 @@ export async function viewDashboard(root) {
             </button>
         </div>
         <div class="kp-site-grid">
-            ${sites.length === 0 ? emptyState("world", "No sites yet") : sites.slice(0, 6).map(siteCard).join("")}
+            ${sites.length === 0 ? emptyState("world", "No sites yet") : sites.slice(0, 6).map(s => siteCard(s, sites)).join("")}
         </div>`;
 
     document.getElementById("dash-new-site")

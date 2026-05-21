@@ -78,7 +78,7 @@ export function showProgressModal(title, message) {
                 <h3 class="uk-modal-title uk-margin-small-top" id="kp-progress-title">${title}</h3>
                 <p class="kp-muted uk-text-small" id="kp-progress-message">${message}</p>
                 <p class="kp-muted">
-                    This may take several minutes while images are pulled and containers are initialized.
+                    This may take several minutes while the task(s) complete, make sure to keep screen open until it has completed.
                 </p>
             </div>
         </div>`;
@@ -89,4 +89,110 @@ export function showProgressModal(title, message) {
 export function hideProgressModal() {
     const el = document.getElementById("kp-progress-modal");
     if (el) { UIkit.modal(el).hide(); setTimeout(() => el.remove(), 300); }
+}
+
+// showCloneModal prompts for a clone name and resolves with the entered value,
+// or null if the user cancelled
+export function showCloneModal(sourceName) {
+    return new Promise((resolve) => {
+        const id  = "kp-clone-modal";
+        const html = `
+            <div id="${id}" uk-modal>
+                <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:420px">
+                    <h3 class="uk-modal-title">Clone Site</h3>
+                    <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                        Enter a name for the clone of <strong>${sourceName}</strong>.
+                        Files, database, and configuration will be copied — domains will not.
+                    </p>
+                    <input id="kp-clone-name" class="uk-input kp-input" type="text"
+                        placeholder="clone-name" autocomplete="off">
+                    <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
+                        <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-clone-cancel">Cancel</button>
+                        <button class="uk-button kp-btn-primary" id="kp-clone-ok">
+                            <span uk-icon="copy"></span> Clone
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML("beforeend", html);
+        const modal  = UIkit.modal(`#${id}`);
+        const input  = document.getElementById("kp-clone-name");
+        const okBtn  = document.getElementById("kp-clone-ok");
+        const cancel = document.getElementById("kp-clone-cancel");
+
+        const cleanup = (val) => {
+            modal.hide();
+            setTimeout(() => document.getElementById(id)?.remove(), 300);
+            resolve(val);
+        };
+
+        okBtn.addEventListener("click", () => cleanup(input.value.trim() || null), { once: true });
+        cancel.addEventListener("click", () => cleanup(null), { once: true });
+
+        // resolve null on backdrop/esc dismiss
+        document.getElementById(id)
+            .addEventListener("hidden", () => cleanup(null), { once: true });
+
+        modal.show();
+        // focus the input after the modal animates in
+        setTimeout(() => input.focus(), 150);
+
+        // allow submitting with Enter
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") okBtn.click();
+        });
+    });
+}
+
+// showSyncModal prompts the user to confirm a destructive Pull or Push sync
+// operation between a clone and its parent site
+export function showSyncModal(direction, cloneName, parentName) {
+    return new Promise((resolve) => {
+        const id       = "kp-sync-modal";
+        const isPull   = direction === "pull";
+        const title    = isPull ? "Pull From Parent" : "Push To Parent";
+        const icon     = isPull ? "cloud-download" : "cloud-upload";
+        const srcName  = isPull ? parentName : cloneName;
+        const dstName  = isPull ? cloneName  : parentName;
+        const html = `
+            <div id="${id}" uk-modal>
+                <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:460px">
+                    <h3 class="uk-modal-title">${title}</h3>
+                    <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                        This will overwrite all files and database content on
+                        <strong>${dstName}</strong> with data from <strong>${srcName}</strong>.
+                        This action cannot be undone.
+                    </p>
+                    <p class="kp-muted uk-text-small" style="color:var(--kp-red, #e05c5c)">
+                        <span uk-icon="icon: warning; ratio: 0.85"></span>
+                        <strong>${dstName}</strong> will be temporarily unavailable during the sync.
+                    </p>
+                    <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
+                        <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-sync-cancel">Cancel</button>
+                        <button class="uk-button kp-btn-primary" id="kp-sync-ok">
+                            <span uk-icon="${icon}"></span> ${title}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML("beforeend", html);
+        const modal  = UIkit.modal(`#${id}`);
+        const okBtn  = document.getElementById("kp-sync-ok");
+        const cancel = document.getElementById("kp-sync-cancel");
+
+        const cleanup = (val) => {
+            modal.hide();
+            setTimeout(() => document.getElementById(id)?.remove(), 300);
+            resolve(val);
+        };
+
+        okBtn.addEventListener("click",    () => cleanup(true),  { once: true });
+        cancel.addEventListener("click",   () => cleanup(false), { once: true });
+        document.getElementById(id)
+            .addEventListener("hidden",    () => cleanup(false), { once: true });
+
+        modal.show();
+    });
 }

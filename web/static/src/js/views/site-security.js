@@ -210,6 +210,9 @@ export async function loadSecurityPanel(root) {
         if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"));
         const [ip, ua, waf, tp] = await Promise.all(fetches);
 
+        // bail if the user navigated away while the fetch was in flight
+        if (!root.querySelector("#sec-ip-whitelist")) return;
+
         root.querySelector("#sec-ip-whitelist").value = ip.whitelist ?? "";
         root.querySelector("#sec-ip-blacklist").value = ip.blacklist ?? "";
         root.querySelector("#sec-ua-whitelist").value = ua.whitelist ?? "";

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -1096,5 +1098,361 @@ func clearDirContents(dir string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// apiSiteClone creates a full copy of a site under a new name, replicating
+// all files, database content, and configuration — domains are not carried over
+func (s *Server) apiSiteClone(w http.ResponseWriter, r *http.Request) {
+	src, ok := s.resolveSite(w, r)
+	if !ok {
+		return
+	}
+
+	// reverse proxy sites have no pod or files to clone
+	if src.SiteType == models.SiteTypeReverseProxy {
+		apiErrorMsg(w, http.StatusBadRequest, "reverse proxy sites cannot be cloned")
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apiError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// sanitize the clone name
+	req.Name = strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9_\-]`).ReplaceAllString(req.Name, "-"))
+	if req.Name == "" {
+		apiErrorMsg(w, http.StatusBadRequest, "clone name is required")
+		return
+	}
+
+	// ensure the name is not already taken
+	existing, err := db.GetSiteByName(s.cfg.DB, req.Name)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if existing != nil {
+		apiErrorMsg(w, http.StatusConflict, "site name already exists")
+		return
+	}
+
+	// assign the next available port
+	port, err := db.NextAvailablePort(s.cfg.DB)
+	if err != nil {
+		logger.Error("apiSiteClone: no available port for clone of site %d: %v", src.ID, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// derive the PMA port for non-static sites
+	pmaPort := 0
+	if src.SiteType != models.SiteTypeStatic {
+		pmaPort = port + 10000
+	}
+
+	user := auth.UserFromContext(r.Context())
+
+	// build the clone record — same type/PHP/runtime as source, no domains
+	clone := &models.Site{
+		UID:            user.ID,
+		ParentID:       src.ID,
+		Name:           req.Name,
+		Port:           port,
+		PHPVersion:     src.PHPVersion,
+		SiteStatus:     models.StatusStopped,
+		SiteType:       src.SiteType,
+		RuntimeVersion: src.RuntimeVersion,
+		StartCommand:   src.StartCommand,
+		PMAPort:        pmaPort,
+	}
+	if err := db.CreateSite(s.cfg.DB, clone); err != nil {
+		logger.Error("apiSiteClone: failed to create clone record '%s': %v", req.Name, err)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// generate SFTP credentials for the clone
+	sftpPass, err := auth.GeneratePassword()
+	if err != nil {
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	sftpUID := sftp.UIDForSite(clone.ID)
+	if err := db.CreateSFTPCred(s.cfg.DB, &models.SFTPCred{
+		SiteID:   clone.ID,
+		Username: clone.Name,
+		Password: sftpPass,
+		UID:      sftpUID,
+	}); err != nil {
+		logger.Error("apiSiteClone: failed to create SFTP cred for clone %d: %v", clone.ID, err)
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := s.sftp.AddUser(r.Context(), clone.Name, sftpPass, sftpUID); err != nil {
+		logger.Warn("apiSiteClone: failed to add SFTP user for clone %d: %v", clone.ID, err)
+	}
+
+	// copy all configs from the source site verbatim
+	srcConfigs, err := db.GetAllConfigsBySite(s.cfg.DB, src.ID)
+	if err != nil {
+		logger.Error("apiSiteClone: failed to fetch source configs for site %d: %v", src.ID, err)
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// copy per-site IP and UA security rules from source to clone
+	if srcIPRules, err := db.GetIPRules(s.cfg.DB, &src.ID); err == nil && len(srcIPRules) > 0 {
+		cloneIPRules := make([]db.IPRule, len(srcIPRules))
+		for i, r := range srcIPRules {
+			cloneIPRules[i] = db.IPRule{ListType: r.ListType, CIDR: r.CIDR}
+		}
+		if err := db.ReplaceIPRules(s.cfg.DB, &clone.ID, cloneIPRules); err != nil {
+			logger.Warn("apiSiteClone: failed to copy IP rules to clone %d: %v", clone.ID, err)
+		}
+	}
+	if srcUARules, err := db.GetUARules(s.cfg.DB, &src.ID); err == nil && len(srcUARules) > 0 {
+		cloneUARules := make([]db.UARule, len(srcUARules))
+		for i, r := range srcUARules {
+			cloneUARules[i] = db.UARule{ListType: r.ListType, Pattern: r.Pattern}
+		}
+		if err := db.ReplaceUARules(s.cfg.DB, &clone.ID, cloneUARules); err != nil {
+			logger.Warn("apiSiteClone: failed to copy UA rules to clone %d: %v", clone.ID, err)
+		}
+	}
+
+	// copy WAF site override and plugin selections from source to clone
+	if wafOverride, err := db.GetWAFSiteOverride(s.cfg.DB, src.ID); err == nil {
+		if wafOverride.Override != 0 || wafOverride.Exclusions != "" {
+			if err := db.SaveWAFSiteOverride(s.cfg.DB, db.WAFSiteOverride{
+				SiteID:     clone.ID,
+				Override:   wafOverride.Override,
+				Exclusions: wafOverride.Exclusions,
+			}); err != nil {
+				logger.Warn("apiSiteClone: failed to copy WAF override to clone %d: %v", clone.ID, err)
+			}
+		}
+	}
+	if wafPlugins, err := db.GetSitePlugins(s.cfg.DB, src.ID); err == nil && len(wafPlugins) > 0 {
+		if err := db.SetSitePlugins(s.cfg.DB, clone.ID, wafPlugins); err != nil {
+			logger.Warn("apiSiteClone: failed to copy WAF plugins to clone %d: %v", clone.ID, err)
+		}
+	}
+
+	// copy cron jobs from source to clone — last_run, last_output, and last_error are not carried over
+	if srcCrons, err := db.ListCrons(s.cfg.DB, src.ID); err == nil {
+		for _, c := range srcCrons {
+			if _, err := db.CreateCron(s.cfg.DB, &models.SiteCron{
+				SiteID:   clone.ID,
+				Label:    c.Label,
+				Command:  c.Command,
+				Schedule: c.Schedule,
+				Enabled:  c.Enabled,
+			}); err != nil {
+				logger.Warn("apiSiteClone: failed to copy cron '%s' to clone %d: %v", c.Label, clone.ID, err)
+			}
+		}
+	}
+
+	// set the cloned configs
+	for t, kv := range srcConfigs {
+		if err := db.SetConfigs(s.cfg.DB, clone.ID, t, kv); err != nil {
+			logger.Error("apiSiteClone: failed to copy config type %d to clone %d: %v", t, clone.ID, err)
+			_ = db.DeleteSite(s.cfg.DB, clone.ID)
+			apiError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	// generate fresh DB and Redis credentials — clone has its own MariaDB instance
+	dbUser, err := auth.GeneratePassword()
+	if err != nil {
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	dbPass, err := auth.GeneratePassword()
+	if err != nil {
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	dbRootPass, err := auth.GeneratePassword()
+	if err != nil {
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+	redisPass, err := auth.GeneratePassword()
+	if err != nil {
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	cloneSiteDir := s.sitesBase() + "/" + clone.Name
+	hostCloneSiteDir := s.hostSitesBase() + "/" + clone.Name
+	srcSiteDir := s.sitesBase() + "/" + src.Name
+
+	// scaffold the clone directory using the copied configs and fresh credentials
+	if err := scaffoldSiteDir(cloneSiteDir, clone, srcConfigs, dbUser, dbPass, dbRootPass, redisPass, sftpUID); err != nil {
+		logger.Error("apiSiteClone: scaffolding clone dir for %s: %v", clone.Name, err)
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		_ = os.RemoveAll(cloneSiteDir)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// copy html/ from source to clone — preserves all site files and permissions
+	if out, err := exec.CommandContext(r.Context(), "cp", "-a",
+		srcSiteDir+"/html/.", cloneSiteDir+"/html/",
+	).CombinedOutput(); err != nil {
+		logger.Error("apiSiteClone: failed to copy html for %s: %v — %s", clone.Name, err, string(out))
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		_ = os.RemoveAll(cloneSiteDir)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// overwrite wp-config.php so the clone connects to its own MariaDB, not the source
+	if clone.SiteType == models.SiteTypeWordPress {
+		wpCfgPath := cloneSiteDir + "/html/wp-config.php"
+		wpConfig := generateWPConfig(clone.Name, dbUser, dbPass, redisPass)
+		if err := os.WriteFile(wpCfgPath, []byte(wpConfig), 0640); err != nil {
+			logger.Warn("apiSiteClone: failed to write wp-config.php for clone %s: %v", clone.Name, err)
+		}
+		if err := os.Chown(wpCfgPath, sftpUID, sftpUID); err != nil {
+			logger.Warn("apiSiteClone: could not chown wp-config.php for clone %s: %v", clone.Name, err)
+		}
+	}
+
+	// resolve varnish config for pod provisioning
+	varnishKV := srcConfigs[models.ConfigVarnish]
+	varnishBlobStr := "{}"
+	if len(varnishKV) > 0 {
+		if vb, err := json.Marshal(varnishKV); err == nil {
+			varnishBlobStr = string(vb)
+		}
+	}
+
+	// provision the clone pod
+	podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer podCancel()
+
+	podCfg := podman.SiteConfig{
+		Site:           clone,
+		SiteUID:        sftpUID,
+		SiteDir:        hostCloneSiteDir,
+		DBName:         clone.Name,
+		DBUser:         dbUser,
+		DBPass:         dbPass,
+		DBRootPass:     dbRootPass,
+		RedisPass:      redisPass,
+		VarnishEnabled: config.VarnishEnabled(varnishBlobStr),
+		VarnishMemory:  config.VarnishMemorySize(varnishBlobStr),
+	}
+	if err := s.podman.CreateSitePod(podCtx, podCfg); err != nil {
+		logger.Error("apiSiteClone: creating pod for clone %s: %v", clone.Name, err)
+		_ = s.podman.StopPod(context.Background(), podman.PodName(clone.Name))
+		_ = s.podman.RemoveSitePod(context.Background(), clone.Name)
+		_ = db.DeleteSite(s.cfg.DB, clone.ID)
+		_ = os.RemoveAll(cloneSiteDir)
+		apiError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// dump and restore the database for all pod-based site types that use MariaDB
+	if src.SiteType != models.SiteTypeStatic {
+		if err := s.cloneDatabase(podCtx, src, clone); err != nil {
+			// non-fatal — the clone pod is running, log and continue
+			logger.Error("apiSiteClone: DB clone failed for %s → %s: %v", src.Name, clone.Name, err)
+		}
+	}
+
+	logger.Debug("apiSiteClone: clone '%s' created from source '%s'", clone.Name, src.Name)
+	_ = db.UpdateSiteStatus(s.cfg.DB, clone.ID, models.StatusRunning)
+	clone.SiteStatus = models.StatusRunning
+	apiJSON(w, http.StatusCreated, clone)
+}
+
+// cloneDatabase dumps the source site's MariaDB and restores it into the
+// clone's MariaDB container via the podman CLI, reusing the backup manager pattern
+func (s *Server) cloneDatabase(ctx context.Context, src, clone *models.Site) error {
+	srcSiteDir := s.sitesBase() + "/" + src.Name
+	cloneSiteDir := s.sitesBase() + "/" + clone.Name
+
+	// read source root password from disk
+	srcRootPass, err := readEnvValue(srcSiteDir+"/.env", "DB_ROOT_PASS")
+	if err != nil {
+		return fmt.Errorf("cloneDatabase: read src DB_ROOT_PASS: %w", err)
+	}
+
+	// read clone root password from the freshly scaffolded .env
+	cloneRootPass, err := readEnvValue(cloneSiteDir+"/.env", "DB_ROOT_PASS")
+	if err != nil {
+		return fmt.Errorf("cloneDatabase: read clone DB_ROOT_PASS: %w", err)
+	}
+
+	// write the dump to a host temp file so it can be copied into the clone container
+	tmp, err := os.CreateTemp("", "podnest-clone-*.sql")
+	if err != nil {
+		return fmt.Errorf("cloneDatabase: create temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	podEnv := append(os.Environ(), "CONTAINER_HOST=unix://"+s.cfg.PodmanSock, "TMPDIR=/var/tmp")
+	srcDBContainer := podman.ContainerName(src.Name, "db")
+
+	// dump the source DB to the temp file — try mysqldump first, fall back to mariadb-dump
+	var dumpStderr bytes.Buffer
+	dumpCmd := exec.CommandContext(ctx, "podman", "exec", srcDBContainer,
+		"sh", "-c",
+		fmt.Sprintf(
+			"mysqldump -uroot -p%s --single-transaction --quick --routines %s 2>/dev/null || "+
+				"mariadb-dump -uroot -p%s --single-transaction --quick --routines %s",
+			srcRootPass, src.Name, srcRootPass, src.Name,
+		),
+	)
+	dumpCmd.Env = podEnv
+	dumpCmd.Stdout = tmp
+	dumpCmd.Stderr = &dumpStderr
+	if err := dumpCmd.Run(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("cloneDatabase: mysqldump: %w — %s", err, dumpStderr.String())
+	}
+	tmp.Close()
+
+	cloneDBContainer := podman.ContainerName(clone.Name, "db")
+
+	// copy the dump file into the clone's MariaDB container
+	cpCmd := exec.CommandContext(ctx, "podman", "cp", tmp.Name(), cloneDBContainer+":/tmp/podnest-clone.sql")
+	cpCmd.Env = podEnv
+	if out, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("cloneDatabase: podman cp: %w — %s", err, string(out))
+	}
+
+	// restore the dump into the clone's database and clean up the temp file
+	var mysqlStderr bytes.Buffer
+	mysqlCmd := exec.CommandContext(ctx, "podman", "exec", cloneDBContainer,
+		"sh", "-c",
+		fmt.Sprintf(
+			"mariadb -uroot -p%s %s < /tmp/podnest-clone.sql && rm /tmp/podnest-clone.sql",
+			cloneRootPass, clone.Name,
+		),
+	)
+	mysqlCmd.Env = podEnv
+	mysqlCmd.Stderr = &mysqlStderr
+	if err := mysqlCmd.Run(); err != nil {
+		return fmt.Errorf("cloneDatabase: mariadb restore: %w — %s", err, mysqlStderr.String())
+	}
+
+	logger.Debug("cloneDatabase: DB cloned from '%s' to '%s'", src.Name, clone.Name)
 	return nil
 }
