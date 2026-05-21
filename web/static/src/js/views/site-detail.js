@@ -321,13 +321,19 @@ export async function viewSiteDetail(root, { id }) {
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-edit" uk-tooltip="Edit the Site"><span uk-icon="pencil"></span></button>
             </div>
         </div>
-
+ 
         ${isRP ? `
         <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
             <li><a href="#">Routes</a></li>
+            <li><a href="#">Logs</a></li>
+            <li><a href="#">Security</a></li>
+            <li><a href="#">WAF</a></li>
         </ul>
         <ul class="uk-switcher">
             <li>${renderRoutesTab()}</li>
+            <li>${renderLogsTab(id, site.SiteType)}</li>
+            <li>${renderSecurityPanel(id)}</li>
+            <li id="waf-tab-panel"></li>
         </ul>
         ` : `
         <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
