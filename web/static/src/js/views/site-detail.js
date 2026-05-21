@@ -368,10 +368,16 @@ export async function viewSiteDetail(root, { id }) {
         router.go("site-detail", { id: e.target.value });
     });
 
+    // security rules, WAF, and logs apply to all site types including reverse proxy
+    wireSecurityPanel(root);
+    loadSecurityPanel(root);
+    wireLogsTab(root, id);
+    wireWAFTab(root, id);
+    loadWAFTab(id);
+
     // reverse proxy sites only need route management — skip all pod wiring
     if (isRP) {
         wireRoutesTab(root, id);
-        loadRoutesTab(id);
         return;
     }
 
@@ -432,12 +438,7 @@ export async function viewSiteDetail(root, { id }) {
 
     wireConfigTabs(root, id);
     wireDomainActions(root, id);
-    wireLogsTab(root, id);
-    wireSecurityPanel(root);
     if (site.SiteType === 1) wireWPCLITab(root, id);
-    loadSecurityPanel(root);
-    wireWAFTab(root, id);
-    loadWAFTab(id);
     wireOverviewTab(root, id, site);
     wireBackupsPanel(root, id);
     loadBackupsPanel(root, id);

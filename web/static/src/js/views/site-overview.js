@@ -47,18 +47,7 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                         </tbody>
                     </table>
                 </div>
-                ${hasPMA ? `
-                <div class="kp-card uk-padding-small uk-margin-small-top">
-                    <h3 class="kp-view-title uk-margin-bottom">phpMyAdmin</h3>
-                    <p class="kp-muted uk-text-small uk-margin-remove-bottom">
-                        Opens a secure time-limited session. Link expires after 10 minutes or first use.
-                    </p>
-                    <div class="uk-margin-small-top">
-                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="pma-open-btn">
-                            <span uk-icon="database"></span> Open phpMyAdmin
-                        </button>
-                    </div>
-                </div>` : ""}
+                
                 ${parentName ? `
                 <div class="kp-card uk-padding-small uk-margin-small-top">
                     <h3 class="kp-view-title uk-margin-bottom">Site Sync</h3>
@@ -74,6 +63,20 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                         </button>
                     </div>
                 </div>` : ""}
+
+                ${hasPMA ? `
+                <div class="kp-card uk-padding-small uk-margin-small-top">
+                    <h3 class="kp-view-title uk-margin-bottom">phpMyAdmin</h3>
+                    <p class="kp-muted uk-text-small uk-margin-remove-bottom">
+                        Opens a secure time-limited session. Link expires after 10 minutes or first use.
+                    </p>
+                    <div class="uk-margin-small-top">
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="pma-open-btn">
+                            <span uk-icon="database"></span> Open phpMyAdmin
+                        </button>
+                    </div>
+                </div>` : ""}
+                
             </div>
 
             <div class="uk-width-1-2@m">
