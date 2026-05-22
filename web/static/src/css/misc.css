@@ -219,7 +219,6 @@
     overflow-y: auto;
     background: var(--kp-bg-card);
     border: 1px solid var(--kp-border);
-    border-radius: var(--kp-radius);
     padding: 10px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.8rem;
@@ -233,3 +232,38 @@
 
 /* -- cron action buttons row ----------------------------------------------- */
 .kp-cron-actions { gap: 6px; }
+
+/* -- pre / code blocks ----------------------------------------------------- */
+pre, code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+}
+
+pre {
+    background: var(--kp-bg-card) !important;
+    border: 1px solid var(--kp-border);
+    border-left: 3px solid var(--kp-blue) !important;
+    padding: 14px 16px;
+    line-height: 1.7;
+    color: var(--kp-text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-x: auto;
+    margin: 0;
+}
+
+code {
+    background: var(--kp-bg-card) !important;
+    border: 1px solid var(--kp-border);
+    padding: 2px 7px;
+    color: var(--kp-cyan) !important;
+}
+
+/* inline code inside a pre should not double-up styles */
+pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+}
