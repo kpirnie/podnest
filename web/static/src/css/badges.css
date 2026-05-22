@@ -81,3 +81,15 @@
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.25; }
 }
+
+/* -- cron / status badges -------------------------------------------------- */
+.kp-badge-success {
+    background: rgba(0,229,160,0.08);
+    color: var(--kp-success);
+    border: 1px solid rgba(0,229,160,0.2);
+}
+.kp-badge-error {
+    background: rgba(255,69,96,0.08);
+    color: var(--kp-danger);
+    border: 1px solid rgba(255,69,96,0.2);
+}

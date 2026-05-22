@@ -212,13 +212,26 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 
 	logger.Info("cron: running job %d (%s) in container %s", job.ID, job.Label, containerName)
 
+	// for WordPress sites, auto-install WP-CLI if the command starts with "wp "
+	// and rewrite it to use the absolute path with required flags
+	command := job.Command
+	if site.SiteType == models.SiteTypeWordPress &&
+		(command == "wp" || strings.HasPrefix(command, "wp ")) {
+		if err := m.ensureWPCLI(ctx, containerName); err != nil {
+			_ = db.SetCronResult(m.database, job.ID, "", "WP-CLI install failed: "+err.Error())
+			return fmt.Errorf("ensureWPCLI: %w", err)
+		}
+		// strip leading "wp" and prepend the absolute path with required flags
+		command = "/usr/local/bin/wp --path=/var/www/html --allow-root" + strings.TrimPrefix(command, "wp")
+	}
+
 	// create the exec instance
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Detach":       false,
 		"User":         fmt.Sprintf("%d", siteUID),
-		"Cmd":          []string{"sh", "-c", job.Command},
+		"Cmd":          []string{"sh", "-c", command},
 	}
 	var execResp struct {
 		ID string `json:"Id"`
@@ -414,4 +427,86 @@ func parseCronField(field string, min, max int) (map[int]bool, error) {
 	}
 	result[v] = true
 	return result, nil
+}
+
+// ensureWPCLI installs wp-cli.phar into the container if it is not already present
+func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
+	// check whether the binary already exists
+	var checkResp struct {
+		ID string `json:"Id"`
+	}
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/containers/"+containerName+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			"Detach":       false,
+			"Cmd":          []string{"test", "-f", "/usr/local/bin/wp"},
+		}, &checkResp,
+	); err == nil {
+		_ = m.podman.PostJSON(ctx, "/v4.0.0/libpod/exec/"+checkResp.ID+"/start",
+			map[string]any{"Detach": false}, nil)
+		var inspect struct {
+			ExitCode int  `json:"ExitCode"`
+			Running  bool `json:"Running"`
+		}
+		if err := m.podman.GetJSON(ctx, "/v4.0.0/libpod/exec/"+checkResp.ID+"/json", &inspect); err == nil &&
+			!inspect.Running && inspect.ExitCode == 0 {
+			return nil // already present
+		}
+	}
+
+	// not present — download and install inside the container
+	logger.Info("cron: installing WP-CLI in container %s", containerName)
+	var installResp struct {
+		ID string `json:"Id"`
+	}
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/containers/"+containerName+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			"Detach":       false,
+			"Cmd": []string{"sh", "-c",
+				"wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" +
+					" -O /tmp/wp.phar && chmod +x /tmp/wp.phar && mv /tmp/wp.phar /usr/local/bin/wp",
+			},
+		}, &installResp,
+	); err != nil {
+		return fmt.Errorf("create install exec: %w", err)
+	}
+
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/exec/"+installResp.ID+"/start",
+		map[string]any{"Detach": false}, nil,
+	); err != nil {
+		return fmt.Errorf("start install exec: %w", err)
+	}
+
+	// poll until the install exec finishes
+	deadline := time.Now().Add(60 * time.Second)
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if err := m.podman.GetJSON(ctx,
+			"/v4.0.0/libpod/exec/"+installResp.ID+"/json", &inspect,
+		); err != nil {
+			return fmt.Errorf("inspect install exec: %w", err)
+		}
+		if !inspect.Running {
+			break
+		}
+	}
+	if inspect.Running {
+		return fmt.Errorf("WP-CLI install timed out")
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("WP-CLI install exited %d", inspect.ExitCode)
+	}
+
+	logger.Info("cron: WP-CLI installed in container %s", containerName)
+	return nil
 }

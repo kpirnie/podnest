@@ -207,3 +207,29 @@
     /* hide the real tab bar but keep it in the DOM for UIkit to manage state */
     .kp-tab-bar { display: none !important; }
 }
+
+/* -- cron run detail ------------------------------------------------------- */
+.kp-cron-detail-btn {
+    margin-left: 4px;
+}
+.kp-cron-output {
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-border);
+    border-radius: var(--kp-radius);
+    padding: 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.7;
+    margin-top: 6px;
+}
+.kp-cron-output-error {
+    color: var(--kp-danger);
+    max-height: 300px;
+}
+
+/* -- cron action buttons row ----------------------------------------------- */
+.kp-cron-actions { gap: 6px; }

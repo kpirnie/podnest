@@ -12,6 +12,7 @@ import (
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/models"
 	"podnest/internal/podman"
 
 	"github.com/gorilla/websocket"
@@ -119,7 +120,7 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 // apiSiteWAFLog upgrades the connection to a WebSocket, streams the last n matching
-// lines from waf.log for the site's domain, then polls for new entries live.
+// lines from waf.log for all of the site's domains, then polls for new entries live.
 func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 
 	site, ok := s.resolveSite(w, r)
@@ -127,15 +128,29 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// fetch all domains for this site to use as log filters
-	domains, err := db.GetDomainsBySite(s.cfg.DB, site.ID)
-	if err != nil || len(domains) == 0 {
-		logger.Error("apiSiteWAFLog: no domains for site %d: %v", site.ID, err)
-		http.Error(w, "no domains found for site", http.StatusNotFound)
-		return
+	// reverse proxy sites store their domains in rp_routes; all other types use the domains table
+	var domains []string
+	if site.SiteType == models.SiteTypeReverseProxy {
+		routes, err := db.GetRPRoutesBySite(s.cfg.DB, site.ID)
+		if err != nil || len(routes) == 0 {
+			logger.Error("apiSiteWAFLog: no RP routes for site %d: %v", site.ID, err)
+			http.Error(w, "no routes configured for this site", http.StatusNotFound)
+			return
+		}
+		for _, r := range routes {
+			domains = append(domains, r.Domain)
+		}
+	} else {
+		siteDomains, err := db.GetDomainsBySite(s.cfg.DB, site.ID)
+		if err != nil || len(siteDomains) == 0 {
+			logger.Error("apiSiteWAFLog: no domains for site %d: %v", site.ID, err)
+			http.Error(w, "no domains found for site", http.StatusNotFound)
+			return
+		}
+		for _, d := range siteDomains {
+			domains = append(domains, d.Domain)
+		}
 	}
-	// use the primary domain (first entry) as the WAF log filter
-	domain := domains[0].Domain
 
 	// resolve tail line count from query string, defaulting to 100
 	tail := 100
@@ -155,8 +170,8 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	wafLogPath := s.cfg.AppPath + "/logs/waf.log"
 	ctx := r.Context()
 
-	// send the initial tail of matching lines before switching to live follow
-	initial, err := tailWAFLog(wafLogPath, domain, tail)
+	// send the initial tail of lines matching any registered domain before switching to live follow
+	initial, err := tailWAFLog(wafLogPath, domains, tail)
 	if err != nil {
 		// log file may not exist yet if no WAF events have fired for this site
 		conn.WriteMessage(websocket.TextMessage, []byte("[waf] no WAF log entries yet"))
@@ -186,7 +201,7 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	logger.Debug("apiSiteWAFLog: live streaming waf.log for site %d domain=%s", site.ID, domain)
+	logger.Debug("apiSiteWAFLog: live streaming waf.log for site %d domains=%v", site.ID, domains)
 
 	for {
 		select {
@@ -198,9 +213,13 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 				line, err := reader.ReadString('\n')
 				if len(line) > 0 {
 					line = strings.TrimRight(line, "\r\n")
-					if strings.Contains(line, domain) {
-						if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
-							return
+					// forward the line if it matches any domain registered to this site
+					for _, d := range domains {
+						if strings.Contains(line, d) {
+							if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+								return
+							}
+							break
 						}
 					}
 				}
@@ -217,8 +236,8 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// tailWAFLog reads waf.log and returns the last n lines that contain the given domain
-func tailWAFLog(path, domain string, n int) ([]string, error) {
+// tailWAFLog reads waf.log and returns the last n lines that contain any of the given domains
+func tailWAFLog(path string, domains []string, n int) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -229,8 +248,12 @@ func tailWAFLog(path, domain string, n int) ([]string, error) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(line, domain) {
-			matches = append(matches, line)
+		// match any domain registered to this site
+		for _, d := range domains {
+			if strings.Contains(line, d) {
+				matches = append(matches, line)
+				break
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {

@@ -3,6 +3,9 @@
 import { router } from '../router.js';
 
 export function renderLogsTab(siteId, siteType) {
+    // reverse proxy sites have no containers — only the WAF log is available
+    const isRP = siteType === 6;
+
     const runtimeOption = () => {
         switch (siteType) {
             case 1: case 2: return `<option value="php">PHP-FPM</option>`;
@@ -11,15 +14,20 @@ export function renderLogsTab(siteId, siteType) {
             default:        return "";
         }
     };
+
+    // RP sites expose only the WAF log; all other types expose container streams
+    const containerOptions = isRP
+        ? `<option value="waf">WAF Log</option>`
+        : `<option value="nginx">Nginx</option>
+                    ${runtimeOption()}
+                    <option value="db">MariaDB</option>
+                    <option value="redis">Redis</option>
+                    <option value="waf">WAF Log</option>`;
     return `
         <div>
             <div class="kp-log-controls">
                 <select class="uk-select kp-select" id="log-container" style="width:140px;height:38px">
-                    <option value="nginx">Nginx</option>
-                    ${runtimeOption()}
-                    <option value="db">MariaDB</option>
-                    <option value="redis">Redis</option>
-                    <option value="waf">WAF Log</option>
+                    ${containerOptions}
                 </select>
                 <select class="uk-select kp-select" id="log-tail" style="width:120px;height:38px">
                     <option value="100">100 lines</option>

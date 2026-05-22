@@ -384,6 +384,7 @@ export async function viewSiteDetail(root, { id }) {
     // reverse proxy sites only need route management — skip all pod wiring
     if (isRP) {
         wireRoutesTab(root, id);
+        loadRoutesTab(id); // populate existing routes on load
         return;
     }
 

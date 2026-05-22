@@ -71,12 +71,18 @@ function renderCronList(crons) {
     const rows = crons.map((c) => `
         <tr>
             <td class="kp-text">${c.Label || '<span class="kp-muted">—</span>'}</td>
-            <td class="kp-mono" style="font-size:0.8rem">${c.Schedule}</td>
+            <td class="kp-mono kp-text-sm">${c.Schedule}</td>
             <td class="kp-muted uk-text-small">${fmtDate(c.LastRun)}</td>
             <td>
                 ${c.LastError
-                    ? `<span class="kp-badge kp-badge-error" uk-tooltip="${escAttr(c.LastError)}">Error</span>`
+                    ? `<span class="kp-badge kp-badge-error">Error</span>`
                     : (c.LastRun ? `<span class="kp-badge kp-badge-success">OK</span>` : `<span class="kp-muted uk-text-small">—</span>`)
+                }
+                ${(c.LastOutput || c.LastError)
+                    ? `<a class="kp-cron-detail-btn cron-detail-btn" data-id="${c.ID}" uk-tooltip="View Run Details">
+                            <span uk-icon="icon: info; ratio: 0.75"></span>
+                        </a>`
+                    : ''
                 }
             </td>
             <td>
@@ -84,7 +90,7 @@ function renderCronList(crons) {
                     data-id="${c.ID}" ${c.Enabled ? 'checked' : ''}>
             </td>
             <td>
-                <div class="uk-flex" style="gap:6px">
+                <div class="uk-flex kp-cron-actions">
                     <button class="uk-button kp-btn-ghost kp-btn-sm cron-run-btn"
                         data-id="${c.ID}" uk-tooltip="Run Now">
                         <span uk-icon="play"></span>
@@ -131,7 +137,7 @@ export async function loadCronsPanel(root, siteId) {
 
 // wireCronsPanel attaches all event listeners for the crons tab
 export function wireCronsPanel(root, siteId) {
-    // store fetched crons for edit lookups
+    // store fetched crons for edit and detail lookups
     let cronCache = [];
 
     const modal     = root.querySelector("#cron-modal");
@@ -150,13 +156,13 @@ export function wireCronsPanel(root, siteId) {
 
     // -- open modal for add --------------------------------------------------
     root.querySelector("#cron-add-btn")?.addEventListener("click", () => {
-        titleEl.textContent  = "Add Cron Job";
-        idInput.value        = "";
-        labelEl.value        = "";
-        cmdEl.value          = "";
-        schedEl.value        = "";
+        titleEl.textContent   = "Add Cron Job";
+        idInput.value         = "";
+        labelEl.value         = "";
+        cmdEl.value           = "";
+        schedEl.value         = "";
         previewEl.textContent = "";
-        enabledEl.checked    = true;
+        enabledEl.checked     = true;
         UIkit.modal(modal).show();
     });
 
@@ -170,10 +176,10 @@ export function wireCronsPanel(root, siteId) {
         }
 
         const body = {
-            label:    labelEl.value.trim(),
+            label:   labelEl.value.trim(),
             command,
             schedule,
-            enabled:  enabledEl.checked,
+            enabled: enabledEl.checked,
         };
 
         const cid = idInput.value;
@@ -195,6 +201,36 @@ export function wireCronsPanel(root, siteId) {
 
     // -- delegated list actions ----------------------------------------------
     root.querySelector("#cron-list-wrap")?.addEventListener("click", async (e) => {
+
+        // show run details — fresh modal each time to avoid UIkit stale state
+        const detailBtn = e.target.closest(".cron-detail-btn");
+        if (detailBtn) {
+            const cid  = detailBtn.dataset.id;
+            const cron = cronCache.find((c) => String(c.ID) === cid);
+            if (!cron) return;
+
+            document.body.insertAdjacentHTML("beforeend", `
+                <div id="cron-detail-modal" uk-modal>
+                    <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
+                        <button class="uk-modal-close-default" type="button" uk-close></button>
+                        <h3 class="kp-view-title uk-margin-bottom">Run Details — ${escAttr(cron.Label || String(cron.ID))}</h3>
+                        <div class="uk-margin-small-bottom">
+                            <label class="kp-label">Output</label>
+                            <pre class="kp-cron-output">${escAttr(cron.LastOutput || '(no output)')}</pre>
+                        </div>
+                        <div class="uk-margin-small-top">
+                            <label class="kp-label">Error</label>
+                            <pre class="kp-cron-output kp-cron-output-error">${escAttr(cron.LastError || '(no error)')}</pre>
+                        </div>
+                    </div>
+                </div>`);
+
+            const el = document.getElementById("cron-detail-modal");
+            UIkit.modal(el).show();
+            // remove from DOM on close so the next open always gets a clean element
+            el.addEventListener("hidden", () => el.remove(), { once: true });
+            return;
+        }
 
         // edit
         const editBtn = e.target.closest(".cron-edit-btn");
@@ -292,7 +328,7 @@ export function wireCronsPanel(root, siteId) {
 
 // -- helpers -----------------------------------------------------------------
 
-// escAttr escapes a string for use in an HTML attribute value
+// escAttr escapes a string for use in an HTML attribute value or text content
 function escAttr(str) {
     return String(str)
         .replace(/&/g, "&amp;")
@@ -310,14 +346,14 @@ function describeSchedule(expr) {
     const [min, hr, dom, mon, dow] = f;
 
     // common shorthand patterns
-    if (expr === "* * * * *")   return "every minute";
+    if (expr === "* * * * *") return "every minute";
     if (min !== "*" && hr !== "*" && dom === "*" && mon === "*" && dow === "*") {
-        return `daily at ${hr.padStart(2,"0")}:${min.padStart(2,"0")}`;
+        return `daily at ${hr.padStart(2, "0")}:${min.padStart(2, "0")}`;
     }
     if (min !== "*" && hr !== "*" && dom === "*" && mon === "*" && dow !== "*") {
-        const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+        const days  = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const label = dow.split(",").map((d) => days[parseInt(d)] ?? d).join(", ");
-        return `weekly on ${label} at ${hr.padStart(2,"0")}:${min.padStart(2,"0")}`;
+        return `weekly on ${label} at ${hr.padStart(2, "0")}:${min.padStart(2, "0")}`;
     }
     if (min.startsWith("*/")) return `every ${min.slice(2)} minutes`;
     if (hr.startsWith("*/"))  return `every ${hr.slice(2)} hours`;
