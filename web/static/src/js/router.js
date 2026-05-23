@@ -1,15 +1,22 @@
 "use strict";
 
-import { spinner, errorState } from './helpers.js';
+import { errorState, spinner } from './helpers.js';
 
 export const router = {
     routes: {},
+    // prevents the hashchange we fire ourselves from re-invoking the view
+    _ownHashChange: false,
     register(name, fn) { this.routes[name] = fn; },
     async go(view, params = {}) {
         const hash = Object.keys(params).length
             ? view + "/" + Object.values(params).join("/")
             : view;
+
+        // mark before setting hash so the resulting hashchange event is ignored;
+        // setTimeout(0) fires as the next macrotask — after hashchange — to reset the flag
+        this._ownHashChange = true;
         window.location.hash = hash;
+        setTimeout(() => { this._ownHashChange = false; }, 0);
 
         document.querySelectorAll(".kp-nav-link").forEach((el) => {
             el.classList.toggle("kp-active", el.dataset.view === view);

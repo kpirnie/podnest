@@ -13,6 +13,9 @@ import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab
 import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
 
+// aborts accumulated root-level listeners when a new RP site detail view is wired
+let _rpWireAbort = null;
+
 // renderWAFOverride returns the static HTML shell for the WAF override tab
 function renderWAFOverride() {
     return `
@@ -152,6 +155,10 @@ async function loadWAFTab(id) {
 
 // wireWAFTab binds the WAF override form submit handler
 function wireWAFTab(root, id) {
+    // abort any stale listener from a previous navigation before attaching
+    if (_rpWireAbort) _rpWireAbort.abort();
+    _rpWireAbort = new AbortController();
+    
     root.addEventListener("submit", async (e) => {
         if (e.target.id !== "waf-override-form") return;
         e.preventDefault();
@@ -181,7 +188,7 @@ function wireWAFTab(root, id) {
             btn.disabled = false;
             btn.innerHTML = orig;
         }
-    });
+    }, { signal: _rpWireAbort.signal });
 
     // WAF JSON import
     root.querySelector("#waf-import")?.addEventListener("change", async (e) => {
@@ -281,7 +288,7 @@ function wireRoutesTab(root, id) {
             btn.disabled = false;
             btn.innerHTML = orig;
         }
-    });
+    }, { signal: _rpWireAbort.signal });
 }
 
 export async function viewSiteDetail(root, { id }) {

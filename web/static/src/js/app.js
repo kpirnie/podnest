@@ -132,7 +132,9 @@ async function deleteSite(id) {
 }
 
 /* -- hash routing ---------------------------------------------------------- */
+// guard against re-entry when router.go() itself changed the hash
 window.addEventListener("hashchange", () => {
+    if (router._ownHashChange) return;
     const { view, params } = parseHash();
     router.go(view, params);
 });
