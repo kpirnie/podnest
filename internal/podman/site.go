@@ -419,13 +419,10 @@ func (c *Client) createPHPOnly(ctx context.Context, cfg SiteConfig) error {
 	// use the same WordPress image so the PHP extensions are identical, but override
 	// the entrypoint to skip the WordPress install script entirely
 	_, err := c.CreateContainer(ctx, ContainerSpec{
-		Name:       ContainerName(cfg.Site.Name, "php"),
-		Image:      models.PHPImage(cfg.Site.PHPVersion),
-		Pod:        podName,
-		User:       fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
-		Entrypoint: []string{"php-fpm"},
-		// inject DB and Redis credentials so the application can build its DSN;
-		// uses generic names (not WordPress-prefixed) since this is a plain PHP site
+		Name:  ContainerName(cfg.Site.Name, "php"),
+		Image: models.PHPImage(cfg.Site.PHPVersion),
+		Pod:   podName,
+		User:  fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
 		Env: map[string]string{
 			"DB_HOST":    "127.0.0.1",
 			"DB_NAME":    cfg.DBName,
