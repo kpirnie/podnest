@@ -474,7 +474,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		port = p.adminPort
 	} else {
 		entry, ok := p.lookupEntry(host)
-		if !ok || entry.port == 0 {
+		// allow RP sites through even when port is 0; they route via pool, not port
+		if !ok || (entry.port == 0 && entry.pool == nil) {
 			http.Error(w, "domain not registered", http.StatusNotFound)
 			p.writeAccessLog(r, http.StatusNotFound, 0, time.Since(start), clientIP.String())
 			return

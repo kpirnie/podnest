@@ -424,6 +424,16 @@ func (c *Client) createPHPOnly(ctx context.Context, cfg SiteConfig) error {
 		Pod:        podName,
 		User:       fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
 		Entrypoint: []string{"php-fpm"},
+		// inject DB and Redis credentials so the application can build its DSN;
+		// uses generic names (not WordPress-prefixed) since this is a plain PHP site
+		Env: map[string]string{
+			"DB_HOST":    "127.0.0.1",
+			"DB_NAME":    cfg.DBName,
+			"DB_USER":    cfg.DBUser,
+			"DB_PASS":    cfg.DBPass,
+			"REDIS_HOST": "127.0.0.1",
+			"REDIS_PASS": cfg.RedisPass,
+		},
 		Mounts: []Mount{
 			{
 				Type:        "bind",
