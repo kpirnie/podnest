@@ -357,25 +357,25 @@ func (c *Client) createPHP(ctx context.Context, cfg SiteConfig) error {
 	phpImage := models.PHPImage(cfg.Site.PHPVersion)
 
 	_, err := c.CreateContainer(ctx, ContainerSpec{
-		Name:       ContainerName(cfg.Site.Name, "php"),
-		Image:      phpImage,
-		Pod:        podName,
-		User:       fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
-		Entrypoint: []string{"/usr/local/etc/php-fpm.d/wp-init.sh"},
+		Name:  ContainerName(cfg.Site.Name, "php"),
+		Image: models.PHPImage(cfg.Site.PHPVersion),
+		Pod:   podName,
+		User:  fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
+		// no Entrypoint override — serversideup's entrypoint.d system manages startup
 		Env: map[string]string{
-			"WORDPRESS_DB_HOST":      "127.0.0.1",
-			"WORDPRESS_DB_NAME":      cfg.DBName,
-			"WORDPRESS_DB_USER":      cfg.DBUser,
-			"WORDPRESS_DB_PASSWORD":  cfg.DBPass,
-			"REDIS_PASSWORD":         cfg.RedisPass,
-			"WORDPRESS_TABLE_PREFIX": "wp_",
-			"WORDPRESS_DEBUG":        "0",
+			"DB_HOST":    "127.0.0.1",
+			"DB_NAME":    cfg.DBName,
+			"DB_USER":    cfg.DBUser,
+			"DB_PASS":    cfg.DBPass,
+			"REDIS_HOST": "127.0.0.1",
+			"REDIS_PASS": cfg.RedisPass,
 		},
 		Mounts: []Mount{
 			{
+				// wp-init script runs once via serversideup's entrypoint.d before FPM starts
 				Type:        "bind",
 				Source:      cfg.SiteDir + "/php-fpm/wp-init.sh",
-				Destination: "/usr/local/etc/php-fpm.d/wp-init.sh",
+				Destination: "/etc/entrypoint.d/60-wordpress-download.sh",
 				Options:     []string{"ro", "z"},
 			},
 			{
@@ -401,6 +401,7 @@ func (c *Client) createPHP(ctx context.Context, cfg SiteConfig) error {
 		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
 		SecOpts: []string{secNoNewPriv},
 	})
+
 	if err != nil {
 		logger.Error("Failed to create php-fpm in pod %s: %v", podName, err)
 		return err

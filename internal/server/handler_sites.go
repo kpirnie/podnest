@@ -26,15 +26,20 @@ import (
 	"podnest/internal/sftp"
 )
 
-// wpInitScript is the entrypoint for WordPress containers — copies WP files on
-// first run then execs php-fpm directly so siteUID owns everything
+// wpInitScript runs as a serversideup entrypoint.d script on first container start;
+// downloads WP-CLI and uses it to pull WordPress core files if they are not yet present
 const wpInitScript = `#!/bin/sh
 set -e
+
 if [ ! -f /var/www/html/index.php ]; then
-    echo "Copying WordPress files..."
-    cp -r /usr/src/wordpress/. /var/www/html/
+    echo "[wp-init] WordPress not found — downloading WP-CLI..."
+    curl -sfo /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    chmod +x /tmp/wp-cli.phar
+    echo "[wp-init] Downloading WordPress core..."
+    /tmp/wp-cli.phar core download --path=/var/www/html --allow-root
+    rm -f /tmp/wp-cli.phar
+    echo "[wp-init] WordPress core ready."
 fi
-exec php-fpm
 `
 
 // sitesBase returns the base directory path for all site data on disk
