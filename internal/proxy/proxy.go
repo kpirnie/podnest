@@ -249,27 +249,35 @@ func (p *Proxy) WarmCache() error {
 		return err
 	}
 
-	// group upstreams by domain for pool construction; domains without RP routes will be skipped
+	// group upstreams by domain; track siteID separately for RP-only domains
+	// that have no kppn_domains entry and must be synthesised into the cache
 	poolMap := make(map[string][]string)
+	siteIDs := make(map[string]int64)
 	for _, r := range routes {
 		poolMap[r.Domain] = append(poolMap[r.Domain], r.Upstream)
+		siteIDs[r.Domain] = r.SiteID
 	}
 
-	// build and attach upstream pools for domains with RP routes; log and skip any pool build failures
+	// build and attach upstream pools; RP domains absent from kppn_domains get
+	// a synthesised zero-port entry so the proxy can route them via the pool
 	if len(poolMap) > 0 {
-		next := make(map[string]domainEntry, len(m))
+		next := make(map[string]domainEntry, len(m)+len(poolMap))
 		for k, v := range m {
 			next[k] = v
 		}
 		for domain, upstreams := range poolMap {
+			pool, err := newUpstreamPool(upstreams)
+			if err != nil {
+				logger.Error("proxy: failed to build upstream pool for '%s': %v", domain, err)
+				continue
+			}
 			if e, ok := next[domain]; ok {
-				pool, err := newUpstreamPool(upstreams)
-				if err != nil {
-					logger.Error("proxy: failed to build upstream pool for '%s': %v", domain, err)
-					continue
-				}
+				// domain is in kppn_domains — attach pool to existing entry
 				e.pool = pool
 				next[domain] = e
+			} else {
+				// RP-only domain — not in kppn_domains; synthesise a zero-port entry
+				next[domain] = domainEntry{port: 0, siteID: siteIDs[domain], pool: pool}
 			}
 		}
 
@@ -544,7 +552,7 @@ func (p *Proxy) hostPolicy(_ context.Context, host string) error {
 	if adminDomain != "" && host == adminDomain {
 		return nil
 	}
-	if port, _ := p.lookupPortAndSite(host); port == 0 {
+	if _, ok := p.lookupEntry(host); !ok {
 		return fmt.Errorf("host %q not registered", host)
 	}
 	return nil
@@ -573,13 +581,6 @@ func (p *Proxy) lookupEntry(domain string) (domainEntry, bool) {
 	}
 	e, ok := (*ptr)[domain]
 	return e, ok
-}
-
-// lookupPortAndSite returns the host port and site ID for a domain.
-// Returns 0, 0 if the domain is not registered.
-func (p *Proxy) lookupPortAndSite(domain string) (int, int64) {
-	e, _ := p.lookupEntry(domain)
-	return e.port, e.siteID
 }
 
 // swapCache applies fn to a shallow copy of the current domain map and
