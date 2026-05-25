@@ -9,13 +9,12 @@ import (
 
 // container image references — single source of truth for all image URLs
 const (
-	ImgNginx    = "docker.io/library/nginx:alpine"
+	ImgNginx    = "ghcr.io/kpirnie/nginx:latest"
 	ImgDB       = "docker.io/library/mariadb:lts"
 	ImgRedis    = "docker.io/library/redis:alpine"
 	ImgSFTP     = "ghcr.io/kpirnie/podnest-sftp:latest"
 	ImgPMA      = "docker.io/phpmyadmin/phpmyadmin:latest"
-	ImgPHPBase  = "docker.io/library/wordpress:"
-	ImgPHPOnly  = "docker.io/serversideup/php:"
+	ImgPHPBase  = "ghcr.io/kpirnie/php:"
 	ImgNode     = "docker.io/library/node:"
 	ImgDotNet   = "mcr.microsoft.com/dotnet/aspnet:"
 	ImgFail2Ban = "ghcr.io/kpirnie/podnest-fail2ban:latest"
@@ -280,17 +279,13 @@ func PHPImage(phpVersion int) string {
 	if !ok {
 		ver = "8.2"
 	}
-	return ImgPHPBase + "php" + ver + "-fpm-alpine"
+	return ImgPHPBase + ver + "-latest"
 }
 
 // PHPOnlyImage returns the serversideup FPM Alpine image for plain PHP sites;
 // includes pdo_mysql, redis, and other extensions non-WordPress apps need
 func PHPOnlyImage(phpVersion int) string {
-	ver, ok := PHPVersionMap[phpVersion]
-	if !ok {
-		ver = "8.2"
-	}
-	return ImgPHPOnly + ver + "-fpm-alpine"
+	return PHPImage(phpVersion)
 }
 
 // NodeImage returns the node alpine image for a given runtime_version int
