@@ -100,13 +100,13 @@ func GetSiteByName(db *sql.DB, name string) (*models.Site, error) {
 
 // GetAllSites returns all sites — admin use
 func GetAllSites(db *sql.DB) ([]*models.Site, error) {
-	return querySites(db, fmt.Sprintf("SELECT %s FROM kppn_sites ORDER BY name ASC", siteColumns))
+	return querySites(db, fmt.Sprintf("SELECT %s FROM kppn_sites ORDER BY site_type ASC, name ASC", siteColumns))
 }
 
 // GetSitesByUser returns all sites owned by a given user
 func GetSitesByUser(db *sql.DB, uid int64) ([]*models.Site, error) {
 	return querySites(db,
-		fmt.Sprintf("SELECT %s FROM kppn_sites WHERE uid = ? ORDER BY name ASC", siteColumns), uid,
+		fmt.Sprintf("SELECT %s FROM kppn_sites WHERE uid = ? ORDER BY site_type ASC, name ASC", siteColumns), uid,
 	)
 }
 
