@@ -280,7 +280,7 @@ func PHPImage(phpVersion int) string {
 	if !ok {
 		ver = "8.2"
 	}
-	return ImgPHPBase + ver + "-fpm-alpine"
+	return ImgPHPBase + "php" + ver + "-fpm-alpine"
 }
 
 // PHPOnlyImage returns the serversideup FPM Alpine image for plain PHP sites;
