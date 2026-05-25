@@ -14,7 +14,8 @@ const (
 	ImgRedis    = "docker.io/library/redis:alpine"
 	ImgSFTP     = "ghcr.io/kpirnie/podnest-sftp:latest"
 	ImgPMA      = "docker.io/phpmyadmin/phpmyadmin:latest"
-	ImgPHPBase  = "docker.io/serversideup/php:"
+	ImgPHPBase  = "docker.io/library/wordpress:"
+	ImgPHPOnly  = "docker.io/serversideup/php:"
 	ImgNode     = "docker.io/library/node:"
 	ImgDotNet   = "mcr.microsoft.com/dotnet/aspnet:"
 	ImgFail2Ban = "ghcr.io/kpirnie/podnest-fail2ban:latest"
@@ -272,19 +273,24 @@ func GenerateSessionID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// PHPImage returns the serversideup FPM Alpine image tag for a given php_version int
+// PHPImage returns the WordPress FPM Alpine image for WordPress sites;
+// the official WordPress image includes mysqli which WordPress requires
 func PHPImage(phpVersion int) string {
 	ver, ok := PHPVersionMap[phpVersion]
 	if !ok {
 		ver = "8.2"
 	}
-	logger.Info("Generated PHP image tag")
 	return ImgPHPBase + ver + "-fpm-alpine"
 }
 
-// PHPOnlyImage returns the serversideup FPM Alpine image tag for plain PHP (non-WordPress) sites
+// PHPOnlyImage returns the serversideup FPM Alpine image for plain PHP sites;
+// includes pdo_mysql, redis, and other extensions non-WordPress apps need
 func PHPOnlyImage(phpVersion int) string {
-	return PHPImage(phpVersion)
+	ver, ok := PHPVersionMap[phpVersion]
+	if !ok {
+		ver = "8.2"
+	}
+	return ImgPHPOnly + ver + "-fpm-alpine"
 }
 
 // NodeImage returns the node alpine image for a given runtime_version int
