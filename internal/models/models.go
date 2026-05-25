@@ -9,16 +9,22 @@ import (
 
 // container image references — single source of truth for all image URLs
 const (
+
+	// from GitHub Container Registry (kpirnie's repos)
 	ImgNginx    = "ghcr.io/kpirnie/nginx:latest"
-	ImgDB       = "docker.io/library/mariadb:lts"
-	ImgRedis    = "docker.io/library/redis:alpine"
 	ImgSFTP     = "ghcr.io/kpirnie/sftp:latest"
-	ImgPMA      = "docker.io/phpmyadmin/phpmyadmin:latest"
 	ImgPHPBase  = "ghcr.io/kpirnie/php:"
-	ImgNode     = "docker.io/library/node:"
-	ImgDotNet   = "mcr.microsoft.com/dotnet/aspnet:"
 	ImgFail2Ban = "ghcr.io/kpirnie/fail2ban:latest"
-	ImgVarnish  = "docker.io/library/varnish:stable"
+
+	// from Docker Hub library
+	ImgDB      = "docker.io/library/mariadb:latest"
+	ImgRedis   = "docker.io/library/redis:alpine"
+	ImgPMA     = "docker.io/phpmyadmin/phpmyadmin:latest"
+	ImgNode    = "docker.io/library/node:"
+	ImgVarnish = "docker.io/library/varnish:latest"
+
+	// from Microsoft Container Registry
+	ImgDotNet = "mcr.microsoft.com/dotnet/aspnet:"
 )
 
 // security rule list types
