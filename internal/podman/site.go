@@ -372,13 +372,6 @@ func (c *Client) createPHP(ctx context.Context, cfg SiteConfig) error {
 		},
 		Mounts: []Mount{
 			{
-				// wp-init script runs once via serversideup's entrypoint.d before FPM starts
-				Type:        "bind",
-				Source:      cfg.SiteDir + "/php-fpm/wp-init.sh",
-				Destination: "/etc/entrypoint.d/60-wordpress-download.sh",
-				Options:     []string{"ro", "z"},
-			},
-			{
 				Type:        "bind",
 				Source:      cfg.SiteDir + "/html",
 				Destination: "/var/www/html",

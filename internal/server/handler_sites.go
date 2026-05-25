@@ -1,12 +1,15 @@
 package server
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -25,22 +28,6 @@ import (
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
 )
-
-// wpInitScript runs as a serversideup entrypoint.d script on first container start;
-// downloads WP-CLI and uses it to pull WordPress core files if they are not yet present
-const wpInitScript = `#!/bin/sh
-set -e
-
-if [ ! -f /var/www/html/index.php ]; then
-    echo "[wp-init] WordPress not found — downloading WP-CLI..."
-    curl -sfo /tmp/wp-cli.phar https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-    chmod +x /tmp/wp-cli.phar
-    echo "[wp-init] Downloading WordPress core..."
-    /tmp/wp-cli.phar core download --path=/var/www/html --allow-root
-    rm -f /tmp/wp-cli.phar
-    echo "[wp-init] WordPress core ready."
-fi
-`
 
 // sitesBase returns the base directory path for all site data on disk
 func (s *Server) sitesBase() string {
@@ -884,9 +871,9 @@ func scaffoldSiteDir(siteDir string, site *models.Site, configs map[int]map[stri
 			logger.Warn("could not chown wp-config.php: %v", err)
 		}
 
-		// write the init script that copies WP files on first run then execs php-fpm as siteUID
-		if err := os.WriteFile(siteDir+"/php-fpm/wp-init.sh", []byte(wpInitScript), 0755); err != nil {
-			logger.Error("failed to write wp-init.sh for site %s: %v", site.Name, err)
+		// download WordPress core files to html dir at scaffold time
+		if err := downloadWordPress(siteDir+"/html", siteUID); err != nil {
+			logger.Error("failed to download WordPress for site %s: %v", site.Name, err)
 			return err
 		}
 	}
@@ -1020,8 +1007,9 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 
 	// write wp-init.sh for WordPress sites if it doesn't already exist
 	if site.SiteType == models.SiteTypeWordPress {
-		if err := os.WriteFile(siteDir+"/php-fpm/wp-init.sh", []byte(wpInitScript), 0755); err != nil {
-			logger.Warn("could not write wp-init.sh for site %s: %v", site.Name, err)
+		// download WordPress core files to html dir at scaffold time
+		if err := downloadWordPress(siteDir+"/html", int(site.UID)); err != nil {
+			logger.Error("failed to download WordPress for site %s: %v", site.Name, err)
 		}
 	}
 
@@ -1459,5 +1447,64 @@ func (s *Server) cloneDatabase(ctx context.Context, src, clone *models.Site) err
 	}
 
 	logger.Debug("cloneDatabase: DB cloned from '%s' to '%s'", src.Name, clone.Name)
+	return nil
+}
+
+// downloadWordPress fetches the latest WordPress release from wordpress.org and
+// extracts it directly into htmlDir, stripping the top-level "wordpress/" prefix
+func downloadWordPress(htmlDir string, siteUID int) error {
+	resp, err := http.Get("https://wordpress.org/latest.tar.gz")
+	if err != nil {
+		return fmt.Errorf("downloading WordPress: %w", err)
+	}
+	defer resp.Body.Close()
+
+	gz, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading gzip stream: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("reading tar: %w", err)
+		}
+
+		// strip the leading "wordpress/" directory from all paths
+		name := strings.TrimPrefix(hdr.Name, "wordpress/")
+		if name == "" {
+			continue
+		}
+
+		target := filepath.Join(htmlDir, filepath.Clean(name))
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", target, err)
+			}
+			_ = os.Chown(target, siteUID, siteUID)
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return fmt.Errorf("mkdir parent %s: %w", target, err)
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+			if err != nil {
+				return fmt.Errorf("creating %s: %w", target, err)
+			}
+			_, copyErr := io.Copy(f, tr)
+			f.Close()
+			if copyErr != nil {
+				return fmt.Errorf("writing %s: %w", target, copyErr)
+			}
+			_ = os.Chown(target, siteUID, siteUID)
+		}
+	}
+
 	return nil
 }
