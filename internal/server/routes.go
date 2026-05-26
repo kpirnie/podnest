@@ -106,18 +106,6 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /sites/{id}/security/ua/export", s.apiExportSiteUARules)
 	api.HandleFunc("POST /sites/{id}/security/ua/import", s.apiImportSiteUARules)
 
-	// backup management
-	api.HandleFunc("GET /sites/{id}/backup-repo", s.apiGetBackupRepo)
-	api.HandleFunc("PUT /sites/{id}/backup-repo", s.apiUpdateBackupRepo)
-	api.HandleFunc("GET /sites/{id}/backups", s.apiListBackups)
-	api.HandleFunc("POST /sites/{id}/backups", s.apiCreateBackup)
-	api.HandleFunc("POST /sites/{id}/backups/{bid}/restore", s.apiRestoreBackup)
-	api.HandleFunc("DELETE /sites/{id}/backups/{bid}", s.apiDeleteBackup)
-	api.Handle("GET /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetBackupSettings)))
-	api.Handle("PUT /settings/backup", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateBackupSettings)))
-	api.HandleFunc("GET /sites/{id}/backups/restore-status", s.apiRestoreStatus)
-	api.HandleFunc("GET /sites/{id}/backups/{bid}/download", s.apiDownloadBackup)
-
 	// trusted proxy settings — admin only
 	api.Handle("GET /settings/trusted-proxies", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetTrustedProxies)))
 	api.Handle("PUT /settings/trusted-proxies", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateTrustedProxies)))

@@ -11,6 +11,7 @@ import (
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
+	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/waf"
 	"podnest/internal/modules/types/dotnet"
 	"podnest/internal/modules/types/node"
@@ -118,11 +119,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		AdminDomain:     adminDomain,
 	})
 
-	// register feature modules
+	// register the WAF
 	modules.RegisterFeature(waf.Module{
 		DB:      database,
 		AppPath: appPath,
 		WarmWAF: srv.WarmWAFCache,
+	})
+
+	// register the backups
+	modules.RegisterFeature(backups.Module{
+		DB:      database,
+		Manager: backupMgr,
 	})
 
 	logger.Info("PodNest management UI starting on :%d", serverPort)
