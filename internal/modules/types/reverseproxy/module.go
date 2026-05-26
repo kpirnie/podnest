@@ -40,3 +40,5 @@ func (Module) HasPod() bool         { return false }
 func (Module) HasSFTP() bool        { return false }
 func (Module) HasDatabase() bool    { return false }
 func (Module) HasCronSupport() bool { return false }
+
+func (Module) RuntimeContainerRole() string { return "" }

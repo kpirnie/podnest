@@ -56,6 +56,10 @@ type SiteTypeModule interface {
 
 	// HasCronSupport reports whether this site type has an execable runtime container.
 	HasCronSupport() bool
+
+	// RuntimeContainerRole returns the container role name used for cron exec ("php", "app", "").
+	// Returns empty string for site types with no execable runtime.
+	RuntimeContainerRole() string
 }
 
 // FeatureModule is implemented by per-site feature modules (WAF, backups, crons, etc.)

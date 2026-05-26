@@ -12,6 +12,7 @@ import (
 	"podnest/internal/logger"
 	"podnest/internal/modules"
 	"podnest/internal/modules/features/backups"
+	"podnest/internal/modules/features/crons"
 	"podnest/internal/modules/features/waf"
 	"podnest/internal/modules/types/dotnet"
 	"podnest/internal/modules/types/node"
@@ -130,6 +131,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(backups.Module{
 		DB:      database,
 		Manager: backupMgr,
+	})
+
+	// register the cron job module
+	modules.RegisterFeature(crons.Module{
+		DB:      database,
+		Manager: cronMgr,
 	})
 
 	logger.Info("PodNest management UI starting on :%d", serverPort)

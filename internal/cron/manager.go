@@ -15,6 +15,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/modules"
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
 )
@@ -187,13 +188,8 @@ func (m *Manager) run(ctx context.Context) {
 // runtimeContainer returns the container role to exec into for a given site type;
 // returns "" for site types with no execable runtime
 func runtimeContainer(siteType int) string {
-	switch siteType {
-	case models.SiteTypeWordPress, models.SiteTypePHP:
-		return "php"
-	case models.SiteTypeNode:
-		return "node"
-	case models.SiteTypeDotNet:
-		return "dotnet"
+	if m := modules.TypeModule(siteType); m != nil {
+		return m.RuntimeContainerRole()
 	}
 	return ""
 }
