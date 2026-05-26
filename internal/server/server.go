@@ -453,3 +453,6 @@ func (s *Server) syncPodStatuses() {
 func (s *Server) WarmWAFCache() error {
 	return s.proxy.WarmWAFCache()
 }
+
+// sitesBase returns the base directory path for all site data on disk.
+func (s *Server) sitesBase() string { return s.cfg.AppPath + "/sites" }

@@ -4,12 +4,23 @@ import (
 	"net/http"
 
 	"podnest/internal/auth"
+	"podnest/internal/handlers/configs"
+	"podnest/internal/handlers/domains"
+	"podnest/internal/handlers/logs"
+	"podnest/internal/handlers/pma"
+	"podnest/internal/handlers/rproxy"
+	"podnest/internal/handlers/security"
+	"podnest/internal/handlers/settings"
+	"podnest/internal/handlers/sites"
+	"podnest/internal/handlers/ssl"
+	"podnest/internal/handlers/users"
+	"podnest/internal/handlers/wpcli"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
 	"podnest/web"
 )
 
-// routes registers all HTTP routes and returns the composed handler
+// routes registers all HTTP routes and returns the composed handler.
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
@@ -33,106 +44,69 @@ func (s *Server) routes() http.Handler {
 	// API sub-mux — all routes require a valid session via RequireAPIAuth
 	api := http.NewServeMux()
 
-	// site management
-	api.HandleFunc("GET /sites", s.apiListSites)
-	api.HandleFunc("POST /sites", s.apiCreateSite)
-	api.HandleFunc("GET /sites/{id}", s.apiGetSite)
-	api.HandleFunc("PUT /sites/{id}", s.apiUpdateSite)
-	api.HandleFunc("DELETE /sites/{id}", s.apiDeleteSite)
+	// sites — CRUD, lifecycle, clone
+	sitesHandler := &sites.Handler{
+		DB:           s.cfg.DB,
+		AppPath:      s.cfg.AppPath,
+		HostAppPath:  s.cfg.HostAppPath,
+		PodmanSock:   s.cfg.PodmanSock,
+		Podman:       s.podman,
+		PodmanClient: s.podman,
+		Proxy:        s.proxy,
+		SFTP:         s.sftp,
+	}
+	sitesHandler.RegisterRoutes(api)
 
-	// site lifecycle actions
-	api.HandleFunc("POST /sites/{id}/start", s.apiSiteStart)
-	api.HandleFunc("POST /sites/{id}/stop", s.apiSiteStop)
-	api.HandleFunc("POST /sites/{id}/restart", s.apiSiteRestart)
-	api.HandleFunc("POST /sites/{id}/flush", s.apiSiteFlush)
-	api.HandleFunc("POST /sites/{id}/update", s.apiSiteUpdate)
-	api.HandleFunc("GET /sites/{id}/status", s.apiSiteStatus)
-	api.HandleFunc("POST /sites/{id}/recreate", s.apiSiteRecreate)
-	api.HandleFunc("POST /sites/{id}/clone", s.apiSiteClone)
-	api.HandleFunc("POST /sites/{id}/pma-token", s.apiIssuePMAToken)
+	// domains
+	domainsHandler := &domains.Handler{DB: s.cfg.DB, Proxy: s.proxy, Resolve: sitesHandler.ResolveSite}
+	domainsHandler.RegisterRoutes(api)
 
-	// domain management
-	api.HandleFunc("GET /sites/{id}/domains", s.apiListDomains)
-	api.HandleFunc("POST /sites/{id}/domains", s.apiAddDomain)
-	api.HandleFunc("DELETE /sites/{id}/domains/{did}", s.apiDeleteDomain)
+	// reverse proxy routes
+	rproxyHandler := &rproxy.Handler{DB: s.cfg.DB, Proxy: s.proxy, Resolve: sitesHandler.ResolveSite}
+	rproxyHandler.RegisterRoutes(api)
 
-	// reverse proxy route management
-	api.HandleFunc("GET /sites/{id}/rp-routes", s.apiGetRPRoutes)
-	api.HandleFunc("PUT /sites/{id}/rp-routes", s.apiUpdateRPRoutes)
+	// configs
+	configsHandler := &configs.Handler{DB: s.cfg.DB, AppPath: s.cfg.AppPath, Podman: s.podman, Resolve: sitesHandler.ResolveSite}
+	configsHandler.RegisterRoutes(api)
 
-	// config management
-	api.HandleFunc("GET /sites/{id}/configs", s.apiGetConfigs)
-	api.HandleFunc("PUT /sites/{id}/configs/{type}", s.apiUpdateConfig)
-	api.HandleFunc("POST /sites/{id}/configs/{type}/reset", s.apiResetConfig)
-	api.HandleFunc("GET /sites/{id}/configs/{type}/export", s.apiExportConfig)
-	api.HandleFunc("POST /sites/{id}/configs/{type}/import", s.apiImportConfig)
+	// logs
+	logsHandler := &logs.Handler{DB: s.cfg.DB, AppPath: s.cfg.AppPath, Podman: s.podman, Resolve: sitesHandler.ResolveSite}
+	logsHandler.RegisterRoutes(api)
 
-	// user management — admin only
-	api.Handle("GET /users", auth.RequireAPIAdmin(http.HandlerFunc(s.apiListUsers)))
-	api.Handle("POST /users", auth.RequireAPIAdmin(http.HandlerFunc(s.apiCreateUser)))
-	api.Handle("GET /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetUser)))
-	api.Handle("PUT /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateUser)))
-	api.Handle("DELETE /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDeleteUser)))
+	// wpcli
+	wpcliHandler := &wpcli.Handler{Podman: s.podman, Resolve: sitesHandler.ResolveSite}
+	wpcliHandler.RegisterRoutes(api)
 
-	// TOTP management — admin or self
-	api.HandleFunc("POST /users/{id}/totp/setup", s.apiTOTPSetup)
-	api.HandleFunc("POST /users/{id}/totp/confirm", s.apiTOTPConfirm)
-	api.HandleFunc("DELETE /users/{id}/totp", s.apiTOTPDisable)
+	// pma
+	pmaHandler := &pma.Handler{DB: s.cfg.DB, HostGateway: s.cfg.HostGateway, Resolve: sitesHandler.ResolveSite}
+	pmaHandler.RegisterAPIRoutes(api)
+	pmaHandler.RegisterMuxRoutes(mux)
 
-	// settings management — admin only
-	api.Handle("GET /settings", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetSettings)))
-	api.Handle("PUT /settings", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateSettings)))
-	api.Handle("GET /settings/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportSettings)))
-	api.Handle("POST /settings/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportSettings)))
+	// users + TOTP
+	usersHandler := &users.Handler{DB: s.cfg.DB}
+	usersHandler.RegisterRoutes(api)
 
-	// global security rules — admin only
-	api.Handle("GET /security/ip", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetGlobalIPRules)))
-	api.Handle("PUT /security/ip", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSaveGlobalIPRules)))
-	api.Handle("GET /security/ua", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetGlobalUARules)))
-	api.Handle("PUT /security/ua", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSaveGlobalUARules)))
-	api.Handle("GET /security/ip/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportGlobalIPRules)))
-	api.Handle("POST /security/ip/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportGlobalIPRules)))
-	api.Handle("GET /security/ua/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportGlobalUARules)))
-	api.Handle("POST /security/ua/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportGlobalUARules)))
+	// settings + trusted proxies
+	settingsHandler := &settings.Handler{DB: s.cfg.DB, Proxy: s.proxy, Backup: s.backup}
+	settingsHandler.RegisterRoutes(api)
 
-	// per-site security rules
-	api.HandleFunc("GET /sites/{id}/security/ip", s.apiGetSiteIPRules)
-	api.HandleFunc("PUT /sites/{id}/security/ip", s.apiSaveSiteIPRules)
-	api.HandleFunc("GET /sites/{id}/security/ua", s.apiGetSiteUARules)
-	api.HandleFunc("PUT /sites/{id}/security/ua", s.apiSaveSiteUARules)
-	api.HandleFunc("GET /sites/{id}/security/ip/export", s.apiExportSiteIPRules)
-	api.HandleFunc("POST /sites/{id}/security/ip/import", s.apiImportSiteIPRules)
-	api.HandleFunc("GET /sites/{id}/security/ua/export", s.apiExportSiteUARules)
-	api.HandleFunc("POST /sites/{id}/security/ua/import", s.apiImportSiteUARules)
+	// security rules
+	securityHandler := &security.Handler{DB: s.cfg.DB, Proxy: s.proxy, Resolve: sitesHandler.ResolveSite}
+	securityHandler.RegisterRoutes(api)
 
-	// trusted proxy settings — admin only
-	api.Handle("GET /settings/trusted-proxies", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetTrustedProxies)))
-	api.Handle("PUT /settings/trusted-proxies", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateTrustedProxies)))
-	api.Handle("GET /settings/trusted-proxies/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportTrustedProxies)))
-	api.Handle("POST /settings/trusted-proxies/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportTrustedProxies)))
+	// ssl status
+	sslHandler := &ssl.Handler{}
+	sslHandler.RegisterRoutes(api)
 
-	// WebSockets log tail
-	api.HandleFunc("GET /sites/{id}/logs", s.apiSiteLogs)
-	api.HandleFunc("GET /sites/{id}/logs/waf", s.apiSiteWAFLog)
-
-	// WP-CLI WebSocket terminal — WordPress sites only
-	api.HandleFunc("GET /sites/{id}/wpcli", s.apiWPCLI)
-
-	// ssl status check — available to all authenticated users
-	api.HandleFunc("GET /ssl-status", s.apiSSLStatus)
-
-	// register feature module routes
+	// feature module routes
 	for _, f := range modules.AllFeatureModules() {
-		f.RegisterRoutes(api, s.resolveSite)
+		f.RegisterRoutes(api, sitesHandler.ResolveSite)
 	}
 
 	// mount the API sub-mux under /api/ with auth middleware applied to all routes
 	mux.Handle("/api/", http.StripPrefix("/api",
 		auth.RequireAPIAuth(s.cfg.DB, api),
 	))
-
-	// PMA proxy — validates the one-time token and sets a session cookie before proxying
-	mux.Handle("/pma/", http.HandlerFunc(s.handlePMA))
 
 	logger.Debug("routes registered")
 	return securityHeaders(mux)

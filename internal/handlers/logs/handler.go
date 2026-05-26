@@ -1,7 +1,9 @@
-package server
+package logs
 
 import (
 	"bufio"
+	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,32 +15,44 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/modules"
 	"podnest/internal/podman"
 
 	"github.com/gorilla/websocket"
 )
 
-// upgrade the websocket connection
+// LogStreamer is the subset of podman.Client consumed by this handler.
+type LogStreamer interface {
+	StreamRaw(ctx context.Context, path string) (io.ReadCloser, error)
+}
+
+// Handler handles site log streaming WebSocket routes.
+type Handler struct {
+	DB      *sql.DB
+	AppPath string
+	Podman  LogStreamer
+	Resolve modules.SiteResolver
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 4096,
-	// allow connections from the UI served by this same server
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-// apiSiteLogs upgrades the connection to a WebSocket and streams live container logs
-func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
+// RegisterRoutes mounts log streaming routes onto api.
+func (h *Handler) RegisterRoutes(api *http.ServeMux) {
+	api.HandleFunc("GET /sites/{id}/logs", h.apiSiteLogs)
+	api.HandleFunc("GET /sites/{id}/logs/waf", h.apiSiteWAFLog)
+}
 
-	// resolve the site from the request path
-	site, ok := s.resolveSite(w, r)
+func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
 	if !ok {
 		logger.Error("failed to resolve site: %v", r)
 		return
 	}
 
-	// resolve the target container from the query string, defaulting to nginx
 	container := r.URL.Query().Get("container")
 	switch container {
 	case "nginx", "php", "db", "redis", "app":
@@ -46,7 +60,6 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 		container = "nginx"
 	}
 
-	// resolve the tail line count from the query string, defaulting to 100
 	tail := 100
 	if t := r.URL.Query().Get("tail"); t != "" {
 		if n, err := strconv.Atoi(t); err == nil && n > 0 && n <= 5000 {
@@ -54,7 +67,6 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// upgrade the HTTP connection to a WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logger.Error("failed to upgrade connection to WebSocket for site %d: %v", site.ID, err)
@@ -62,7 +74,6 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// build the canonical container name and Podman log stream path
 	containerName := podman.ContainerName(site.Name, container)
 	ctx := r.Context()
 	path := fmt.Sprintf(
@@ -70,8 +81,7 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 		containerName, tail,
 	)
 
-	// open the raw multiplexed log stream from the Podman API
-	body, err := s.podman.StreamRaw(ctx, path)
+	body, err := h.Podman.StreamRaw(ctx, path)
 	if err != nil {
 		logger.Error("failed to open log stream for container %s: %v", containerName, err)
 		conn.WriteMessage(websocket.TextMessage, []byte("[error] "+err.Error()))
@@ -81,7 +91,6 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug("streaming logs for container %s on site %d (tail=%d)", containerName, site.ID, tail)
 
-	// strip 8-byte multiplexed stream headers
 	hdr := make([]byte, 8)
 	for {
 		select {
@@ -91,20 +100,17 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 		default:
 		}
 
-		// read the next 8-byte stream header; return on EOF or context cancellation
 		_, err := io.ReadFull(body, hdr)
 		if err != nil {
 			logger.Debug("log stream ended for container %s: %v", containerName, err)
 			return
 		}
 
-		// parse the payload byte length from bytes 4-7 of the header
 		size := int(hdr[4])<<24 | int(hdr[5])<<16 | int(hdr[6])<<8 | int(hdr[7])
 		if size == 0 {
 			continue
 		}
 
-		// read the payload and forward it to the WebSocket client
 		payload := make([]byte, size)
 		_, err = io.ReadFull(body, payload)
 		if err != nil {
@@ -119,19 +125,15 @@ func (s *Server) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// apiSiteWAFLog upgrades the connection to a WebSocket, streams the last n matching
-// lines from waf.log for all of the site's domains, then polls for new entries live.
-func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
-
-	site, ok := s.resolveSite(w, r)
+func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
 	if !ok {
 		return
 	}
 
-	// reverse proxy sites store their domains in rp_routes; all other types use the domains table
 	var domains []string
 	if site.SiteType == models.SiteTypeReverseProxy {
-		routes, err := db.GetRPRoutesBySite(s.cfg.DB, site.ID)
+		routes, err := db.GetRPRoutesBySite(h.DB, site.ID)
 		if err != nil || len(routes) == 0 {
 			logger.Error("apiSiteWAFLog: no RP routes for site %d: %v", site.ID, err)
 			http.Error(w, "no routes configured for this site", http.StatusNotFound)
@@ -141,7 +143,7 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 			domains = append(domains, r.Domain)
 		}
 	} else {
-		siteDomains, err := db.GetDomainsBySite(s.cfg.DB, site.ID)
+		siteDomains, err := db.GetDomainsBySite(h.DB, site.ID)
 		if err != nil || len(siteDomains) == 0 {
 			logger.Error("apiSiteWAFLog: no domains for site %d: %v", site.ID, err)
 			http.Error(w, "no domains found for site", http.StatusNotFound)
@@ -152,7 +154,6 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// resolve tail line count from query string, defaulting to 100
 	tail := 100
 	if t := r.URL.Query().Get("tail"); t != "" {
 		if n, err := strconv.Atoi(t); err == nil && n > 0 && n <= 5000 {
@@ -167,13 +168,11 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	wafLogPath := s.cfg.AppPath + "/logs/waf.log"
+	wafLogPath := h.AppPath + "/logs/waf.log"
 	ctx := r.Context()
 
-	// send the initial tail of lines matching any registered domain before switching to live follow
 	initial, err := tailWAFLog(wafLogPath, domains, tail)
 	if err != nil {
-		// log file may not exist yet if no WAF events have fired for this site
 		conn.WriteMessage(websocket.TextMessage, []byte("[waf] no WAF log entries yet"))
 		logger.Debug("apiSiteWAFLog: waf.log not readable for site %d: %v", site.ID, err)
 		return
@@ -184,7 +183,6 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// open the file and seek to the end for live streaming
 	f, err := os.Open(wafLogPath)
 	if err != nil {
 		logger.Error("apiSiteWAFLog: open for live tail: %v", err)
@@ -208,12 +206,10 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// drain all new lines written since the last tick
 			for {
 				line, err := reader.ReadString('\n')
 				if len(line) > 0 {
 					line = strings.TrimRight(line, "\r\n")
-					// forward the line if it matches any domain registered to this site
 					for _, d := range domains {
 						if strings.Contains(line, d) {
 							if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
@@ -224,7 +220,6 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 				if err == io.EOF {
-					// no more data yet — wait for the next tick
 					break
 				}
 				if err != nil {
@@ -236,7 +231,6 @@ func (s *Server) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// tailWAFLog reads waf.log and returns the last n lines that contain any of the given domains
 func tailWAFLog(path string, domains []string, n int) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -248,7 +242,6 @@ func tailWAFLog(path string, domains []string, n int) ([]string, error) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		// match any domain registered to this site
 		for _, d := range domains {
 			if strings.Contains(line, d) {
 				matches = append(matches, line)
@@ -260,7 +253,6 @@ func tailWAFLog(path string, domains []string, n int) ([]string, error) {
 		return nil, err
 	}
 
-	// return only the last n matches
 	if len(matches) > n {
 		matches = matches[len(matches)-n:]
 	}
