@@ -3,39 +3,21 @@ package server
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 
+	"podnest/internal/apiutil"
 	"podnest/internal/logger"
 )
 
 // -- JSON response helpers ---------------------------------------------------
 
 // apiJSON writes v as a JSON response body with the given HTTP status code
-func apiJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		logger.Error("failed to encode JSON response: %v", err)
-	}
-
-	logger.Debug("api json response %d: %v", status, v)
-}
-
-// apiError writes a JSON error response derived from an error value
-func apiError(w http.ResponseWriter, status int, err error) {
-	logger.Debug("api error response %d: %v", status, err)
-	apiJSON(w, status, map[string]string{"error": err.Error()})
-}
-
-// apiErrorMsg writes a JSON error response with a plain message string
-func apiErrorMsg(w http.ResponseWriter, status int, msg string) {
-	logger.Debug("api error response %d: %s", status, msg)
-	apiJSON(w, status, map[string]string{"error": msg})
-}
+func apiJSON(w http.ResponseWriter, status int, v any)          { apiutil.JSON(w, status, v) }
+func apiError(w http.ResponseWriter, status int, err error)     { apiutil.Error(w, status, err) }
+func apiErrorMsg(w http.ResponseWriter, status int, msg string) { apiutil.ErrorMsg(w, status, msg) }
 
 // -- file helpers ------------------------------------------------------------
 

@@ -5,6 +5,7 @@ import (
 
 	"podnest/internal/auth"
 	"podnest/internal/logger"
+	"podnest/internal/modules"
 	"podnest/web"
 )
 
@@ -105,21 +106,6 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("GET /sites/{id}/security/ua/export", s.apiExportSiteUARules)
 	api.HandleFunc("POST /sites/{id}/security/ua/import", s.apiImportSiteUARules)
 
-	// WAF settings — admin only
-	api.Handle("GET /settings/waf/export", auth.RequireAPIAdmin(http.HandlerFunc(s.apiExportWAFSettings)))
-	api.Handle("POST /settings/waf/import", auth.RequireAPIAdmin(http.HandlerFunc(s.apiImportWAFSettings)))
-	api.Handle("GET /settings/waf", auth.RequireAPIAdmin(http.HandlerFunc(s.apiGetWAFSettings)))
-	api.Handle("PUT /settings/waf", auth.RequireAPIAdmin(http.HandlerFunc(s.apiUpdateWAFSettings)))
-
-	// per-site WAF overrides & plugins
-	api.HandleFunc("GET /sites/{id}/waf/export", s.apiExportWAFSiteOverride)
-	api.HandleFunc("POST /sites/{id}/waf/import", s.apiImportWAFSiteOverride)
-	api.HandleFunc("GET /sites/{id}/waf", s.apiGetWAFSiteOverride)
-	api.HandleFunc("PUT /sites/{id}/waf", s.apiUpdateWAFSiteOverride)
-	api.Handle("GET /settings/waf/plugins", auth.RequireAPIAdmin(http.HandlerFunc(s.apiListAvailablePlugins)))
-	api.HandleFunc("GET /sites/{id}/waf/plugins", s.apiGetSitePlugins)
-	api.HandleFunc("PUT /sites/{id}/waf/plugins", s.apiSetSitePlugins)
-
 	// backup management
 	api.HandleFunc("GET /sites/{id}/backup-repo", s.apiGetBackupRepo)
 	api.HandleFunc("PUT /sites/{id}/backup-repo", s.apiUpdateBackupRepo)
@@ -155,6 +141,11 @@ func (s *Server) routes() http.Handler {
 
 	// ssl status check — available to all authenticated users
 	api.HandleFunc("GET /ssl-status", s.apiSSLStatus)
+
+	// register feature module routes
+	for _, f := range modules.AllFeatureModules() {
+		f.RegisterRoutes(api, s.resolveSite)
+	}
 
 	// mount the API sub-mux under /api/ with auth middleware applied to all routes
 	mux.Handle("/api/", http.StripPrefix("/api",

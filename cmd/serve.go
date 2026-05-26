@@ -11,6 +11,7 @@ import (
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
+	"podnest/internal/modules/features/waf"
 	"podnest/internal/modules/types/dotnet"
 	"podnest/internal/modules/types/node"
 	"podnest/internal/modules/types/php"
@@ -115,6 +116,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		CronManager:     cronMgr,
 		CertDir:         appPath + "/certs",
 		AdminDomain:     adminDomain,
+	})
+
+	// register feature modules
+	modules.RegisterFeature(waf.Module{
+		DB:      database,
+		AppPath: appPath,
+		WarmWAF: srv.WarmWAFCache,
 	})
 
 	logger.Info("PodNest management UI starting on :%d", serverPort)

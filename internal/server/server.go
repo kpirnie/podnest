@@ -448,3 +448,8 @@ func (s *Server) syncPodStatuses() {
 		fix()
 	}
 }
+
+// WarmWAFCache triggers a WAF engine recompile via the proxy.
+func (s *Server) WarmWAFCache() error {
+	return s.proxy.WarmWAFCache()
+}

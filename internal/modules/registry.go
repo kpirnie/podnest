@@ -8,6 +8,10 @@ import (
 	"podnest/internal/models"
 )
 
+// SiteResolver resolves and authorises a site from an HTTP request.
+// Passed to feature modules at route registration time.
+type SiteResolver func(w http.ResponseWriter, r *http.Request) (*models.Site, bool)
+
 // SiteTypeModule is implemented by every site-type module.
 // The platform calls these methods; no switch statements on SiteType exist outside modules.
 type SiteTypeModule interface {
@@ -66,7 +70,7 @@ type FeatureModule interface {
 	Tabs(site *models.Site) []TabDescriptor
 
 	// RegisterRoutes mounts this feature's HTTP handlers onto the provided mux.
-	RegisterRoutes(mux *http.ServeMux)
+	RegisterRoutes(mux *http.ServeMux, resolve SiteResolver)
 
 	// OnSiteCreate is called after a site record and pod are created; may be a no-op.
 	OnSiteCreate(ctx context.Context, site *models.Site) error
@@ -201,3 +205,6 @@ func TabsFor(site *models.Site) []TabDescriptor {
 	}
 	return tabs
 }
+
+// AllFeatureModules returns all registered feature modules in registration order.
+func AllFeatureModules() []FeatureModule { return featureModules }
