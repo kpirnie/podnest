@@ -165,12 +165,8 @@ func SeedSiteConfigs(siteType int) (map[int]map[string]string, error) {
 
 	// add the other types based on the site type
 	switch siteType {
-	case models.SiteTypeWordPress, models.SiteTypePHP:
+	case models.SiteTypeWordPress:
 		types = append(types, models.ConfigPHP, models.ConfigMariaDB, models.ConfigRedis)
-	case models.SiteTypeNode, models.SiteTypeDotNet:
-		types = append(types, models.ConfigMariaDB, models.ConfigRedis)
-	case models.SiteTypeStatic:
-		// nginx only
 	}
 
 	// build the map of config type → default KV map

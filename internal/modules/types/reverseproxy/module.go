@@ -27,3 +27,6 @@ func (Module) SeedConfigs() map[int]map[string]string {
 func (Module) ScaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 	return scaffoldDir(dir, cfg)
 }
+
+// Tabs returns site-detail tab descriptors for reverse proxy sites.
+func (Module) Tabs(_ *models.Site) []modules.TabDescriptor { return nil }

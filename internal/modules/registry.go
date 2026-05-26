@@ -74,18 +74,35 @@ type TabDescriptor struct {
 type PodmanClient interface {
 	CreatePod(ctx context.Context, name string, site *models.Site) (string, error)
 	CreateContainer(ctx context.Context, cfg ContainerConfig) error
+	StartContainer(ctx context.Context, name string) error
 	PullImage(ctx context.Context, image string) error
 	RemovePod(ctx context.Context, name string) error
+	WaitForMariaDB(ctx context.Context, containerName, rootPass string) error
+	EnsureMariaDBUser(ctx context.Context, containerName, rootPass, dbName, dbUser, dbPass string) error
 }
 
-// ContainerConfig holds the parameters for creating a single container within a pod.
+// Mount describes a bind mount or tmpfs for a container.
+type Mount struct {
+	Type        string
+	Source      string
+	Destination string
+	Options     []string
+}
+
+// ContainerConfig holds all parameters needed to create a single container.
 type ContainerConfig struct {
-	Name    string
-	Image   string
-	PodName string
-	Env     map[string]string
-	Mounts  []string
-	Args    []string
+	Name       string
+	Image      string
+	PodName    string
+	Env        map[string]string
+	Mounts     []Mount
+	Command    []string
+	Entrypoint []string
+	User       string
+	WorkingDir string
+	CapAdd     []string
+	CapDrop    []string
+	SecOpts    []string
 }
 
 // PodConfig holds everything a type module needs to provision containers.

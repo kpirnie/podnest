@@ -19,16 +19,36 @@ func (a *PodmanClientAdapter) CreatePod(ctx context.Context, name string, site *
 }
 
 // CreateContainer translates modules.ContainerConfig to podman.ContainerSpec.
-// Phase 2 stubs will populate the full field set; Phase 1 stubs bypass this path.
 func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg ContainerConfig) error {
+	mounts := make([]podman.Mount, len(cfg.Mounts))
+	for i, m := range cfg.Mounts {
+		mounts[i] = podman.Mount{
+			Type:        m.Type,
+			Source:      m.Source,
+			Destination: m.Destination,
+			Options:     m.Options,
+		}
+	}
 	_, err := a.Client.CreateContainer(ctx, podman.ContainerSpec{
-		Name:    cfg.Name,
-		Image:   cfg.Image,
-		Pod:     cfg.PodName,
-		Env:     cfg.Env,
-		Command: cfg.Args,
+		Name:       cfg.Name,
+		Image:      cfg.Image,
+		Pod:        cfg.PodName,
+		Env:        cfg.Env,
+		Mounts:     mounts,
+		Command:    cfg.Command,
+		Entrypoint: cfg.Entrypoint,
+		User:       cfg.User,
+		WorkingDir: cfg.WorkingDir,
+		CapAdd:     cfg.CapAdd,
+		CapDrop:    cfg.CapDrop,
+		SecOpts:    cfg.SecOpts,
 	})
 	return err
+}
+
+// StartContainer delegates to the underlying podman client.
+func (a *PodmanClientAdapter) StartContainer(ctx context.Context, name string) error {
+	return a.Client.StartContainer(ctx, name)
 }
 
 // PullImage delegates to the underlying podman client.
@@ -39,4 +59,14 @@ func (a *PodmanClientAdapter) PullImage(ctx context.Context, image string) error
 // RemovePod delegates to the underlying podman client.
 func (a *PodmanClientAdapter) RemovePod(ctx context.Context, name string) error {
 	return a.Client.RemovePod(ctx, name)
+}
+
+// WaitForMariaDB delegates to the underlying podman client.
+func (a *PodmanClientAdapter) WaitForMariaDB(ctx context.Context, containerName, rootPass string) error {
+	return a.Client.WaitForMariaDB(ctx, containerName, rootPass)
+}
+
+// EnsureMariaDBUser delegates to the underlying podman client.
+func (a *PodmanClientAdapter) EnsureMariaDBUser(ctx context.Context, containerName, rootPass, dbName, dbUser, dbPass string) error {
+	return a.Client.EnsureMariaDBUser(ctx, containerName, rootPass, dbName, dbUser, dbPass)
 }

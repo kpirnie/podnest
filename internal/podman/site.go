@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 
 	"podnest/internal/logger"
@@ -66,12 +65,6 @@ func (c *Client) CreateSitePod(ctx context.Context, cfg SiteConfig) error {
 	switch cfg.Site.SiteType {
 	case models.SiteTypeWordPress:
 		images = append(images, imgDB, imgRedis, imgPMA, models.PHPImage(cfg.Site.PHPVersion))
-	case models.SiteTypePHP:
-		images = append(images, imgDB, imgRedis, imgPMA, models.PHPOnlyImage(cfg.Site.PHPVersion))
-	case models.SiteTypeNode:
-		images = append(images, imgDB, imgRedis, imgPMA, models.RuntimeImage(cfg.Site))
-	case models.SiteTypeDotNet:
-		images = append(images, imgDB, imgRedis, imgPMA, models.RuntimeImage(cfg.Site))
 	}
 
 	// pull the varnish image if enabled for this site
@@ -95,7 +88,7 @@ func (c *Client) CreateSitePod(ctx context.Context, cfg SiteConfig) error {
 
 	// mariaDB and redis (dynamic types only)
 	switch cfg.Site.SiteType {
-	case models.SiteTypeWordPress, models.SiteTypePHP, models.SiteTypeNode, models.SiteTypeDotNet:
+	case models.SiteTypeWordPress:
 		if err := c.createMariaDB(ctx, cfg); err != nil {
 			logger.Error("Failed to create mariadb in pod %s: %v", podName, err)
 			return err
@@ -121,21 +114,6 @@ func (c *Client) CreateSitePod(ctx context.Context, cfg SiteConfig) error {
 	case models.SiteTypeWordPress:
 		if err := c.createPHP(ctx, cfg); err != nil {
 			logger.Error("Failed to create php-fpm in pod %s: %v", podName, err)
-			return err
-		}
-	case models.SiteTypePHP:
-		if err := c.createPHPOnly(ctx, cfg); err != nil {
-			logger.Error("Failed to create php-fpm in pod %s: %v", podName, err)
-			return err
-		}
-	case models.SiteTypeNode:
-		if err := c.createNode(ctx, cfg); err != nil {
-			logger.Error("Failed to create node in pod %s: %v", podName, err)
-			return err
-		}
-	case models.SiteTypeDotNet:
-		if err := c.createDotNet(ctx, cfg); err != nil {
-			logger.Error("Failed to create dotnet in pod %s: %v", podName, err)
 			return err
 		}
 	}
@@ -459,85 +437,6 @@ func (c *Client) createPHPOnly(ctx context.Context, cfg SiteConfig) error {
 	return c.StartContainer(ctx, ContainerName(cfg.Site.Name, "php"))
 }
 
-// createNode provisions the Node.js container with the appropriate environment variables to connect to the internal MariaDB and Redis containers, and mounts for the site html directory; it uses the runtime image specified in the site configuration, which should be a Node.js image with the necessary dependencies for the application
-func (c *Client) createNode(ctx context.Context, cfg SiteConfig) error {
-
-	// setup the pod name for this site
-	podName := PodName(cfg.Site.Name)
-
-	// setup the container spec with the runtime image specified in the site configuration, and environment variables to connect to the internal MariaDB and Redis containers; mount the site html directory to /app and set the working directory to /app; apply security options to drop all capabilities except those needed for setting user/group IDs, and apply the no-new-privileges seccomp option for additional security hardening; if a start command is provided in the site configuration, set it as the container command
-	spec := ContainerSpec{
-		Name:       ContainerName(cfg.Site.Name, "app"),
-		Image:      models.RuntimeImage(cfg.Site),
-		User:       fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
-		Pod:        podName,
-		WorkingDir: "/app",
-		Mounts: []Mount{
-			{
-				Type:        "bind",
-				Source:      cfg.SiteDir + "/html",
-				Destination: "/app",
-				Options:     []string{"rw", "z"},
-			},
-		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"SETUID", "SETGID"},
-		SecOpts: []string{secNoNewPriv},
-	}
-	if cfg.Site.StartCommand != "" {
-		spec.Command = strings.Fields(cfg.Site.StartCommand)
-	}
-	if _, err := c.CreateContainer(ctx, spec); err != nil {
-		logger.Error("Failed to create node container in pod %s: %v", podName, err)
-		return err
-	}
-
-	// log the successful creation of the node container for this site and start the container, returning any errors that occur during startup
-	logger.Debug("Created node container for pod %s with image %s", podName, models.RuntimeImage(cfg.Site))
-	return c.StartContainer(ctx, ContainerName(cfg.Site.Name, "app"))
-}
-
-// createDotNet provisions the .NET container with the appropriate environment variables to connect to the internal MariaDB and Redis containers, and mounts for the site html directory; it uses the runtime image specified in the site configuration, which should be a .NET image with the necessary dependencies for the application
-func (c *Client) createDotNet(ctx context.Context, cfg SiteConfig) error {
-
-	// setup the pod name for this site
-	podName := PodName(cfg.Site.Name)
-
-	// setup the container spec with the runtime image specified in the site configuration, and environment variables to connect to the internal MariaDB and Redis containers; mount the site html directory to /app and set the working directory to /app; apply security options to drop all capabilities except those needed for setting user/group IDs, and apply the no-new-privileges seccomp option for additional security hardening; if a start command is provided in the site configuration, set it as the container command
-	spec := ContainerSpec{
-		Name:       ContainerName(cfg.Site.Name, "app"),
-		Image:      models.RuntimeImage(cfg.Site),
-		User:       fmt.Sprintf("%d:%d", cfg.SiteUID, cfg.SiteUID),
-		Pod:        PodName(cfg.Site.Name),
-		WorkingDir: "/app",
-		Env: map[string]string{
-			"ASPNETCORE_URLS": fmt.Sprintf("http://+:%d", models.DotNetInternalPort),
-		},
-		Mounts: []Mount{
-			{
-				Type:        "bind",
-				Source:      cfg.SiteDir + "/html",
-				Destination: "/app",
-				Options:     []string{"rw", "z"},
-			},
-		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"SETUID", "SETGID"},
-		SecOpts: []string{secNoNewPriv},
-	}
-	if cfg.Site.StartCommand != "" {
-		spec.Command = strings.Fields(cfg.Site.StartCommand)
-	}
-	if _, err := c.CreateContainer(ctx, spec); err != nil {
-		logger.Error("Failed to create node container in pod %s: %v", podName, err)
-		return err
-	}
-
-	// log the successful creation of the .NET container for this site and start the container, returning any errors that occur during startup
-	logger.Debug("Created node container for pod %s with image %s", podName, models.RuntimeImage(cfg.Site))
-	return c.StartContainer(ctx, ContainerName(cfg.Site.Name, "app"))
-}
-
 // createNginx provisions the Nginx container with mounts for the site html directory and custom nginx configuration, and security options to drop all capabilities except those needed for file ownership and permissions and network binding, and apply the no-new-privileges seccomp option for additional security hardening; it uses the official nginx:alpine image for a lightweight web server to reverse proxy to the appropriate runtime container based on the site type
 func (c *Client) createNginx(ctx context.Context, cfg SiteConfig) error {
 
@@ -587,140 +486,93 @@ func (c *Client) createNginx(ctx context.Context, cfg SiteConfig) error {
 }
 
 func (c *Client) waitForMariaDB(ctx context.Context, cfg SiteConfig) error {
-	containerName := ContainerName(cfg.Site.Name, "db")
-	deadline := time.Now().Add(120 * time.Second)
+	return c.WaitForMariaDB(ctx, ContainerName(cfg.Site.Name, "db"), cfg.DBRootPass)
+}
 
+func (c *Client) ensureMariaDBUser(ctx context.Context, cfg SiteConfig) error {
+	return c.EnsureMariaDBUser(ctx, ContainerName(cfg.Site.Name, "db"), cfg.DBRootPass, cfg.DBName, cfg.DBUser, cfg.DBPass)
+}
+
+// WaitForMariaDB blocks until MariaDB in containerName accepts connections or ctx expires.
+func (c *Client) WaitForMariaDB(ctx context.Context, containerName, rootPass string) error {
+	deadline := time.Now().Add(120 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-
-		// check container state before attempting exec — avoids noisy 500 errors
-		// while the container is still initialising
 		var info struct {
 			State struct {
 				Status string `json:"Status"`
 			} `json:"State"`
 		}
 		if err := c.get(ctx, "/v4.0.0/libpod/containers/"+containerName+"/json", &info); err != nil || info.State.Status != "running" {
-			logger.Debug("waitForMariaDB: container %s not running yet (status=%q)", containerName, info.State.Status)
+			logger.Debug("WaitForMariaDB: container %s not running yet (status=%q)", containerName, info.State.Status)
 			time.Sleep(3 * time.Second)
 			continue
 		}
-
-		// container is running — attempt the mariadb-admin ping exec
 		execSpec := map[string]any{
 			"AttachStdout": false,
 			"AttachStderr": false,
 			"Detach":       true,
 			"Cmd": []string{
-				"mariadb-admin",
-				"--host=127.0.0.1",
-				"--port=3306",
-				"-u", "root",
-				"-p" + cfg.DBRootPass,
-				"ping",
-				"--silent",
-				"--connect-timeout=2",
+				"mariadb-admin", "--host=127.0.0.1", "--port=3306",
+				"-u", "root", "-p" + rootPass,
+				"ping", "--silent", "--connect-timeout=2",
 			},
 		}
 		var execResp struct {
 			ID string `json:"Id"`
 		}
-		if err := c.post(ctx,
-			"/v4.0.0/libpod/containers/"+containerName+"/exec",
-			execSpec, &execResp,
-		); err != nil || execResp.ID == "" {
-			logger.Debug("MariaDB not ready yet in pod %s: %v", PodName(cfg.Site.Name), err)
+		if err := c.post(ctx, "/v4.0.0/libpod/containers/"+containerName+"/exec", execSpec, &execResp); err != nil || execResp.ID == "" {
+			logger.Debug("WaitForMariaDB: not ready yet in %s: %v", containerName, err)
 			time.Sleep(3 * time.Second)
 			continue
 		}
-
-		if err := c.post(ctx,
-			"/v4.0.0/libpod/exec/"+execResp.ID+"/start",
-			map[string]any{"Detach": true}, nil,
-		); err != nil {
-			logger.Debug("Failed to start MariaDB exec in pod %s: %v", PodName(cfg.Site.Name), err)
+		if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
 			time.Sleep(3 * time.Second)
 			continue
 		}
-
 		time.Sleep(500 * time.Millisecond)
 		var inspect struct {
 			ExitCode int  `json:"ExitCode"`
 			Running  bool `json:"Running"`
 		}
-		if err := c.get(ctx,
-			"/v4.0.0/libpod/exec/"+execResp.ID+"/json",
-			&inspect,
-		); err == nil && !inspect.Running && inspect.ExitCode == 0 {
-			logger.Debug("MariaDB is ready in pod %s", PodName(cfg.Site.Name))
+		if err := c.get(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err == nil && !inspect.Running && inspect.ExitCode == 0 {
+			logger.Debug("WaitForMariaDB: ready in %s", containerName)
 			return nil
 		}
-
-		logger.Debug("MariaDB not ready yet in pod %s: exec still running or returned non-zero exit code", PodName(cfg.Site.Name))
 		time.Sleep(3 * time.Second)
 	}
-
-	logger.Error("Timed out waiting for MariaDB to be ready in pod %s", PodName(cfg.Site.Name))
+	logger.Error("WaitForMariaDB: timed out waiting for %s", containerName)
 	return fmt.Errorf("timed out waiting for MariaDB to be ready")
 }
 
-// ensureMariaDBUser creates the site DB user and database if they do not already
-// exist — handles the case where MariaDB skips init because /db has existing data;
-// blocks until the exec completes and verifies a zero exit code
-func (c *Client) ensureMariaDBUser(ctx context.Context, cfg SiteConfig) error {
-
-	// build idempotent SQL to create the database, user, and grants
+// EnsureMariaDBUser creates the site database, user, and grants if they do not already exist.
+func (c *Client) EnsureMariaDBUser(ctx context.Context, containerName, rootPass, dbName, dbUser, dbPass string) error {
 	sql := fmt.Sprintf(
 		"CREATE DATABASE IF NOT EXISTS `%s`; "+
 			"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; "+
 			"GRANT ALL ON `%s`.* TO '%s'@'%%'; "+
 			"FLUSH PRIVILEGES;",
-		cfg.DBName, cfg.DBUser, cfg.DBPass, cfg.DBName, cfg.DBUser,
+		dbName, dbUser, dbPass, dbName, dbUser,
 	)
-
-	containerName := ContainerName(cfg.Site.Name, "db")
-
-	// create the exec instance — attach stdout/stderr so we can inspect the result
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Detach":       false,
-		"Cmd": []string{
-			"mariadb",
-			"--host=127.0.0.1",
-			"--port=3306",
-			"-u", "root",
-			"-p" + cfg.DBRootPass,
-			"-e", sql,
-		},
+		"Cmd":          []string{"mariadb", "--host=127.0.0.1", "--port=3306", "-u", "root", "-p" + rootPass, "-e", sql},
 	}
-
 	var execResp struct {
 		ID string `json:"Id"`
 	}
-	if err := c.post(ctx,
-		"/v4.0.0/libpod/containers/"+containerName+"/exec",
-		spec, &execResp,
-	); err != nil {
-		logger.Error("ensureMariaDBUser: failed to create exec in %s: %v", containerName, err)
-		return err
+	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+containerName+"/exec", spec, &execResp); err != nil {
+		return fmt.Errorf("EnsureMariaDBUser: create exec in %s: %w", containerName, err)
 	}
-
-	// start the exec — not detached so the API blocks until completion
-	if err := c.post(ctx,
-		"/v4.0.0/libpod/exec/"+execResp.ID+"/start",
-		map[string]any{"Detach": false}, nil,
-	); err != nil {
-		logger.Error("ensureMariaDBUser: failed to start exec in %s: %v", containerName, err)
-		return err
+	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": false}, nil); err != nil {
+		return fmt.Errorf("EnsureMariaDBUser: start exec in %s: %w", containerName, err)
 	}
-
-	// poll until the exec finishes — inspecting immediately after start can
-	// still show running=true before the process has fully exited
 	deadline := time.Now().Add(30 * time.Second)
 	var inspect struct {
 		ExitCode int  `json:"ExitCode"`
@@ -728,28 +580,19 @@ func (c *Client) ensureMariaDBUser(ctx context.Context, cfg SiteConfig) error {
 	}
 	for time.Now().Before(deadline) {
 		time.Sleep(500 * time.Millisecond)
-		if err := c.get(ctx,
-			"/v4.0.0/libpod/exec/"+execResp.ID+"/json",
-			&inspect,
-		); err != nil {
-			logger.Error("ensureMariaDBUser: failed to inspect exec result in %s: %v", containerName, err)
-			return err
+		if err := c.get(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err != nil {
+			return fmt.Errorf("EnsureMariaDBUser: inspect exec in %s: %w", containerName, err)
 		}
 		if !inspect.Running {
 			break
 		}
-		logger.Debug("ensureMariaDBUser: exec still running in %s, waiting...", containerName)
 	}
-
 	if inspect.Running {
-		logger.Error("ensureMariaDBUser: exec timed out in %s", containerName)
-		return fmt.Errorf("ensureMariaDBUser: timed out waiting for SQL exec to complete")
+		return fmt.Errorf("EnsureMariaDBUser: timed out in %s", containerName)
 	}
 	if inspect.ExitCode != 0 {
-		logger.Error("ensureMariaDBUser: SQL exec failed in %s with exit code %d", containerName, inspect.ExitCode)
-		return fmt.Errorf("ensureMariaDBUser: SQL exec exited with code %d", inspect.ExitCode)
+		return fmt.Errorf("EnsureMariaDBUser: SQL exec exited %d in %s", inspect.ExitCode, containerName)
 	}
-
-	logger.Debug("ensureMariaDBUser: user '%s' and database '%s' ensured in pod %s", cfg.DBUser, cfg.DBName, PodName(cfg.Site.Name))
+	logger.Debug("EnsureMariaDBUser: user '%s' and database '%s' ensured in %s", dbUser, dbName, containerName)
 	return nil
 }
