@@ -13,6 +13,7 @@ import (
 	"podnest/internal/modules"
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/crons"
+	sftpfeature "podnest/internal/modules/features/sftp"
 	"podnest/internal/modules/features/waf"
 	"podnest/internal/modules/types/dotnet"
 	"podnest/internal/modules/types/node"
@@ -22,7 +23,7 @@ import (
 	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/server"
-	"podnest/internal/sftp"
+	sftpmanager "podnest/internal/sftp"
 
 	"github.com/spf13/cobra"
 )
@@ -87,7 +88,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// create the sftp server
-	sftpMgr := sftp.New(podman.New(podmanSock), appPath, "")
+	sftpMgr := sftpmanager.New(podman.New(podmanSock), appPath, "")
 
 	// create the fail2ban manager
 	f2bMgr := fail2ban.New(podman.New(podmanSock), appPath, "")
@@ -137,6 +138,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(crons.Module{
 		DB:      database,
 		Manager: cronMgr,
+	})
+
+	// register the sftp module
+	modules.RegisterFeature(sftpfeature.Module{
+		DB:      database,
+		Manager: sftpMgr,
 	})
 
 	logger.Info("PodNest management UI starting on :%d", serverPort)
