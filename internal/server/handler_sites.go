@@ -1,20 +1,14 @@
 package server
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +20,7 @@ import (
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
+	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
 )
@@ -88,7 +83,7 @@ func (s *Server) apiGetSite(w http.ResponseWriter, r *http.Request) {
 
 	// reverse proxy sites have no SFTP credentials
 	var sftpCred *models.SFTPCred
-	if site.SiteType != models.SiteTypeReverseProxy {
+	if modules.TypeModule(site.SiteType).HasSFTP() {
 		sftpCred, err = db.GetSFTPCredBySite(s.cfg.DB, site.ID)
 		if err != nil {
 			logger.Error("failed to fetch SFTP cred for site %d: %v", site.ID, err)
@@ -136,7 +131,7 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 
 	// derive the PMA port for non-static sites
 	pmaPort := 0
-	if req.SiteType != models.SiteTypeStatic && req.SiteType != models.SiteTypeReverseProxy {
+	if modules.TypeModule(req.SiteType).HasDatabase() {
 		pmaPort = port + 10000
 	}
 
@@ -304,7 +299,15 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	hostSiteDir := s.hostSitesBase() + "/" + site.Name
 
 	sftpUID := sftp.UIDForSite(site.ID)
-	if err := scaffoldSiteDir(siteDir, site, configs, dbUser, dbPass, dbRootPass, redisPass, sftpUID); err != nil {
+	if err := m.ScaffoldDir(siteDir, modules.ScaffoldConfig{
+		Site:       site,
+		Configs:    configs,
+		SiteUID:    sftpUID,
+		DBUser:     dbUser,
+		DBPass:     dbPass,
+		DBRootPass: dbRootPass,
+		RedisPass:  redisPass,
+	}); err != nil {
 		logger.Error("scaffolding site dir for %s: %v", site.Name, err)
 		_ = db.DeleteSite(s.cfg.DB, site.ID)
 		apiError(w, http.StatusInternalServerError, err)
@@ -406,7 +409,7 @@ func (s *Server) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	siteDir := s.sitesBase() + "/" + site.Name
 
 	// reverse proxy sites have no pod or SFTP user to tear down
-	if site.SiteType != models.SiteTypeReverseProxy {
+	if modules.TypeModule(site.SiteType).HasPod() {
 
 		// stop the pod; log warnings but continue regardless of error
 		if err := s.podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
@@ -534,7 +537,7 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// flush php opcache for php-based site types
-	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
+	if modules.TypeModule(site.SiteType).HasPHPFPM() {
 		if err := s.podman.FlushPHPCache(r.Context(), podman.ContainerName(site.Name, "php")); err != nil {
 			logger.Error("failed to flush php opcache for site %d: %v", site.ID, err)
 			apiError(w, http.StatusInternalServerError, err)
@@ -543,26 +546,13 @@ func (s *Server) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// flush redis cache
-	if site.SiteType != models.SiteTypeStatic {
+	if modules.TypeModule(site.SiteType).HasRedis() {
 		redisPass, err := readEnvValue(s.sitesBase()+"/"+site.Name+"/.env", "REDIS_PASS")
 		if err != nil {
 			logger.Warn("apiSiteFlush: could not read REDIS_PASS for site %d: %v", site.ID, err)
 		} else {
 			if err := s.podman.FlushRedisCache(r.Context(), podman.ContainerName(site.Name, "redis"), redisPass); err != nil {
 				logger.Warn("redis flush failed for site %d (pod may be stopped): %v", site.ID, err)
-			}
-		}
-	}
-
-	// flush varnish cache if enabled for this site
-	varnishKV, _ := db.GetConfigsBySiteAndType(s.cfg.DB, site.ID, models.ConfigVarnish)
-	if len(varnishKV) > 0 {
-		vb, _ := json.Marshal(varnishKV)
-		if config.VarnishEnabled(string(vb)) {
-			if err := s.podman.FlushVarnishCache(r.Context(), podman.ContainerName(site.Name, "varnish")); err != nil {
-				logger.Error("failed to flush varnish cache for site %d: %v", site.ID, err)
-				apiError(w, http.StatusInternalServerError, err)
-				return
 			}
 		}
 	}
@@ -579,22 +569,8 @@ func (s *Server) apiSiteUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// build the list of images to pull based on the site type
-	images := []string{
-		models.ImgNginx,
-	}
-	switch site.SiteType {
-	case models.SiteTypeWordPress:
-		// use centralized image constants to avoid hardcoded URLs
-		images = append(images, models.PHPImage(site.PHPVersion), models.ImgDB, models.ImgRedis, models.ImgPMA)
-	case models.SiteTypePHP:
-		images = append(images, models.PHPOnlyImage(site.PHPVersion), models.ImgDB, models.ImgRedis, models.ImgPMA)
-	case models.SiteTypeNode, models.SiteTypeDotNet:
-		images = append(images, models.RuntimeImage(site), models.ImgDB, models.ImgRedis, models.ImgPMA)
-	}
-
-	// pull each image, returning on the first failure
-	for _, img := range images {
+	// rebuild the pods with new images from the models
+	for _, img := range modules.TypeModule(site.SiteType).Images(site) {
 		if err := s.podman.PullImage(r.Context(), img); err != nil {
 			logger.Error("failed to pull image %s for site %d: %v", img, site.ID, err)
 			apiError(w, http.StatusInternalServerError, err)
@@ -663,249 +639,6 @@ func (s *Server) resolveSite(w http.ResponseWriter, r *http.Request) (*models.Si
 	return site, true
 }
 
-// generateWPConfig renders a wp-config.php for the given site credentials.
-// Used instead of the WordPress Docker entrypoint so php-fpm can run as siteUID.
-func generateWPConfig(dbName, dbUser, dbPass, redisPass string) string {
-	// generate unique salts so each site has its own cryptographic keys
-	salt := func() string {
-		b := make([]byte, 48)
-		rand.Read(b)
-		return hex.EncodeToString(b)
-	}
-	return fmt.Sprintf(`<?php
-defined('DB_NAME') || define('DB_NAME',     '%s');
-defined('DB_USER') || define('DB_USER',     '%s');
-defined('DB_PASSWORD') || define('DB_PASSWORD', '%s');
-defined('DB_HOST') || define('DB_HOST',     '127.0.0.1:3306');
-defined('DB_CHARSET') || define('DB_CHARSET',  'utf8mb4');
-defined('DB_COLLATE') || define('DB_COLLATE',  '');
-defined('AUTH_KEY') || define('AUTH_KEY',         '%s');
-defined('SECURE_AUTH_KEY') || define('SECURE_AUTH_KEY',  '%s');
-defined('LOGGED_IN_KEY') || define('LOGGED_IN_KEY',    '%s');
-defined('NONCE_KEY') || define('NONCE_KEY',        '%s');
-defined('AUTH_SALT') || define('AUTH_SALT',        '%s');
-defined('SECURE_AUTH_SALT') || define('SECURE_AUTH_SALT', '%s');
-defined('LOGGED_IN_SALT') || define('LOGGED_IN_SALT',   '%s');
-defined('NONCE_SALT') || define('NONCE_SALT',       '%s');
-defined('WP_REDIS_HOST') || define('WP_REDIS_HOST',     '127.0.0.1');
-defined('WP_REDIS_PORT') || define('WP_REDIS_PORT',     6379);
-defined('WP_REDIS_PASSWORD') || define('WP_REDIS_PASSWORD', '%s');
-defined('WP_CACHE') || define('WP_CACHE',          true);
-defined('WP_DEBUG') || define('WP_DEBUG',          false);
-defined('DISALLOW_FILE_EDIT') || define('DISALLOW_FILE_EDIT', true);
-defined('FORCE_SSL_ADMIN') || define('FORCE_SSL_ADMIN',   true);
-defined('WP_AUTO_UPDATE_CORE') || define('WP_AUTO_UPDATE_CORE', 'minor');
-defined('FS_METHOD') || define('FS_METHOD',         'direct');
-defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON',   true);
-
-$table_prefix = 'wp_';
-defined('ABSPATH') || define( 'ABSPATH', __DIR__ . '/' );
-// tell WordPress it's behind an SSL-terminating reverse proxy
-if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-    $_SERVER['HTTPS'] = 'on';
-}
-require_once ABSPATH . 'wp-settings.php';
-`,
-		dbName, dbUser, dbPass,
-		salt(), salt(), salt(), salt(),
-		salt(), salt(), salt(), salt(),
-		redisPass,
-	)
-}
-
-// scaffoldSiteDir writes all config files to disk for a new site.
-// siteUID is the numeric SFTP uid — used so PHP-FPM runs as that user.
-func scaffoldSiteDir(siteDir string, site *models.Site, configs map[int]map[string]string, dbUser, dbPass, dbRootPass, redisPass string, siteUID int) error {
-
-	// create the required directory structure for the site
-	dirs := []string{
-		siteDir + "/html",
-		siteDir + "/nginx/conf.d",
-		siteDir + "/nginx/logs",
-		siteDir + "/php-fpm",
-		siteDir + "/db",
-		siteDir + "/redis",
-		siteDir + "/varnish",
-	}
-	for _, d := range dirs {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			logger.Error("creating dir %s: %v", d, err)
-			return err
-		}
-		logger.Debug("Created dir: %s", d)
-	}
-
-	// backups — root-owned, site group readable for SFTP download access
-	if err := os.MkdirAll(filepath.Join(siteDir, "backups"), 0755); err != nil {
-		return fmt.Errorf("create backups dir: %w", err)
-	}
-
-	// chroot directory must be owned by root for sshd to accept it
-	if err := os.Chown(siteDir, 0, 0); err != nil {
-		logger.Warn("could not chown site dir to root: %v", err)
-	}
-	if err := os.Chmod(siteDir, 0755); err != nil {
-		logger.Warn("could not chmod site dir: %v", err)
-	}
-
-	// set ownership on all content directories to the SFTP user
-	if err := os.Chown(siteDir+"/html", 33, siteUID); err != nil {
-		logger.Warn("could not chown html to www-data:sftp uid %d: %v", siteUID, err)
-	}
-	for _, d := range []string{"php-fpm", "redis"} {
-		if err := os.Chown(siteDir+"/"+d, siteUID, siteUID); err != nil {
-			logger.Warn("could not chown %s to sftp uid %d: %v", d, siteUID, err)
-		}
-	}
-
-	// db directory must be owned by the mysql user (uid 999) inside the MariaDB container
-	if err := os.Chown(siteDir+"/db", 999, 999); err != nil {
-		logger.Warn("could not chown db dir to mysql uid: %v", err)
-	}
-
-	// html: setgid + group-writable so PHP (running as siteUID) and SFTP share ownership
-	if err := os.Chmod(siteDir+"/html", 02775); err != nil {
-		logger.Warn("could not chmod html dir: %v", err)
-	}
-
-	// nginx config dirs belong to the SFTP user (app writes configs there)
-	if err := os.Chown(siteDir+"/nginx", siteUID, siteUID); err != nil {
-		logger.Warn("could not chown nginx dir to sftp uid: %v", err)
-	}
-
-	// nginx/logs — nginx container user (uid 101) writes access/error logs
-	if err := os.Chown(siteDir+"/nginx/logs", 101, 101); err != nil {
-		logger.Warn("could not chown nginx/logs to nginx uid: %v", err)
-	}
-	if err := os.Chmod(siteDir+"/nginx/logs", 0750); err != nil {
-		logger.Warn("could not chmod nginx/logs: %v", err)
-	}
-
-	// marshal a KV map to a JSON blob for the render functions; returns '{}' on nil
-	marshalCfg := func(kv map[string]string) string {
-		if kv == nil {
-			return "{}"
-		}
-		b, _ := json.Marshal(kv)
-		return string(b)
-	}
-
-	// determine if varnish is enabled for this site
-	vEnabled := config.VarnishEnabled(marshalCfg(configs[models.ConfigVarnish]))
-
-	// render and write the nginx main config
-	nginxMain, err := config.RenderNginxMain(marshalCfg(configs[models.ConfigNginx]))
-	if err != nil {
-		logger.Error("failed to create nginx config")
-		return err
-	}
-	if err := os.WriteFile(siteDir+"/nginx/nginx.conf", []byte(nginxMain), 0644); err != nil {
-		logger.Error("failed to write the nginx.conf")
-		return err
-	}
-
-	// render and write the nginx site server block
-	nginxSite, err := config.RenderNginxSite(marshalCfg(configs[models.ConfigNginx]), site.SiteType, vEnabled)
-	if err != nil {
-		logger.Error("failed to create nginx site block")
-		return err
-	}
-	if err := os.WriteFile(siteDir+"/nginx/conf.d/site.conf", []byte(nginxSite), 0644); err != nil {
-		logger.Error("failed to write site.conf")
-		return err
-	}
-
-	// render and write PHP configs for WordPress and PHP site types
-	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
-		phpFPM, err := config.RenderPHPFPM(marshalCfg(configs[models.ConfigPHP]), siteUID)
-		if err != nil {
-			logger.Error("failed to create php config")
-			return err
-		}
-		if err := os.WriteFile(siteDir+"/php-fpm/www.conf", []byte(phpFPM), 0644); err != nil {
-			logger.Error("failed to write php config file")
-			return err
-		}
-		phpIni, err := config.RenderPHPIni(marshalCfg(configs[models.ConfigPHP]))
-		if err != nil {
-			logger.Error("failed to create php ini")
-			return err
-		}
-		if err := os.WriteFile(siteDir+"/php-fpm/php.ini", []byte(phpIni), 0644); err != nil {
-			logger.Error("failed to write php ini file")
-			return err
-		}
-	}
-
-	// write the .env file before rendering redis so REDIS_PASS is available
-	env := "DB_NAME=" + site.Name + "\n" +
-		"DB_USER=" + dbUser + "\n" +
-		"DB_PASS=" + dbPass + "\n" +
-		"DB_ROOT_PASS=" + dbRootPass + "\n" +
-		"REDIS_PASS=" + redisPass + "\n"
-	if err := os.WriteFile(siteDir+"/.env", []byte(env), 0600); err != nil {
-		logger.Error("failed to write the .env file")
-		return err
-	}
-
-	// write wp-config.php for WordPress sites so the WP entrypoint can be skipped
-	// entirely and php-fpm runs as siteUID without ownership conflicts
-	if site.SiteType == models.SiteTypeWordPress {
-		wpConfig := generateWPConfig(site.Name, dbUser, dbPass, redisPass)
-		if err := os.WriteFile(siteDir+"/html/wp-config.php", []byte(wpConfig), 0640); err != nil {
-			logger.Error("failed to write wp-config.php for site %s: %v", site.Name, err)
-			return err
-		}
-		if err := os.Chown(siteDir+"/html/wp-config.php", siteUID, siteUID); err != nil {
-			logger.Warn("could not chown wp-config.php: %v", err)
-		}
-
-		// download WordPress core files to html dir at scaffold time
-		if err := downloadWordPress(siteDir+"/html", siteUID); err != nil {
-			logger.Error("failed to download WordPress for site %s: %v", site.Name, err)
-			return err
-		}
-	}
-
-	// render and write MariaDB and Redis configs for all non-static site types
-	if site.SiteType != models.SiteTypeStatic {
-		mariaDB, err := config.RenderMariaDB(marshalCfg(configs[models.ConfigMariaDB]))
-		if err != nil {
-			logger.Error("failed to create mariadb config")
-			return err
-		}
-		if err := os.WriteFile(siteDir+"/db/my.cnf", []byte(mariaDB), 0640); err != nil {
-			logger.Error("failed to write mariadb config file")
-			return err
-		}
-		redisPassFromEnv, _ := readEnvValue(siteDir+"/.env", "REDIS_PASS")
-		redisCfg, err := config.RenderRedis(marshalCfg(configs[models.ConfigRedis]), redisPassFromEnv)
-		if err != nil {
-			logger.Error("failed to create redis config")
-			return err
-		}
-		if err := os.WriteFile(siteDir+"/redis/redis.conf", []byte(redisCfg), 0644); err != nil {
-			logger.Error("failed to write redis config file")
-			return err
-		}
-	}
-
-	// always write the VCL file so the bind mount target exists on disk;
-	// varnish will only be started if enabled in the pod config
-	vclContent, err := config.RenderVarnish(marshalCfg(configs[models.ConfigVarnish]))
-	if err != nil {
-		logger.Error("failed to render varnish VCL")
-		return err
-	}
-	if err := os.WriteFile(siteDir+"/varnish/default.vcl", []byte(vclContent), 0644); err != nil {
-		logger.Error("failed to write varnish VCL file")
-		return err
-	}
-
-	logger.Debug("created and wrote the sites configurations")
-	return nil
-}
-
 // apiSiteRecreate stops and removes the existing pod, then provisions a fresh one
 // using the existing site data and credentials from disk
 func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
@@ -941,21 +674,6 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		if err := db.UpdateSite(s.cfg.DB, site); err != nil {
 			logger.Warn("failed to update site type for %s: %v", site.Name, err)
 		}
-	}
-
-	// build the image list to pull based on the site type
-	images := []string{
-		models.ImgNginx,
-		models.ImgSFTP,
-	}
-	switch site.SiteType {
-	case models.SiteTypeWordPress:
-		// use centralized image constants to avoid hardcoded URLs
-		images = append(images, models.PHPImage(site.PHPVersion), models.ImgDB, models.ImgRedis, models.ImgPMA)
-	case models.SiteTypePHP:
-		images = append(images, models.PHPOnlyImage(site.PHPVersion), models.ImgDB, models.ImgRedis, models.ImgPMA)
-	case models.SiteTypeNode, models.SiteTypeDotNet:
-		images = append(images, models.RuntimeImage(site), models.ImgDB, models.ImgRedis, models.ImgPMA)
 	}
 
 	// create a timeout context for the pod provisioning operation
@@ -994,30 +712,26 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// write wp-init.sh for WordPress sites if it doesn't already exist
+	// download wordpress
 	if site.SiteType == models.SiteTypeWordPress {
-		// download WordPress core files to html dir at scaffold time
-		if err := downloadWordPress(siteDir+"/html", int(site.UID)); err != nil {
+		if err := wordpress.DownloadWordPress(siteDir+"/html", int(site.UID)); err != nil {
 			logger.Error("failed to download WordPress for site %s: %v", site.Name, err)
 		}
 	}
 
 	// build the pod config using the existing credentials and recreate the pod
-	podCfg := podman.SiteConfig{
-		Site:           site,
-		SiteUID:        sftp.UIDForSite(site.ID),
-		SiteDir:        hostSiteDir,
-		DBName:         site.Name,
-		DBUser:         dbUser,
-		DBPass:         dbPass,
-		DBRootPass:     dbRootPass,
-		RedisPass:      redisPass,
-		VarnishEnabled: config.VarnishEnabled(varnishCfgJSON),
-		VarnishMemory:  config.VarnishMemorySize(varnishCfgJSON),
-	}
-
-	// try to create the sites pod
-	if err := s.podman.CreateSitePod(podCtx, podCfg); err != nil {
+	allConfigs, _ := db.GetAllConfigsBySite(s.cfg.DB, site.ID)
+	rm := modules.TypeModule(site.SiteType)
+	if err := rm.Create(podCtx, &modules.PodmanClientAdapter{Client: s.podman}, modules.PodConfig{
+		Site:       site,
+		SiteUID:    sftp.UIDForSite(site.ID),
+		SiteDir:    hostSiteDir,
+		Configs:    allConfigs,
+		DBUser:     dbUser,
+		DBPass:     dbPass,
+		DBRootPass: dbRootPass,
+		RedisPass:  redisPass,
+	}); err != nil {
 		logger.Error("recreating pod for site %s: %v", site.Name, err)
 		_ = s.podman.StopPod(bgCtx, podman.PodName(site.Name))
 		_ = s.podman.RemoveSitePod(bgCtx, site.Name)
@@ -1042,9 +756,8 @@ func (s *Server) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 // and PHP sites (PMA + Varnish take time to initialise) and 30s for others.
 func (s *Server) confirmPodRunning(ctx context.Context, podName string, siteType int) bool {
 	timeout := 30 * time.Second
-	switch siteType {
-	case models.SiteTypeWordPress, models.SiteTypePHP:
-		timeout = 90 * time.Second
+	if m := modules.TypeModule(siteType); m != nil {
+		timeout = m.StartupTimeout()
 	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -1133,7 +846,7 @@ func (s *Server) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 
 	// derive the PMA port for non-static sites
 	pmaPort := 0
-	if src.SiteType != models.SiteTypeStatic {
+	if modules.TypeModule(src.SiteType).HasDatabase() {
 		pmaPort = port + 10000
 	}
 
@@ -1284,7 +997,16 @@ func (s *Server) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	srcSiteDir := s.sitesBase() + "/" + src.Name
 
 	// scaffold the clone directory using the copied configs and fresh credentials
-	if err := scaffoldSiteDir(cloneSiteDir, clone, srcConfigs, dbUser, dbPass, dbRootPass, redisPass, sftpUID); err != nil {
+	cm := modules.TypeModule(clone.SiteType)
+	if err := cm.ScaffoldDir(cloneSiteDir, modules.ScaffoldConfig{
+		Site:       clone,
+		Configs:    srcConfigs,
+		SiteUID:    sftpUID,
+		DBUser:     dbUser,
+		DBPass:     dbPass,
+		DBRootPass: dbRootPass,
+		RedisPass:  redisPass,
+	}); err != nil {
 		logger.Error("apiSiteClone: scaffolding clone dir for %s: %v", clone.Name, err)
 		_ = db.DeleteSite(s.cfg.DB, clone.ID)
 		_ = os.RemoveAll(cloneSiteDir)
@@ -1306,7 +1028,7 @@ func (s *Server) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	// overwrite wp-config.php so the clone connects to its own MariaDB, not the source
 	if clone.SiteType == models.SiteTypeWordPress {
 		wpCfgPath := cloneSiteDir + "/html/wp-config.php"
-		wpConfig := generateWPConfig(clone.Name, dbUser, dbPass, redisPass)
+		wpConfig := wordpress.GenerateWPConfig(clone.Name, dbUser, dbPass, redisPass)
 		if err := os.WriteFile(wpCfgPath, []byte(wpConfig), 0640); err != nil {
 			logger.Warn("apiSiteClone: failed to write wp-config.php for clone %s: %v", clone.Name, err)
 		}
@@ -1315,32 +1037,20 @@ func (s *Server) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// resolve varnish config for pod provisioning
-	varnishKV := srcConfigs[models.ConfigVarnish]
-	varnishBlobStr := "{}"
-	if len(varnishKV) > 0 {
-		if vb, err := json.Marshal(varnishKV); err == nil {
-			varnishBlobStr = string(vb)
-		}
-	}
-
 	// provision the clone pod
 	podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer podCancel()
 
-	podCfg := podman.SiteConfig{
-		Site:           clone,
-		SiteUID:        sftpUID,
-		SiteDir:        hostCloneSiteDir,
-		DBName:         clone.Name,
-		DBUser:         dbUser,
-		DBPass:         dbPass,
-		DBRootPass:     dbRootPass,
-		RedisPass:      redisPass,
-		VarnishEnabled: config.VarnishEnabled(varnishBlobStr),
-		VarnishMemory:  config.VarnishMemorySize(varnishBlobStr),
-	}
-	if err := s.podman.CreateSitePod(podCtx, podCfg); err != nil {
+	if err := cm.Create(podCtx, &modules.PodmanClientAdapter{Client: s.podman}, modules.PodConfig{
+		Site:       clone,
+		SiteUID:    sftpUID,
+		SiteDir:    hostCloneSiteDir,
+		Configs:    srcConfigs,
+		DBUser:     dbUser,
+		DBPass:     dbPass,
+		DBRootPass: dbRootPass,
+		RedisPass:  redisPass,
+	}); err != nil {
 		logger.Error("apiSiteClone: creating pod for clone %s: %v", clone.Name, err)
 		_ = s.podman.StopPod(context.Background(), podman.PodName(clone.Name))
 		_ = s.podman.RemoveSitePod(context.Background(), clone.Name)
@@ -1351,7 +1061,7 @@ func (s *Server) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// dump and restore the database for all pod-based site types that use MariaDB
-	if src.SiteType != models.SiteTypeStatic {
+	if modules.TypeModule(src.SiteType).HasDatabase() {
 		if err := s.cloneDatabase(podCtx, src, clone); err != nil {
 			// non-fatal — the clone pod is running, log and continue
 			logger.Error("apiSiteClone: DB clone failed for %s → %s: %v", src.Name, clone.Name, err)
@@ -1436,64 +1146,5 @@ func (s *Server) cloneDatabase(ctx context.Context, src, clone *models.Site) err
 	}
 
 	logger.Debug("cloneDatabase: DB cloned from '%s' to '%s'", src.Name, clone.Name)
-	return nil
-}
-
-// downloadWordPress fetches the latest WordPress release from wordpress.org and
-// extracts it directly into htmlDir, stripping the top-level "wordpress/" prefix
-func downloadWordPress(htmlDir string, siteUID int) error {
-	resp, err := http.Get("https://wordpress.org/latest.tar.gz")
-	if err != nil {
-		return fmt.Errorf("downloading WordPress: %w", err)
-	}
-	defer resp.Body.Close()
-
-	gz, err := gzip.NewReader(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading gzip stream: %w", err)
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("reading tar: %w", err)
-		}
-
-		// strip the leading "wordpress/" directory from all paths
-		name := strings.TrimPrefix(hdr.Name, "wordpress/")
-		if name == "" {
-			continue
-		}
-
-		target := filepath.Join(htmlDir, filepath.Clean(name))
-
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0755); err != nil {
-				return fmt.Errorf("mkdir %s: %w", target, err)
-			}
-			_ = os.Chown(target, siteUID, siteUID)
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return fmt.Errorf("mkdir parent %s: %w", target, err)
-			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
-			if err != nil {
-				return fmt.Errorf("creating %s: %w", target, err)
-			}
-			_, copyErr := io.Copy(f, tr)
-			f.Close()
-			if copyErr != nil {
-				return fmt.Errorf("writing %s: %w", target, copyErr)
-			}
-			_ = os.Chown(target, siteUID, siteUID)
-		}
-	}
-
 	return nil
 }

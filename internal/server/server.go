@@ -15,6 +15,7 @@ import (
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/modules"
 	"podnest/internal/podman"
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
@@ -417,8 +418,8 @@ func (s *Server) syncPodStatuses() {
 		}
 		for _, site := range sites {
 
-			// reverse proxy sites have no pod — skip status sync
-			if site.SiteType == models.SiteTypeReverseProxy {
+			// if there is no pod skip status sync
+			if !modules.TypeModule(site.SiteType).HasPod() {
 				continue
 			}
 

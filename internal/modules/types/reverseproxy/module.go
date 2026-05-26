@@ -2,6 +2,7 @@ package reverseproxy
 
 import (
 	"context"
+	"time"
 
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -30,3 +31,12 @@ func (Module) ScaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 
 // Tabs returns site-detail tab descriptors for reverse proxy sites.
 func (Module) Tabs(_ *models.Site) []modules.TabDescriptor { return nil }
+
+func (Module) StartupTimeout() time.Duration { return 30 * time.Second }
+func (Module) HasPHPFPM() bool               { return false }
+func (Module) HasRedis() bool                { return false }
+
+func (Module) HasPod() bool         { return false }
+func (Module) HasSFTP() bool        { return false }
+func (Module) HasDatabase() bool    { return false }
+func (Module) HasCronSupport() bool { return false }

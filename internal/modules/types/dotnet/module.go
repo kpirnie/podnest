@@ -2,6 +2,7 @@ package dotnet
 
 import (
 	"context"
+	"time"
 
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -31,3 +32,12 @@ func (Module) Tabs(_ *models.Site) []modules.TabDescriptor { return nil }
 func (Module) ScaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 	return scaffoldDir(dir, cfg)
 }
+
+func (Module) StartupTimeout() time.Duration { return 30 * time.Second }
+func (Module) HasPHPFPM() bool               { return false }
+func (Module) HasRedis() bool                { return true }
+
+func (Module) HasPod() bool         { return true }
+func (Module) HasSFTP() bool        { return true }
+func (Module) HasDatabase() bool    { return true }
+func (Module) HasCronSupport() bool { return true }

@@ -10,6 +10,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/modules"
 )
 
 // -- list / create -----------------------------------------------------------
@@ -298,9 +299,6 @@ func parseCronID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 
 // hasCronSupport returns true for site types that have an execable runtime container
 func hasCronSupport(siteType int) bool {
-	switch siteType {
-	case models.SiteTypeWordPress, models.SiteTypePHP, models.SiteTypeNode, models.SiteTypeDotNet:
-		return true
-	}
-	return false
+	m := modules.TypeModule(siteType)
+	return m != nil && m.HasCronSupport()
 }

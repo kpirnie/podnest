@@ -3,6 +3,7 @@ package modules
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"podnest/internal/models"
 )
@@ -30,6 +31,27 @@ type SiteTypeModule interface {
 
 	// ScaffoldDir performs any filesystem setup needed after DB record creation.
 	ScaffoldDir(dir string, cfg ScaffoldConfig) error
+
+	// StartupTimeout returns how long to poll for all containers to reach running state.
+	StartupTimeout() time.Duration
+
+	// HasPHPFPM reports whether this site type runs a PHP-FPM container.
+	HasPHPFPM() bool
+
+	// HasRedis reports whether this site type runs a Redis container.
+	HasRedis() bool
+
+	// HasPod reports whether this site type provisions a Podman pod.
+	HasPod() bool
+
+	// HasSFTP reports whether this site type has SFTP credentials.
+	HasSFTP() bool
+
+	// HasDatabase reports whether this site type provisions a MariaDB container.
+	HasDatabase() bool
+
+	// HasCronSupport reports whether this site type has an execable runtime container.
+	HasCronSupport() bool
 }
 
 // FeatureModule is implemented by per-site feature modules (WAF, backups, crons, etc.)

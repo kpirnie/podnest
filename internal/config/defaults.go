@@ -155,31 +155,3 @@ func DefaultsForType(configType int) (map[string]string, error) {
 		return nil, fmt.Errorf("unknown config type: %d", configType)
 	}
 }
-
-// SeedSiteConfigs returns default KV maps for all config types applicable to a
-// given site type, keyed by config type constant
-func SeedSiteConfigs(siteType int) (map[int]map[string]string, error) {
-
-	// all site types get nginx and varnish (disabled by default)
-	types := []int{models.ConfigNginx, models.ConfigVarnish}
-
-	// add the other types based on the site type
-	switch siteType {
-	case models.SiteTypeWordPress:
-		types = append(types, models.ConfigPHP, models.ConfigMariaDB, models.ConfigRedis)
-	}
-
-	// build the map of config type → default KV map
-	out := make(map[int]map[string]string)
-	for _, t := range types {
-		defaults, err := DefaultsForType(t)
-		if err != nil {
-			logger.Error("SeedSiteConfigs: failed to get defaults for type %d: %v", t, err)
-			return nil, err
-		}
-		out[t] = defaults
-	}
-
-	logger.Debug("SeedSiteConfigs: seeded %d config types for site type %d", len(out), siteType)
-	return out, nil
-}
