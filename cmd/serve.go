@@ -10,6 +10,13 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/fail2ban"
 	"podnest/internal/logger"
+	"podnest/internal/modules"
+	"podnest/internal/modules/types/dotnet"
+	"podnest/internal/modules/types/node"
+	"podnest/internal/modules/types/php"
+	"podnest/internal/modules/types/reverseproxy"
+	"podnest/internal/modules/types/static"
+	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/server"
 	"podnest/internal/sftp"
@@ -87,6 +94,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// create the cron manager
 	cronMgr := cron.New(database, podman.New(podmanSock))
+
+	// register site type modules
+	modules.RegisterType(wordpress.Module{})
+	modules.RegisterType(php.Module{})
+	modules.RegisterType(static.Module{})
+	modules.RegisterType(node.Module{})
+	modules.RegisterType(dotnet.Module{})
+	modules.RegisterType(reverseproxy.Module{})
 
 	// create the server
 	srv := server.New(server.Config{

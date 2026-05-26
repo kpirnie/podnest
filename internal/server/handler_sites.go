@@ -25,6 +25,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/modules"
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
 )
@@ -235,13 +236,8 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// seed and persist default configs for the site type
-	configs, err := config.SeedSiteConfigs(site.SiteType)
-	if err != nil {
-		logger.Error("failed to seed configs for site %d: %v", site.ID, err)
-		_ = db.DeleteSite(s.cfg.DB, site.ID)
-		apiError(w, http.StatusInternalServerError, err)
-		return
-	}
+	m := modules.TypeModule(site.SiteType)
+	configs := m.SeedConfigs()
 	for t, kv := range configs {
 		if err := db.SetConfigs(s.cfg.DB, site.ID, t, kv); err != nil {
 			logger.Error("failed to set config type %d for site %s: %v", t, site.Name, err)
@@ -315,28 +311,21 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// marshal the varnish KV map to JSON for the pod config
-	varnishBlob, _ := json.Marshal(configs[models.ConfigVarnish])
-	varnishBlobStr := string(varnishBlob)
-
 	// provision the Podman pod with all required containers
-	podCfg := podman.SiteConfig{
-		Site:           site,
-		SiteUID:        sftpUID,
-		SiteDir:        hostSiteDir,
-		DBName:         site.Name,
-		DBUser:         dbUser,
-		DBPass:         dbPass,
-		DBRootPass:     dbRootPass,
-		RedisPass:      redisPass,
-		VarnishEnabled: config.VarnishEnabled(varnishBlobStr),
-		VarnishMemory:  config.VarnishMemorySize(varnishBlobStr),
+	podCfg := modules.PodConfig{
+		Site:       site,
+		SiteUID:    sftpUID,
+		SiteDir:    hostSiteDir,
+		Configs:    configs,
+		DBUser:     dbUser,
+		DBPass:     dbPass,
+		DBRootPass: dbRootPass,
+		RedisPass:  redisPass,
 	}
 	podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer podCancel()
 
-	// create the pod
-	if err := s.podman.CreateSitePod(podCtx, podCfg); err != nil {
+	if err := m.Create(podCtx, &modules.PodmanClientAdapter{Client: s.podman}, podCfg); err != nil {
 		logger.Error("creating pod for site %s: %v", site.Name, err)
 		_ = s.podman.StopPod(context.Background(), podman.PodName(site.Name))
 		_ = s.podman.RemoveSitePod(context.Background(), site.Name)
