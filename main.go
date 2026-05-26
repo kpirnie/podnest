@@ -13,5 +13,7 @@ import (
 
 // the main entry point of the app
 func main() {
+
+	// execution of the app
 	cmd.Execute()
 }
