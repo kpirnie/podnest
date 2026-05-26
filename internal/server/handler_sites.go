@@ -338,6 +338,13 @@ func (s *Server) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// invoke feature lifecycle hooks for the newly created site
+	for _, f := range modules.FeaturesFor(site.SiteType) {
+		if err := f.OnSiteCreate(r.Context(), site); err != nil {
+			logger.Warn("OnSiteCreate feature %s for site %s: %v", f.FeatureID(), site.Name, err)
+		}
+	}
+
 	logger.Debug("site '%s' created and pod provisioned successfully", site.Name)
 	_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRunning)
 	site.SiteStatus = models.StatusRunning
@@ -432,6 +439,13 @@ func (s *Server) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	siteDomains, err := db.GetDomainsBySite(s.cfg.DB, site.ID)
 	if err != nil {
 		logger.Warn("could not fetch domains for cache eviction on site %d: %v", site.ID, err)
+	}
+
+	// invoke feature lifecycle hooks before the site record is removed
+	for _, f := range modules.FeaturesFor(site.SiteType) {
+		if err := f.OnSiteDelete(bgCtx, site); err != nil {
+			logger.Warn("OnSiteDelete feature %s for site %s: %v", f.FeatureID(), site.Name, err)
+		}
 	}
 
 	// delete the site record — cascades to domains and configs
