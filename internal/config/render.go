@@ -69,6 +69,7 @@ http {
         application/atom+xml application/javascript application/json
         application/ld+json application/manifest+json application/rss+xml
         application/vnd.ms-fontobject application/x-font-ttf
+		font/woff font/woff2
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
@@ -79,6 +80,7 @@ http {
         application/atom+xml application/javascript application/json
         application/ld+json application/manifest+json application/rss+xml
         application/vnd.ms-fontobject application/x-font-ttf
+		font/woff font/woff2
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
@@ -89,6 +91,7 @@ http {
         application/atom+xml application/javascript application/json
         application/ld+json application/manifest+json application/rss+xml
         application/vnd.ms-fontobject application/x-font-ttf
+		font/woff font/woff2
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
