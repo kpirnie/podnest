@@ -198,7 +198,9 @@ func FeaturesFor(siteType int) []FeatureModule {
 	return out
 }
 
-// TabsFor returns the ordered list of all tabs (type + feature) for a given site.
+// TabsFor returns the combined tab descriptors for a site from both its type module
+// and all applicable feature modules. Not yet called — wired in when the tab
+// rendering system is implemented post-JS refactor.
 func TabsFor(site *models.Site) []TabDescriptor {
 	var tabs []TabDescriptor
 	if m := TypeModule(site.SiteType); m != nil {

@@ -14,8 +14,9 @@ import (
 
 // pod specification for creating a new pod with port mappings
 type PodSpec struct {
-	Name         string    `json:"name"`
-	PortMappings []PortMap `json:"portmappings"`
+	Name         string              `json:"name"`
+	PortMappings []PortMap           `json:"portmappings"`
+	Networks     map[string]struct{} `json:"Networks,omitempty"`
 }
 
 // PortMap defines a mapping from a container port to a host port with a specific protocol
@@ -100,7 +101,11 @@ func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) 
 	}
 
 	// create the pod with the specified name and port mappings
-	spec := PodSpec{Name: name, PortMappings: ports}
+	spec := PodSpec{
+		Name:         name,
+		PortMappings: ports,
+		Networks:     map[string]struct{}{"podnest_default": {}},
+	}
 
 	// hold the response from the pod creation endpoint, which will contain the new pod's ID
 	var resp PodCreateResponse

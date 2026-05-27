@@ -72,6 +72,26 @@ http {
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
+	brotli            %s;
+    brotli_comp_level %s;
+    brotli_min_length %s;
+    brotli_types
+        application/atom+xml application/javascript application/json
+        application/ld+json application/manifest+json application/rss+xml
+        application/vnd.ms-fontobject application/x-font-ttf
+        application/xhtml+xml application/xml font/opentype
+        image/svg+xml image/x-icon text/css text/plain;
+
+    zstd            %s;
+    zstd_comp_level %s;
+    zstd_min_length %s;
+    zstd_types
+        application/atom+xml application/javascript application/json
+        application/ld+json application/manifest+json application/rss+xml
+        application/vnd.ms-fontobject application/x-font-ttf
+        application/xhtml+xml application/xml font/opentype
+        image/svg+xml image/x-icon text/css text/plain;
+
     fastcgi_ignore_headers     Cache-Control Expires Set-Cookie;
 
     limit_req_zone  $binary_remote_addr zone=wp_login:10m rate=%s;
@@ -111,6 +131,12 @@ http {
 		v("gzip"),
 		v("gzip_comp_level"),
 		v("gzip_min_length"),
+		v("brotli"),
+		v("brotli_comp_level"),
+		v("brotli_min_length"),
+		v("zstd"),
+		v("zstd_comp_level"),
+		v("zstd_min_length"),
 		v("rate_limit_login"),
 		v("rate_limit_xmlrpc"),
 		v("rate_limit_general"),

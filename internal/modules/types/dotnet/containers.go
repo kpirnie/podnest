@@ -132,6 +132,7 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		PodName: podName,
 		Env:     map[string]string{"UMASK": "0000"},
 		Mounts: []modules.Mount{
+			{Type: "tmpfs", Destination: "/var/log/nginx"},
 			{Type: "bind", Source: cfg.SiteDir + "/html", Destination: "/var/www/html", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/nginx.conf", Destination: "/etc/nginx/nginx.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/conf.d", Destination: "/etc/nginx/conf.d", Options: []string{"ro", "z"}},
