@@ -27,6 +27,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 
+	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -96,6 +97,7 @@ type Proxy struct {
 	manager        *autocert.Manager
 	httpSrv        *http.Server
 	httpsSrv       *http.Server
+	http3Srv       *http3.Server
 }
 
 // Config holds the proxy dependencies
@@ -172,7 +174,7 @@ func New(cfg Config) *Proxy {
 		logger.Error("failed to generate self-signed cert: %v", err)
 	}
 
-	// SERVE IT!
+	// SERVE IT - SSL/TLS
 	p.httpsSrv = &http.Server{
 		Addr:    ":443",
 		Handler: p,
@@ -189,7 +191,14 @@ func New(cfg Config) *Proxy {
 		},
 	}
 
-	// SERVE IT!
+	// SERVE IT - QUIC
+	p.http3Srv = &http3.Server{
+		Addr:      ":443",
+		Handler:   p,
+		TLSConfig: p.httpsSrv.TLSConfig,
+	}
+
+	// SERVE IT - HTTP
 	p.httpSrv = &http.Server{
 		Addr:    ":80",
 		Handler: p.manager.HTTPHandler(p),
@@ -198,7 +207,7 @@ func New(cfg Config) *Proxy {
 	return p
 }
 
-// Start launches both listeners; HTTP runs in a goroutine, HTTPS blocks
+// Start launches HTTP, HTTPS, and HTTP/3 listeners.
 func (p *Proxy) Start() error {
 	go func() {
 		logger.Info("proxy HTTP listener starting on :80")
@@ -206,6 +215,14 @@ func (p *Proxy) Start() error {
 			logger.Error("proxy HTTP listener: %v", err)
 		}
 	}()
+
+	go func() {
+		logger.Info("proxy HTTP/3 listener starting on :443 (UDP)")
+		if err := p.http3Srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			logger.Error("proxy HTTP/3 listener: %v", err)
+		}
+	}()
+
 	logger.Info("proxy HTTPS listener starting on :443")
 	return p.httpsSrv.ListenAndServeTLS("", "")
 }
@@ -214,6 +231,7 @@ func (p *Proxy) Start() error {
 func (p *Proxy) Shutdown(ctx context.Context) {
 	_ = p.httpSrv.Shutdown(ctx)
 	_ = p.httpsSrv.Shutdown(ctx)
+	_ = p.http3Srv.Close()
 
 	// flush and close the access log file
 	if p.accessLog != nil {
@@ -529,6 +547,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// make sure browsers know we support QUIC
+	w.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
 
 	// wrap the writer to capture status + byte count for the access log
 	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
