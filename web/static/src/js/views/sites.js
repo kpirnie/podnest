@@ -10,10 +10,30 @@ export async function viewSites(root) {
     root.innerHTML = `
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Sites</h1>
-            <button class="uk-button kp-btn-primary" id="sites-new-btn">
-                <span uk-icon="plus"></span> New Site
+            <button class="uk-button kp-btn-primary" id="sites-new-btn" uk-tooltip="Create a New Site">
+                <span uk-icon="plus"></span> New
             </button>
         </div>
+
+        <!-- bulk action bar — hidden until rows are selected -->
+        <div id="sites-bulk-bar" class="kp-bulk-bar uk-hidden">
+            <span id="sites-bulk-count" class="kp-bulk-count"></span>
+            <div class="kp-bulk-actions">
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-start">
+                    <span uk-icon="play"></span> Start
+                </button>
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-stop">
+                    <span uk-icon="ban"></span> Stop
+                </button>
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-restart">
+                    <span uk-icon="refresh"></span> Restart
+                </button>
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-flush">
+                    <span uk-icon="bolt"></span> Flush Caches
+                </button>
+            </div>
+        </div>
+
         ${sites.length === 0
             ? emptyState("world", "No sites yet — create one to get started")
             : `<div class="kp-table-wrap">
@@ -21,6 +41,9 @@ export async function viewSites(root) {
                     <table class="uk-table uk-table-hover uk-table-divider uk-table-small uk-margin-remove">
                         <thead>
                             <tr>
+                                <th class="uk-table-shrink">
+                                    <input class="uk-checkbox" type="checkbox" id="sites-select-all" uk-tooltip="Select All">
+                                </th>
                                 <th class="uk-table-shrink">Status</th>
                                 <th>Name</th>
                                 <th class="uk-visible@s">Type</th>
@@ -39,6 +62,9 @@ export async function viewSites(root) {
 
     document.getElementById("sites-new-btn")
         .addEventListener("click", () => showCreateSiteModal());
+
+    // wire select-all and row checkboxes
+    wireBulkSelection();
 }
 
 export function siteRow(site, allSites = []) {
@@ -51,6 +77,11 @@ export function siteRow(site, allSites = []) {
 
     return `
         <tr data-site-id="${site.ID}" data-status="${site.SiteStatus}" data-type="${site.SiteType}">
+            <!-- row checkbox -->
+            <td class="uk-table-shrink">
+                <input class="uk-checkbox kp-site-row-check" type="checkbox"
+                       data-site-id="${site.ID}" data-site-type="${site.SiteType}">
+            </td>
             <!-- status badge -->
             <td class="uk-table-shrink kp-site-row-status">${!isRP ? statusBadge(site.SiteStatus) : ""}</td>
 
@@ -178,4 +209,50 @@ export function siteCard(site, allSites = []) {
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="delete" data-id="${site.ID}" title="Delete" uk-tooltip="Delete the Site"><span uk-icon="icon: trash;"></span></button>
             </div>
         </div>`;
+}
+
+function wireBulkSelection() {
+    const bar     = document.getElementById("sites-bulk-bar");
+    const countEl = document.getElementById("sites-bulk-count");
+    const selAll  = document.getElementById("sites-select-all");
+    if (!bar || !selAll) return;
+
+    const getChecked = () =>
+        [...document.querySelectorAll(".kp-site-row-check:checked")];
+
+    const update = () => {
+        const checked = getChecked();
+        const n = checked.length;
+        bar.classList.toggle("uk-hidden", n === 0);
+        countEl.textContent = `${n} site${n !== 1 ? "s" : ""} selected`;
+        // reflect indeterminate state on select-all
+        const all = document.querySelectorAll(".kp-site-row-check");
+        selAll.indeterminate = n > 0 && n < all.length;
+        selAll.checked = n > 0 && n === all.length;
+    };
+
+    // select-all toggle
+    selAll.addEventListener("change", () => {
+        document.querySelectorAll(".kp-site-row-check").forEach(cb => {
+            cb.checked = selAll.checked;
+        });
+        update();
+    });
+
+    // individual row checkboxes
+    document.querySelector(".kp-table-wrap tbody")
+        ?.addEventListener("change", (e) => {
+            if (e.target.classList.contains("kp-site-row-check")) update();
+        });
+
+    // bulk action buttons — dispatch to app.js handler via custom event
+    ["start", "stop", "restart", "flush"].forEach(action => {
+        document.getElementById(`bulk-${action}`)
+            ?.addEventListener("click", () => {
+                const ids = getChecked().map(cb => cb.dataset.siteId);
+                document.dispatchEvent(new CustomEvent("kp:bulk-action", {
+                    detail: { action, ids }
+                }));
+            });
+    });
 }

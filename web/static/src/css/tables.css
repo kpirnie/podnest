@@ -31,3 +31,27 @@
 .kp-table-wrap tbody tr[data-status="2"] .kp-site-row-status { border-left: 3px solid var(--kp-border); }
 .kp-table-wrap tbody tr[data-status="3"] .kp-site-row-status { border-left: 3px solid var(--kp-warning); }
 .kp-table-wrap tbody tr[data-status="4"] .kp-site-row-status { border-left: 3px solid var(--kp-danger); }
+
+/* -- bulk action bar ------------------------------------------------------- */
+.kp-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-blue);
+    border-radius: var(--kp-radius-lg);
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.kp-bulk-count {
+    font-size: 0.85rem;
+    color: var(--kp-cyan);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+}
+.kp-bulk-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}

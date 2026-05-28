@@ -102,6 +102,30 @@ document.addEventListener("click", async (e) => {
     }
 });
 
+/* -- bulk site actions ----------------------------------------------------- */
+document.addEventListener("kp:bulk-action", async (e) => {
+    const { action, ids } = e.detail;
+    if (!ids.length) return;
+
+    const labels = { start: "Starting", stop: "Stopping", restart: "Restarting", flush: "Flushing Caches" };
+    showProgressModal(`${labels[action]} ${ids.length} Site${ids.length !== 1 ? "s" : ""}`, "Please wait...");
+
+    const results = await Promise.allSettled(
+        ids.map(id => api.post(`/sites/${id}/${action}`))
+    );
+
+    hideProgressModal();
+
+    const failed = results.filter(r => r.status === "rejected").length;
+    if (failed === 0) {
+        toast.success(`${action.charAt(0).toUpperCase() + action.slice(1)} complete for ${ids.length} site${ids.length !== 1 ? "s" : ""}`);
+    } else {
+        toast.error(`${failed} of ${ids.length} sites failed — check logs`);
+    }
+
+    if (["start", "stop", "restart"].includes(action)) router.go("sites");
+});
+
 /* -- helpers --------------------------------------------------------------- */
 async function siteAction(id, action, title, message) {
     showProgressModal(title, message);
