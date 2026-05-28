@@ -317,13 +317,14 @@ export async function viewSiteDetail(root, { id }) {
             </div>
             <div class="uk-flex" style="gap:8px;flex-wrap:wrap">
                 ${!isRP ? `
-                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="start" data-id="${id}" uk-tooltip="Start the Site"><span uk-icon="play"></span></button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="stop" data-id="${id}" uk-tooltip="Stop the Site"><span uk-icon="ban"></span></button>
+                ${site.SiteStatus === 1
+                ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-action="stop" data-id="${id}" uk-tooltip="Stop the Site"><span uk-icon="ban"></span></button>`
+                : `<button class="uk-button kp-btn-ghost kp-btn-sm" data-action="start" data-id="${id}" uk-tooltip="Start the Site"><span uk-icon="play"></span></button>`
+                }
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="restart" data-id="${id}" uk-tooltip="Restart the Site"><span uk-icon="refresh"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="flush" data-id="${id}" uk-tooltip="Flush the Caches"><span uk-icon="bolt"></span></button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="update" data-id="${id}" uk-tooltip="Update the Pod Images"><span uk-icon="cloud-upload"></span></button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-recreate" uk-tooltip="Recreate the Pod"><span uk-icon="history"></span></button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-clone" uk-tooltip="Clone the Site"><span uk-icon="copy"></span></button>
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-recreate" uk-tooltip="Recreate &amp; Update the Pod"><span uk-icon="history"></span></button>
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-clone" uk-tooltip="Clone the Site"><span uk-icon="move"></span></button>
                 ` : ""}
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-edit" uk-tooltip="Edit the Site"><span uk-icon="pencil"></span></button>
             </div>

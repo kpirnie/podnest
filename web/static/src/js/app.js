@@ -63,10 +63,22 @@ document.addEventListener("click", async (e) => {
             if (!name) break;
             showProgressModal("Cloning Site", "Copying files and database — this may take a few minutes...");
             try {
-                await api.post(`/sites/${id}/clone`, { name });
+                const res = await api.post(`/sites/${id}/clone`, { name });
+                // poll until the cloned site appears in the list
+                let found = false, tries = 0;
+                while (!found && tries < 60) {
+                    await new Promise((r) => setTimeout(r, 3000));
+                    const sites = await api.get("/sites");
+                    found = sites.some((s) => s.ID === res.id && s.SiteStatus === 1);
+                    tries++;
+                }
                 hideProgressModal();
-                toast.success(`Site cloned as '${name}'`);
-                router.go("sites");
+                if (found) {
+                    toast.success(`Site cloned as '${name}'`);
+                    router.go("sites");
+                } else {
+                    toast.error("Clone timed out — check container logs");
+                }
             } catch (e) {
                 hideProgressModal();
                 toast.error(e.message);
@@ -76,16 +88,12 @@ document.addEventListener("click", async (e) => {
         case "delete":
             await deleteSite(id);
             break;
-        case "update":
-            await siteAction(id, "update", "Updating Images", "Pulling latest container images - this may take a few minutes...");
-            break;
         case "recreate":
             showProgressModal("Recreating Pod", "Recreating containers for this site - this may take a few minutes...");
             try {
                 await api.post(`/sites/${id}/recreate`);
                 hideProgressModal();
                 toast.success("Pod recreated");
-                router.go("site-detail", { id });
             } catch (e) {
                 hideProgressModal();
                 toast.error(e.message);
@@ -101,7 +109,6 @@ async function siteAction(id, action, title, message) {
         await api.post(`/sites/${id}/${action}`);
         hideProgressModal();
         toast.success(title + ' complete');
-        if (['start', 'stop', 'restart'].includes(action)) router.go('sites');
     } catch (e) {
         hideProgressModal();
         toast.error(e.message);

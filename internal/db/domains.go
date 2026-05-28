@@ -238,3 +238,23 @@ func GetDomainByID(db *sql.DB, id int64) (*models.Domain, error) {
 	logger.Debug("Fetched domain ID %d: '%s'", id, d.Domain)
 	return d, nil
 }
+
+// GetAllDomainsGrouped returns all domains keyed by site ID
+func GetAllDomainsGrouped(db *sql.DB) (map[int64][]string, error) {
+	rows, err := db.Query(`SELECT siteid, domain FROM kppn_domains ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64][]string)
+	for rows.Next() {
+		var siteID int64
+		var domain string
+		if err := rows.Scan(&siteID, &domain); err != nil {
+			return nil, err
+		}
+		out[siteID] = append(out[siteID], domain)
+	}
+	return out, rows.Err()
+}

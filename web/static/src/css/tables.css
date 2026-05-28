@@ -10,3 +10,24 @@
     transition: background var(--kp-transition);
 }
 .kp-table-wrap tbody tr:hover { background: rgba(43,142,255,0.04); }
+/* -- sites table ----------------------------------------------------------- */
+.kp-site-row-name {
+    font-weight: 600;
+    color: var(--kp-white);
+    font-family: 'Space Grotesk', sans-serif;
+    transition: color var(--kp-transition);
+}
+.kp-site-row-name:hover { color: var(--kp-cyan); }
+
+.kp-site-row-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+/* status-tinted left border on each row */
+.kp-table-wrap tbody tr[data-status="1"] .kp-site-row-status { border-left: 3px solid var(--kp-success); }
+.kp-table-wrap tbody tr[data-status="2"] .kp-site-row-status { border-left: 3px solid var(--kp-border); }
+.kp-table-wrap tbody tr[data-status="3"] .kp-site-row-status { border-left: 3px solid var(--kp-warning); }
+.kp-table-wrap tbody tr[data-status="4"] .kp-site-row-status { border-left: 3px solid var(--kp-danger); }

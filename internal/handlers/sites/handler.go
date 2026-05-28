@@ -77,7 +77,6 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /sites/{id}/stop", h.apiSiteStop)
 	api.HandleFunc("POST /sites/{id}/restart", h.apiSiteRestart)
 	api.HandleFunc("POST /sites/{id}/flush", h.apiSiteFlush)
-	api.HandleFunc("POST /sites/{id}/update", h.apiSiteUpdate)
 	api.HandleFunc("GET /sites/{id}/status", h.apiSiteStatus)
 	api.HandleFunc("POST /sites/{id}/recreate", h.apiSiteRecreate)
 	api.HandleFunc("POST /sites/{id}/clone", h.apiSiteClone)
@@ -146,8 +145,28 @@ func (h *Handler) apiListSites(w http.ResponseWriter, r *http.Request) {
 		sites = []*models.Site{}
 	}
 
+	domainMap, err := db.GetAllDomainsGrouped(h.DB)
+	if err != nil {
+		logger.Error("failed to retrieve domains for site list: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	type siteWithDomains struct {
+		*models.Site
+		Domains []string `json:"Domains"`
+	}
+	out := make([]siteWithDomains, 0, len(sites))
+	for _, s := range sites {
+		domains := domainMap[s.ID]
+		if domains == nil {
+			domains = []string{}
+		}
+		out = append(out, siteWithDomains{Site: s, Domains: domains})
+	}
+
 	logger.Debug("retrieved %d sites for user %d", len(sites), user.ID)
-	apiutil.JSON(w, http.StatusOK, sites)
+	apiutil.JSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) apiGetSite(w http.ResponseWriter, r *http.Request) {
@@ -591,24 +610,6 @@ func (h *Handler) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "flushed"})
 }
 
-func (h *Handler) apiSiteUpdate(w http.ResponseWriter, r *http.Request) {
-	site, ok := h.ResolveSite(w, r)
-	if !ok {
-		return
-	}
-
-	for _, img := range modules.TypeModule(site.SiteType).Images(site) {
-		if err := h.Podman.PullImage(r.Context(), img); err != nil {
-			logger.Error("failed to pull image %s for site %d: %v", img, site.ID, err)
-			apiutil.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
-	logger.Debug("updated container images for site %d", site.ID)
-	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "images updated"})
-}
-
 func (h *Handler) apiSiteStatus(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.ResolveSite(w, r)
 	if !ok {
@@ -947,38 +948,40 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer podCancel()
+	// respond immediately — pod creation and DB clone run in the background
+	apiutil.JSON(w, http.StatusAccepted, map[string]any{"id": clone.ID, "name": clone.Name})
 
-	if err := cm.Create(podCtx, &modules.PodmanClientAdapter{Client: h.PodmanClient}, modules.PodConfig{
-		Site:       clone,
-		SiteUID:    sftpUID,
-		SiteDir:    hostCloneSiteDir,
-		Configs:    srcConfigs,
-		DBUser:     dbUser,
-		DBPass:     dbPass,
-		DBRootPass: dbRootPass,
-		RedisPass:  redisPass,
-	}); err != nil {
-		logger.Error("apiSiteClone: creating pod for clone %s: %v", clone.Name, err)
-		_ = h.Podman.StopPod(context.Background(), podman.PodName(clone.Name))
-		_ = h.Podman.RemoveSitePod(context.Background(), clone.Name)
-		_ = db.DeleteSite(h.DB, clone.ID)
-		_ = os.RemoveAll(cloneSiteDir)
-		apiutil.Error(w, http.StatusInternalServerError, err)
-		return
-	}
+	go func() {
+		podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer podCancel()
 
-	if modules.TypeModule(src.SiteType).HasDatabase() {
-		if err := h.cloneDatabase(podCtx, src, clone); err != nil {
-			logger.Error("apiSiteClone: DB clone failed for %s → %s: %v", src.Name, clone.Name, err)
+		if err := cm.Create(podCtx, &modules.PodmanClientAdapter{Client: h.PodmanClient}, modules.PodConfig{
+			Site:       clone,
+			SiteUID:    sftpUID,
+			SiteDir:    hostCloneSiteDir,
+			Configs:    srcConfigs,
+			DBUser:     dbUser,
+			DBPass:     dbPass,
+			DBRootPass: dbRootPass,
+			RedisPass:  redisPass,
+		}); err != nil {
+			logger.Error("apiSiteClone: creating pod for clone %s: %v", clone.Name, err)
+			_ = h.Podman.StopPod(context.Background(), podman.PodName(clone.Name))
+			_ = h.Podman.RemoveSitePod(context.Background(), clone.Name)
+			_ = db.DeleteSite(h.DB, clone.ID)
+			_ = os.RemoveAll(cloneSiteDir)
+			return
 		}
-	}
 
-	logger.Debug("apiSiteClone: clone '%s' created from source '%s'", clone.Name, src.Name)
-	_ = db.UpdateSiteStatus(h.DB, clone.ID, models.StatusRunning)
-	clone.SiteStatus = models.StatusRunning
-	apiutil.JSON(w, http.StatusCreated, clone)
+		if modules.TypeModule(src.SiteType).HasDatabase() {
+			if err := h.cloneDatabase(podCtx, src, clone); err != nil {
+				logger.Error("apiSiteClone: DB clone failed for %s → %s: %v", src.Name, clone.Name, err)
+			}
+		}
+
+		logger.Debug("apiSiteClone: clone '%s' created from source '%s'", clone.Name, src.Name)
+		_ = db.UpdateSiteStatus(h.DB, clone.ID, models.StatusRunning)
+	}()
 }
 
 func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) error {

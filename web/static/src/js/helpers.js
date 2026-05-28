@@ -109,7 +109,7 @@ export function showCloneModal(sourceName) {
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
                         <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-clone-cancel">Cancel</button>
                         <button class="uk-button kp-btn-primary" id="kp-clone-ok">
-                            <span uk-icon="copy"></span> Clone
+                            <span uk-icon="move"></span> Clone
                         </button>
                     </div>
                 </div>
