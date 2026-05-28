@@ -36,22 +36,37 @@
 .kp-bulk-bar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 16px;
     background: var(--kp-bg-card);
-    border: 1px solid var(--kp-blue);
+    border: 1px solid var(--kp-border);
     border-radius: var(--kp-radius-lg);
     padding: 10px 16px;
     margin-bottom: 12px;
     flex-wrap: wrap;
 }
-.kp-bulk-count {
-    font-size: 0.85rem;
-    color: var(--kp-cyan);
-    font-family: 'JetBrains Mono', monospace;
-    white-space: nowrap;
-}
 .kp-bulk-actions {
     display: flex;
+    align-items: center;
     gap: 6px;
     flex-wrap: wrap;
 }
+.kp-bulk-count {
+    font-size: 0.85rem;
+    color: var(--kp-text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+}
+.kp-sites-search {
+    width: 220px;
+    flex-shrink: 0;
+}
+
+/* -- sortable column headers ----------------------------------------------- */
+.kp-sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+.kp-sortable:hover { color: var(--kp-cyan); }
+.kp-sort-icon { color: var(--kp-cyan); font-size: 0.75rem; }

@@ -15,23 +15,25 @@ export async function viewSites(root) {
             </button>
         </div>
 
-        <!-- bulk action bar — hidden until rows are selected -->
-        <div id="sites-bulk-bar" class="kp-bulk-bar uk-hidden">
-            <span id="sites-bulk-count" class="kp-bulk-count"></span>
+        <!-- bulk action bar — always visible -->
+        <div id="sites-bulk-bar" class="kp-bulk-bar">
             <div class="kp-bulk-actions">
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-start">
+                <span id="sites-bulk-count" class="kp-bulk-count">0 selected</span>
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-start" disabled>
                     <span uk-icon="play"></span> Start
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-stop">
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-stop" disabled>
                     <span uk-icon="ban"></span> Stop
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-restart">
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-restart" disabled>
                     <span uk-icon="refresh"></span> Restart
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-flush">
+                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-flush" disabled>
                     <span uk-icon="bolt"></span> Flush Caches
                 </button>
             </div>
+            <input class="uk-input kp-input kp-input-sm kp-sites-search"
+                   id="sites-search" type="text" placeholder="Filter sites…" autocomplete="off">
         </div>
 
         ${sites.length === 0
@@ -44,11 +46,11 @@ export async function viewSites(root) {
                                 <th class="uk-table-shrink">
                                     <input class="uk-checkbox" type="checkbox" id="sites-select-all" uk-tooltip="Select All">
                                 </th>
-                                <th class="uk-table-shrink">Status</th>
-                                <th>Name</th>
-                                <th class="uk-visible@s">Type</th>
+                                <th class="kp-sortable" data-col="status">Status <span class="kp-sort-icon" data-col="status"></span></th>
+                                <th class="kp-sortable" data-col="name">Name <span class="kp-sort-icon" data-col="name"></span></th>
+                                <th class="uk-visible@s kp-sortable" data-col="type">Type <span class="kp-sort-icon" data-col="type"></span></th>
                                 <th class="uk-visible@m">Port</th>
-                                <th class="uk-visible@m">Domain</th>
+                                <th class="uk-visible@m kp-sortable" data-col="domain">Domain <span class="kp-sort-icon" data-col="domain"></span></th>
                                 <th class="uk-table-shrink">Actions</th>
                             </tr>
                         </thead>
@@ -215,44 +217,103 @@ function wireBulkSelection() {
     const bar     = document.getElementById("sites-bulk-bar");
     const countEl = document.getElementById("sites-bulk-count");
     const selAll  = document.getElementById("sites-select-all");
+    const search  = document.getElementById("sites-search");
+    const tbody   = document.querySelector(".kp-table-wrap tbody");
     if (!bar || !selAll) return;
+
+    // -- sort state
+    let sortCol = null, sortAsc = true;
 
     const getChecked = () =>
         [...document.querySelectorAll(".kp-site-row-check:checked")];
 
-    const update = () => {
+    const updateBulk = () => {
         const checked = getChecked();
         const n = checked.length;
-        bar.classList.toggle("uk-hidden", n === 0);
-        countEl.textContent = `${n} site${n !== 1 ? "s" : ""} selected`;
-        // reflect indeterminate state on select-all
+        countEl.textContent = `${n} selected`;
+        ["bulk-start","bulk-stop","bulk-restart","bulk-flush"].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = n === 0;
+        });
         const all = document.querySelectorAll(".kp-site-row-check");
         selAll.indeterminate = n > 0 && n < all.length;
-        selAll.checked = n > 0 && n === all.length;
+        selAll.checked = all.length > 0 && n === all.length;
     };
 
-    // select-all toggle
+    // -- filtering
+    const applyFilter = () => {
+        const q = search.value.trim().toLowerCase();
+        document.querySelectorAll(".kp-table-wrap tbody tr").forEach(row => {
+            const name   = row.querySelector(".kp-site-row-name")?.textContent.toLowerCase() ?? "";
+            const domain = row.querySelector("td:nth-child(6)")?.textContent.toLowerCase() ?? "";
+            row.style.display = (!q || name.includes(q) || domain.includes(q)) ? "" : "none";
+        });
+    };
+
+    // -- sorting
+    const applySort = (col) => {
+        if (sortCol === col) {
+            sortAsc = !sortAsc;
+        } else {
+            sortCol = col; sortAsc = true;
+        }
+
+        document.querySelectorAll(".kp-sort-icon").forEach(el => {
+            if (el.dataset.col === col) {
+                el.textContent = sortAsc ? " ↑" : " ↓";
+            } else {
+                el.textContent = " ↕";
+            }
+        });
+
+        const rows = [...tbody.querySelectorAll("tr")];
+        rows.sort((a, b) => {
+            let av = "", bv = "";
+            if (col === "name") {
+                av = a.querySelector(".kp-site-row-name")?.textContent ?? "";
+                bv = b.querySelector(".kp-site-row-name")?.textContent ?? "";
+            } else if (col === "status") {
+                av = a.dataset.status ?? "";
+                bv = b.dataset.status ?? "";
+            } else if (col === "type") {
+                av = a.dataset.type ?? "";
+                bv = b.dataset.type ?? "";
+            } else if (col === "domain") {
+                av = a.querySelector("td:nth-child(6)")?.textContent.trim() ?? "";
+                bv = b.querySelector("td:nth-child(6)")?.textContent.trim() ?? "";
+            }
+            return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+        });
+        rows.forEach(r => tbody.appendChild(r));
+    };
+
+    // -- events
     selAll.addEventListener("change", () => {
         document.querySelectorAll(".kp-site-row-check").forEach(cb => {
             cb.checked = selAll.checked;
         });
-        update();
+        updateBulk();
     });
 
-    // individual row checkboxes
-    document.querySelector(".kp-table-wrap tbody")
-        ?.addEventListener("change", (e) => {
-            if (e.target.classList.contains("kp-site-row-check")) update();
+    tbody?.addEventListener("change", (e) => {
+        if (e.target.classList.contains("kp-site-row-check")) updateBulk();
+    });
+
+    search?.addEventListener("input", applyFilter);
+
+    document.querySelectorAll(".kp-sortable").forEach(th => {
+        th.addEventListener("click", () => applySort(th.dataset.col));
+    });
+
+    ["bulk-start","bulk-stop","bulk-restart","bulk-flush"].forEach(action => {
+        const btnId = action.replace("bulk-","");
+        document.getElementById(action)?.addEventListener("click", () => {
+            const ids = getChecked().map(cb => cb.dataset.siteId);
+            document.dispatchEvent(new CustomEvent("kp:bulk-action", {
+                detail: { action: btnId, ids }
+            }));
         });
-
-    // bulk action buttons — dispatch to app.js handler via custom event
-    ["start", "stop", "restart", "flush"].forEach(action => {
-        document.getElementById(`bulk-${action}`)
-            ?.addEventListener("click", () => {
-                const ids = getChecked().map(cb => cb.dataset.siteId);
-                document.dispatchEvent(new CustomEvent("kp:bulk-action", {
-                    detail: { action, ids }
-                }));
-            });
     });
+    document.querySelectorAll(".kp-sort-icon").forEach(el => { el.textContent = " ↕"; });
+    updateBulk();
 }
