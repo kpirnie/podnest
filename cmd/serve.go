@@ -46,6 +46,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// initialize the logger
 	logger.Init()
 	logger.Info("PodNest starting — debug=%v", logger.IsDebug())
+	logger.Info("Please hold while we can make sure your system is fully running")
 
 	// ensure the podman socket is a valid socket file and not a directory —
 	// podman-compose can incorrectly create it as a directory if the socket
@@ -58,7 +59,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// wait for the socket to appear as a valid socket file
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 120; i++ {
 		info, err := os.Stat(podmanSock)
 		if err == nil && !info.IsDir() {
 			break

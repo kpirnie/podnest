@@ -145,6 +145,13 @@ func (s *Server) Start() error {
 	})
 	s.proxy = px
 
+	// make sure we have a podnest network
+	if err := s.podman.EnsurePodmanNetwork(context.Background(), "pn_network"); err != nil {
+		logger.Error("failed to ensure pn_network: %v", err)
+	} else {
+		logger.Debug("pn_network ensured successfully")
+	}
+
 	// set the handler to our routes
 	s.http.Handler = s.routes()
 

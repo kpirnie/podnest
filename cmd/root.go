@@ -21,7 +21,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "podnest",
 	Short: "PodNest by Kevin Pirnie",
-	Long:  `Manage hardened, high-performance website pods with a web-based management UI.`,
+	Long:  `Security hardened high-performance, container based, web control panel.`,
 }
 
 // Execute is the entrypoint called from main.go

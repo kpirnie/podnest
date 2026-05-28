@@ -283,3 +283,25 @@ func (c *Client) StreamPost(ctx context.Context, path string, body any) (io.Read
 	logger.Debug("StreamPost: stream started for %s", path)
 	return resp.Body, nil
 }
+
+// EnsurePodmanNetwork creates the named Podman network if it does not exist.
+func (c *Client) EnsurePodmanNetwork(ctx context.Context, name string) error {
+	var existing []struct {
+		Name string `json:"name"`
+	}
+	if err := c.get(ctx, "/v4.0.0/libpod/networks/json", &existing); err != nil {
+		return fmt.Errorf("list networks: %w", err)
+	}
+	for _, n := range existing {
+		if n.Name == name {
+			logger.Debug("podman network %q already exists", name)
+			return nil
+		}
+	}
+	body := map[string]any{"Name": name}
+	if err := c.post(ctx, "/v4.0.0/libpod/networks/create", body, nil); err != nil {
+		return fmt.Errorf("create network %q: %w", name, err)
+	}
+	logger.Debug("created podman network %q", name)
+	return nil
+}
