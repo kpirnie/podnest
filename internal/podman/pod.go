@@ -247,53 +247,55 @@ func (c *Client) StartContainer(ctx context.Context, name string) error {
 	return nil
 }
 
-// PullImage pulls a container image only if it does not already exist locally
+// PullImage pulls a container image only if the local digest differs from the
+// remote registry digest — skipping unnecessary re-pulls when already up to date
 func (c *Client) PullImage(ctx context.Context, image string) error {
 
-	// check if the image already exists locally by sending a request to the image exists endpoint and handle any errors that occur
-	checkPath := "/v4.0.0/libpod/images/" + url.QueryEscape(image) + "/exists"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://d"+checkPath, nil)
-	if err != nil {
-		logger.Error("failed to create request to check if image %s exists: %v", image, err)
-		return err
+	// fetch the local image digest if it exists
+	var localInspect []struct {
+		Digest string `json:"Digest"`
+	}
+	localDigest := ""
+	if err := c.GetJSON(ctx, "/v4.0.0/libpod/images/"+url.QueryEscape(image)+"/json", &localInspect); err == nil && len(localInspect) > 0 {
+		localDigest = localInspect[0].Digest
 	}
 
-	// if the request succeeds and returns a 204 status code, the image already exists locally, so log that and return nil to skip pulling
-	resp, err := c.http.Do(req)
-	if err == nil {
-		resp.Body.Close()
-		if resp.StatusCode == 204 {
-			logger.Debug("image already exists, skipping pull: %s", image)
-			return nil
+	// fetch the remote manifest digest without pulling the full image
+	if localDigest != "" {
+		path := "/v4.0.0/libpod/manifests/" + url.QueryEscape(image) + "/json"
+		var remote struct {
+			Digest string `json:"Digest"`
+		}
+		if err := c.GetJSON(ctx, path, &remote); err == nil && remote.Digest != "" {
+			if remote.Digest == localDigest {
+				logger.Debug("image already up to date, skipping pull: %s", image)
+				return nil
+			}
+			logger.Debug("image digest changed (%s → %s), pulling: %s", localDigest[:12], remote.Digest[:12], image)
 		}
 	}
 
 	logger.Debug("pulling image: %s", image)
 
-	// setup the request to pull the image by sending a POST request to the image pull endpoint with the reference query parameter set to the image name and quiet mode enabled, and handle any errors that occur
 	path := "/v4.0.0/libpod/images/pull?reference=" + url.QueryEscape(image) + "&quiet=true"
-	req, err = http.NewRequestWithContext(ctx, http.MethodPost, "http://d"+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://d"+path, nil)
 	if err != nil {
 		logger.Error("failed to create request to pull image %s: %v", image, err)
 		return err
 	}
 
-	// execute the request to pull the image and handle any errors that occur, ensuring that the response body is fully read and closed to prevent resource leaks, and check the response status code to confirm that the pull was successful
-	resp, err = c.http.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		logger.Error("failed to pull image %s: %v", image, err)
 		return err
 	}
 	defer resp.Body.Close()
-
-	// read the response body and discard it to prevent resource leaks
 	io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != 200 {
 		logger.Error("failed to pull image %s: status %d", image, resp.StatusCode)
 		return fmt.Errorf("failed to pull image %s: status %d", image, resp.StatusCode)
 	}
 
-	// log the successful pull of the image with its name and return nil to indicate success
 	logger.Debug("pulled image: %s", image)
 	return nil
 }

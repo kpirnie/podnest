@@ -649,6 +649,13 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("remove pod %s: %v", site.Name, err)
 	}
 
+	// pull fresh images — skips if already up to date
+	for _, img := range modules.TypeModule(site.SiteType).Images(site) {
+		if err := h.Podman.PullImage(bgCtx, img); err != nil {
+			logger.Warn("recreate: failed to pull image %s for site %d: %v", img, site.ID, err)
+		}
+	}
+
 	if site.SiteType == models.SiteTypeWordPress && recreateReq.InstallWordPress != nil && !*recreateReq.InstallWordPress {
 		if err := clearDirContents(siteDir + "/html"); err != nil {
 			logger.Warn("failed to clear html/ for site %s: %v", site.Name, err)
