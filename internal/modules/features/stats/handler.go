@@ -375,6 +375,11 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 			}
 		}
 
+		// skip static asset requests
+		if isStaticAsset(fields[3]) {
+			continue
+		}
+
 		statusCode, err := strconv.Atoi(fields[4])
 		if err != nil {
 			continue
@@ -475,4 +480,26 @@ func duBytes(path string) int64 {
 		return 0
 	}
 	return n
+}
+
+// isStaticAsset reports whether a request path should be excluded from traffic stats.
+func isStaticAsset(path string) bool {
+	static := []string{
+		".css", ".js", ".mjs",
+		".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".ico", ".svg",
+		".woff", ".woff2", ".ttf", ".eot", ".otf",
+		".xml", ".xsl",
+		".map",
+	}
+	lower := strings.ToLower(path)
+	// strip query string before checking extension
+	if i := strings.IndexByte(lower, '?'); i != -1 {
+		lower = lower[:i]
+	}
+	for _, ext := range static {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
 }
