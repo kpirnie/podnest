@@ -403,7 +403,7 @@
             </button>
         </div>
         <div class="kp-site-grid">
-            ${t.length===0?F("world","No sites yet"):t.slice(0,6).map(o=>oe(o,t)).join("")}
+            ${t.length===0?F("world","No sites yet"):t.slice(-3).reverse().map(o=>oe(o,t)).join("")}
         </div>`,document.getElementById("dash-new-site")?.addEventListener("click",()=>W())}function M(e=null){let t=e?`/sites/${e}/security/ip`:"/security/ip",a=e?`/sites/${e}/security/ua`:"/security/ua",s=e?`/sites/${e}/waf`:"/settings/waf";return`
         <div id="security-panel" data-ip-base="${t}" data-ua-base="${a}" data-waf-base="${s}" ${e?`data-site-id="${e}"`:""}>
 
