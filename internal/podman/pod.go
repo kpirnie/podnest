@@ -104,7 +104,7 @@ func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) 
 	spec := PodSpec{
 		Name:         name,
 		PortMappings: ports,
-		Networks:     map[string]struct{}{"podnest_default": {}},
+		Networks:     map[string]struct{}{"pn_network": {}},
 	}
 
 	// hold the response from the pod creation endpoint, which will contain the new pod's ID
