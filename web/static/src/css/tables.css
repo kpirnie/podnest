@@ -27,10 +27,10 @@
 }
 
 /* status-tinted left border on each row */
-.kp-table-wrap tbody tr[data-status="1"] .kp-site-row-status { border-left: 3px solid var(--kp-success); }
-.kp-table-wrap tbody tr[data-status="2"] .kp-site-row-status { border-left: 3px solid var(--kp-border); }
-.kp-table-wrap tbody tr[data-status="3"] .kp-site-row-status { border-left: 3px solid var(--kp-warning); }
-.kp-table-wrap tbody tr[data-status="4"] .kp-site-row-status { border-left: 3px solid var(--kp-danger); }
+.kp-table-wrap tbody tr[data-status="1"] td:first-child { border-left: 3px solid var(--kp-success); }
+.kp-table-wrap tbody tr[data-status="2"] td:first-child { border-left: 3px solid var(--kp-border); }
+.kp-table-wrap tbody tr[data-status="3"] td:first-child { border-left: 3px solid var(--kp-warning); }
+.kp-table-wrap tbody tr[data-status="4"] td:first-child { border-left: 3px solid var(--kp-danger); }
 
 /* -- bulk action bar ------------------------------------------------------- */
 .kp-bulk-bar {
