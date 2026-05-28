@@ -11,6 +11,7 @@ import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js'
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
+import { loadStatsTab, renderStatsTab, wireStatsTab } from './site-stats.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
 
 // aborts accumulated root-level listeners when a new RP site detail view is wired
@@ -333,12 +334,14 @@ export async function viewSiteDetail(root, { id }) {
         ${isRP ? `
         <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
             <li><a href="#">Routes</a></li>
+            <li><a href="#">Stats</a></li>
             <li><a href="#">Logs</a></li>
             <li><a href="#">Security</a></li>
             <li><a href="#">WAF</a></li>
         </ul>
         <ul class="uk-switcher">
             <li>${renderRoutesTab()}</li>
+            <li>${renderStatsTab(id, site.SiteType)}</li>
             <li>${renderLogsTab(id, site.SiteType)}</li>
             <li>${renderSecurityPanel(id)}</li>
             <li id="waf-tab-panel"></li>
@@ -346,6 +349,7 @@ export async function viewSiteDetail(root, { id }) {
         ` : `
         <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
             <li><a href="#">Overview</a></li>
+            <li><a href="#">Stats</a></li>
             <li><a href="#">Nginx</a></li>
             ${showPHP ? `<li><a href="#">PHP</a></li>` : ""}
             <li><a href="#">MariaDB</a></li>
@@ -361,6 +365,7 @@ export async function viewSiteDetail(root, { id }) {
 
         <ul class="uk-switcher">
             <li>${renderOverviewTab(site, domains ?? [], sftp, site.ParentID ?? 0, allSites.find(s => s.ID === site.ParentID)?.Name ?? null)}</li>
+            <li>${renderStatsTab(id, site.SiteType)}</li>
             <li>${renderConfigTab(id, 1, configs["1"])}</li>
             ${showPHP ? `<li>${renderConfigTab(id, 2, configs["2"])}</li>` : ""}
             <li>${renderConfigTab(id, 3, configs["3"])}</li>
@@ -458,6 +463,8 @@ export async function viewSiteDetail(root, { id }) {
     wireBackupsPanel(root, id);
     loadBackupsPanel(root, id);
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
+    wireStatsTab(root, id, site.SiteType);
+    loadStatsTab(id, site.SiteType);
     initMobileTabSelect(root);
     // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);

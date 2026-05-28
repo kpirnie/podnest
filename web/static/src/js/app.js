@@ -94,6 +94,7 @@ document.addEventListener("click", async (e) => {
                 await api.post(`/sites/${id}/recreate`);
                 hideProgressModal();
                 toast.success("Pod recreated");
+                router.go("sites");
             } catch (e) {
                 hideProgressModal();
                 toast.error(e.message);

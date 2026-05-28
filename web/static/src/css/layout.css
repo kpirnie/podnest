@@ -40,6 +40,7 @@
 
 #kp-view {
     flex: 1;
+    padding-bottom:40px;
 }
 
 @media (min-width: 960px) {

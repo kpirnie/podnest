@@ -1,0 +1,402 @@
+"use strict";
+
+import { api } from '../api.js';
+
+// -- helpers -----------------------------------------------------------------
+
+// fmtBytes formats a raw byte count into a human-readable string
+export function fmtBytes(bytes) {
+    if (bytes === 0)           return '0 B';
+    if (bytes < 1024)          return `${bytes} B`;
+    if (bytes < 1048576)       return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1073741824)    return `${(bytes / 1048576).toFixed(1)} MB`;
+    return `${(bytes / 1073741824).toFixed(2)} GB`;
+}
+
+// fmtPercent formats a float as a percentage string
+function fmtPercent(n) {
+    return `${n.toFixed(1)}%`;
+}
+
+// -- Chart.js loader ---------------------------------------------------------
+
+// _chartReady resolves once Chart.js is available on window.Chart
+let _chartReady = null;
+export function loadChartJS() {
+    if (_chartReady) return _chartReady;
+    _chartReady = new Promise((resolve) => {
+        if (window.Chart) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/chart.js@latest/dist/chart.umd.min.js';
+        s.onload = resolve;
+        s.onerror = resolve;
+        document.body.appendChild(s);
+    });
+    return _chartReady;
+}
+
+// -- render ------------------------------------------------------------------
+
+// renderStatsTab returns the static HTML shell for the Stats tab
+export function renderStatsTab(siteId, siteType) {
+    const isRP = siteType === 6;
+
+    const podSection = isRP ? '' : `
+        <!-- pod statistics -->
+        <div class="kp-card uk-padding-small uk-margin-bottom">
+            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                <h3 class="kp-view-title">Pod Statistics</h3>
+                <span id="stats-pod-indicator" class="kp-status kp-status-stopped" style="font-size:0.7rem">
+                    Connecting…
+                </span>
+            </div>
+            <div id="stats-pod-table-wrap">
+                <div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>
+            </div>
+        </div>
+
+        <!-- disk usage -->
+        <div class="kp-card uk-padding-small uk-margin-bottom">
+            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                <h3 class="kp-view-title">Disk Usage</h3>
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="stats-disk-refresh"
+                    uk-tooltip="Refresh disk usage">
+                    <span uk-icon="refresh"></span>
+                </button>
+            </div>
+            <div id="stats-disk-wrap">
+                <div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>
+            </div>
+        </div>`;
+
+    return `
+        <div id="stats-panel" data-site-id="${siteId}" data-site-type="${siteType}">
+
+            <!-- traffic -->
+            <div class="kp-card uk-padding-small uk-margin-bottom">
+                <h3 class="kp-view-title uk-margin-small-bottom">Site Traffic
+                    <span class="kp-muted uk-text-small" style="font-weight:400"> — last 24 hours</span>
+                </h3>
+
+                <!-- status code badges -->
+                <div class="uk-grid-small uk-child-width-1-2 uk-child-width-1-4@m uk-margin-small-bottom" uk-grid>
+                    <div><div class="kp-stat-card" style="padding:16px">
+                        <div class="kp-stat-value" id="stats-2xx" style="font-size:1.6rem">—</div>
+                        <div class="kp-stat-label" style="color:var(--kp-success)">2xx Success</div>
+                    </div></div>
+                    <div><div class="kp-stat-card" style="padding:16px">
+                        <div class="kp-stat-value" id="stats-3xx" style="font-size:1.6rem">—</div>
+                        <div class="kp-stat-label" style="color:var(--kp-cyan)">3xx Redirect</div>
+                    </div></div>
+                    <div><div class="kp-stat-card" style="padding:16px">
+                        <div class="kp-stat-value" id="stats-4xx" style="font-size:1.6rem">—</div>
+                        <div class="kp-stat-label" style="color:var(--kp-warning)">4xx Client Err</div>
+                    </div></div>
+                    <div><div class="kp-stat-card" style="padding:16px">
+                        <div class="kp-stat-value" id="stats-5xx" style="font-size:1.6rem">—</div>
+                        <div class="kp-stat-label" style="color:var(--kp-danger)">5xx Server Err</div>
+                    </div></div>
+                </div>
+
+                <!-- bandwidth -->
+                <div class="kp-stats-bandwidth">
+                    Total Bandwidth: <span id="stats-bandwidth" class="kp-stats-bandwidth-val">—</span>
+                </div>
+
+                <!-- hits per hour chart -->
+                <div class="kp-stats-chart-wrap">
+                    <canvas id="stats-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- top IPs + UAs -->
+            <div class="uk-grid-small uk-child-width-1-1 uk-child-width-1-2@m uk-margin-bottom" uk-grid>
+                <div>
+                    <div class="kp-table-wrap">
+                        <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+                            <thead><tr>
+                                <th style="color:var(--kp-text-dim);font-size:0.75rem">Top IPs</th>
+                                <th style="color:var(--kp-text-dim);font-size:0.75rem;text-align:right">Hits</th>
+                            </tr></thead>
+                            <tbody id="stats-ip-rows">
+                                <tr><td colspan="2" class="kp-muted uk-text-small">Loading…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div class="kp-table-wrap">
+                        <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+                            <thead><tr>
+                                <th style="color:var(--kp-text-dim);font-size:0.75rem">Top User-Agents</th>
+                                <th style="color:var(--kp-text-dim);font-size:0.75rem;text-align:right">Hits</th>
+                            </tr></thead>
+                            <tbody id="stats-ua-rows">
+                                <tr><td colspan="2" class="kp-muted uk-text-small">Loading…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            ${podSection}
+
+        </div>`;
+}
+
+// -- load --------------------------------------------------------------------
+
+// loadStatsTraffic fetches traffic stats and populates the traffic section
+async function loadStatsTraffic(siteId) {
+    await loadChartJS();
+
+    let data;
+    try {
+        data = await api.get(`/sites/${siteId}/stats/traffic`);
+    } catch (err) {
+        document.getElementById('stats-ip-rows').innerHTML =
+            `<tr><td colspan="2" class="kp-muted uk-text-small">Failed to load: ${err.message}</td></tr>`;
+        return;
+    }
+
+    // status code counters
+    document.getElementById('stats-2xx').textContent = (data.status_codes['2xx'] ?? 0).toLocaleString();
+    document.getElementById('stats-3xx').textContent = (data.status_codes['3xx'] ?? 0).toLocaleString();
+    document.getElementById('stats-4xx').textContent = (data.status_codes['4xx'] ?? 0).toLocaleString();
+    document.getElementById('stats-5xx').textContent = (data.status_codes['5xx'] ?? 0).toLocaleString();
+
+    // bandwidth
+    document.getElementById('stats-bandwidth').textContent = fmtBytes(data.total_bandwidth ?? 0);
+
+    // hits per hour chart
+    const canvas = document.getElementById('stats-chart');
+    if (canvas && window.Chart) {
+        const labels = (data.hits_per_hour ?? []).map((b) => {
+            const d = new Date(b.hour);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        });
+        const counts = (data.hits_per_hour ?? []).map((b) => b.count);
+
+        new window.Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Requests',
+                    data: counts,
+                    backgroundColor: 'rgba(43,142,255,0.5)',
+                    borderColor:     'rgba(43,142,255,0.9)',
+                    borderWidth: 1,
+                    borderRadius: 3,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#0c1530',
+                        borderColor:     '#1a2a4a',
+                        borderWidth: 1,
+                        titleColor: '#dde8f5',
+                        bodyColor:  '#6b8cae',
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#6b8cae', font: { size: 10 }, maxRotation: 45 },
+                        grid:  { color: 'rgba(26,42,74,0.6)' },
+                    },
+                    y: {
+                        ticks: { color: '#6b8cae', font: { size: 10 } },
+                        grid:  { color: 'rgba(26,42,74,0.6)' },
+                        beginAtZero: true,
+                    },
+                },
+            },
+        });
+    }
+
+    // top IPs
+    const ipRows = document.getElementById('stats-ip-rows');
+    if (ipRows) {
+        ipRows.innerHTML = (data.top_ips ?? []).length === 0
+            ? `<tr><td colspan="2" class="kp-muted uk-text-small">No data</td></tr>`
+            : (data.top_ips ?? []).map((e) => `
+                <tr>
+                    <td class="kp-stats-table-cell-mono">${e.name}</td>
+                    <td class="kp-stats-table-cell-count">${e.count.toLocaleString()}</td>
+                </tr>`).join('');
+    }
+
+    // top UAs
+    const uaRows = document.getElementById('stats-ua-rows');
+    if (uaRows) {
+        uaRows.innerHTML = (data.top_uas ?? []).length === 0
+            ? `<tr><td colspan="2" class="kp-muted uk-text-small">No data</td></tr>`
+            : (data.top_uas ?? []).map((e) => `
+                <tr>
+                    <td class="kp-stats-ua-cell" title="${e.name}">${e.name}</td>
+                    <td class="kp-stats-table-cell-count">${e.count.toLocaleString()}</td>
+                </tr>`).join('');
+    }
+}
+
+// loadStatsDisk fetches and renders disk usage for html/ and db/
+async function loadStatsDisk(siteId) {
+    const wrap = document.getElementById('stats-disk-wrap');
+    if (!wrap) return;
+
+    wrap.innerHTML = `<div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>`;
+
+    try {
+        const data = await api.get(`/sites/${siteId}/stats/disk`);
+        wrap.innerHTML = `
+            <div class="uk-grid-small uk-child-width-1-2" uk-grid>
+                <div>
+                    <div class="kp-stat-card" style="padding:16px">
+                        <div class="kp-stat-value kp-stats-disk-val">${fmtBytes(data.html_bytes ?? 0)}</div>
+                        <div class="kp-stat-label">Site Files</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="kp-stat-card" style="padding:16px">
+                        <div class="kp-stat-value kp-stats-disk-val">${fmtBytes(data.db_bytes ?? 0)}</div>
+                        <div class="kp-stat-label">Database</div>
+                    </div>
+                </div>
+            </div>`;
+    } catch (err) {
+        wrap.innerHTML =
+            `<p class="kp-muted uk-text-small">Failed to load disk usage: ${err.message}</p>`;
+    }
+}
+
+// renderPodTable returns the container stats table HTML
+function renderPodTable(containers) {
+    if (!containers || containers.length === 0) {
+        return `<p class="kp-muted uk-text-small uk-margin-remove">No container data.</p>`;
+    }
+
+    const rows = containers.map((c) => {
+        const memPct = c.mem_limit > 0
+            ? ((c.mem_used / c.mem_limit) * 100).toFixed(1)
+            : 0;
+        const isHot = memPct > 80;
+        const role  = c.name.split('-').pop();
+        return `
+            <tr>
+                <td class="kp-stats-pod-role">${role}</td>
+                <td class="kp-stats-pod-cpu${c.cpu_percent > 80 ? ' is-hot' : ''}">
+                    ${fmtPercent(c.cpu_percent)}
+                </td>
+                <td class="kp-stats-pod-mem">
+                    ${fmtBytes(c.mem_used)}
+                    <span class="kp-stats-pod-mem-limit"> / ${fmtBytes(c.mem_limit)}</span>
+                </td>
+                <td>
+                    <div class="kp-stats-mem-wrap">
+                        <div class="kp-stats-mem-bar-track">
+                            <div class="kp-stats-mem-bar-fill${isHot ? ' is-hot' : ''}"
+                                style="width:${memPct}%"></div>
+                        </div>
+                        <span class="kp-stats-mem-pct">${memPct}%</span>
+                    </div>
+                </td>
+            </tr>`;
+    }).join('');
+
+    return `
+        <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+            <thead><tr>
+                <th style="color:var(--kp-text-dim);font-size:0.75rem">Container</th>
+                <th style="color:var(--kp-text-dim);font-size:0.75rem">CPU</th>
+                <th style="color:var(--kp-text-dim);font-size:0.75rem">Memory</th>
+                <th style="color:var(--kp-text-dim);font-size:0.75rem">Mem %</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+}
+
+// -- wire --------------------------------------------------------------------
+
+// wireStatsTab attaches all event listeners and starts the WS pod stream
+export function wireStatsTab(root, siteId, siteType) {
+    const isRP = siteType === 6;
+    let podWS   = null;
+
+    // start WebSocket pod stream for non-RP sites
+    function startPodStream() {
+        if (isRP) return;
+
+        const indicator = root.querySelector('#stats-pod-indicator');
+        const tableWrap = root.querySelector('#stats-pod-table-wrap');
+        if (!tableWrap) return;
+
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        podWS = new WebSocket(`${proto}://${location.host}/api/sites/${siteId}/stats/pod`);
+
+        podWS.onopen = () => {
+            if (indicator) {
+                indicator.className = 'kp-status kp-status-running';
+                indicator.textContent = 'Live';
+            }
+        };
+
+        podWS.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                tableWrap.innerHTML = renderPodTable(data.containers ?? []);
+            } catch (_) { /* ignore malformed frames */ }
+        };
+
+        podWS.onerror = () => {
+            if (indicator) {
+                indicator.className = 'kp-status kp-status-error';
+                indicator.textContent = 'Error';
+            }
+        };
+
+        podWS.onclose = () => {
+            if (indicator && indicator.textContent === 'Live') {
+                indicator.className = 'kp-status kp-status-stopped';
+                indicator.textContent = 'Disconnected';
+            }
+        };
+    }
+
+    function stopPodStream() {
+        if (podWS && podWS.readyState === WebSocket.OPEN) {
+            podWS.close();
+        }
+        podWS = null;
+    }
+
+    // disk refresh button
+    root.querySelector('#stats-disk-refresh')?.addEventListener('click', () => {
+        loadStatsDisk(siteId);
+    });
+
+    startPodStream();
+
+    // stop the WS stream when navigating away
+    const observer = new MutationObserver(() => {
+        if (!document.getElementById('stats-panel')) {
+            stopPodStream();
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.getElementById('main') ?? document.body, { childList: true, subtree: false });
+}
+
+// loadStatsTab fetches all initial data for the stats tab
+export async function loadStatsTab(siteId, siteType) {
+    const isRP = siteType === 6;
+
+    await loadStatsTraffic(siteId);
+
+    if (!isRP) {
+        await loadStatsDisk(siteId);
+    }
+}

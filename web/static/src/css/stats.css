@@ -1,0 +1,99 @@
+/* -- stats tab ------------------------------------------------------------- */
+
+.kp-stats-chart-wrap {
+    position: relative;
+    height: 200px;
+}
+
+.kp-stats-bandwidth {
+    color: var(--kp-text-dim);
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+}
+
+.kp-stats-bandwidth-val {
+    color: var(--kp-cyan);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* -- top IPs / UAs tables -------------------------------------------------- */
+
+.kp-stats-table-cell-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+}
+
+.kp-stats-table-cell-count {
+    text-align: right;
+    color: var(--kp-cyan);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+}
+
+.kp-stats-ua-cell {
+    font-size: 0.75rem;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* -- pod stats table ------------------------------------------------------- */
+
+.kp-stats-pod-role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+}
+
+.kp-stats-pod-cpu {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--kp-cyan);
+}
+
+.kp-stats-pod-cpu.is-hot { color: var(--kp-danger); }
+
+.kp-stats-pod-mem {
+    font-size: 0.8rem;
+}
+
+.kp-stats-pod-mem-limit {
+    color: var(--kp-text-dim);
+}
+
+/* -- mem % bar ------------------------------------------------------------- */
+
+.kp-stats-mem-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.kp-stats-mem-bar-track {
+    background: var(--kp-bg);
+    border-radius: 4px;
+    height: 6px;
+    width: 60px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.kp-stats-mem-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--kp-blue);
+}
+
+.kp-stats-mem-bar-fill.is-hot { background: var(--kp-danger); }
+
+.kp-stats-mem-pct {
+    font-size: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--kp-text-dim);
+}
+
+/* -- disk usage ------------------------------------------------------------ */
+
+.kp-stats-disk-val {
+    font-size: 1.4rem;
+}

@@ -13,6 +13,7 @@ import (
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/crons"
 	sftpfeature "podnest/internal/modules/features/sftp"
+	"podnest/internal/modules/features/stats"
 	"podnest/internal/modules/features/waf"
 	"podnest/internal/modules/platform/fail2ban"
 	"podnest/internal/modules/types/dotnet"
@@ -145,6 +146,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(sftpfeature.Module{
 		DB:      database,
 		Manager: sftpMgr,
+	})
+
+	// register the stats module
+	modules.RegisterFeature(stats.Module{
+		DB:      database,
+		AppPath: appPath,
+		Podman:  podman.New(podmanSock),
 	})
 
 	logger.Info("PodNest management UI starting on :%d", serverPort)
