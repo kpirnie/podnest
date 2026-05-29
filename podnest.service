@@ -6,8 +6,9 @@ Requires=podman.socket
 [Service]
 Restart=always
 RestartSec=5
+TimeoutStartSec=60
 ExecStartPre=-/usr/bin/podman rm -f podnest
-ExecStartPre=/bin/bash -c 'until [ -S /run/podman/podman.sock ]; do sleep 1; done'
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do [ -S /run/podman/podman.sock ] && exit 0; sleep 1; done; exit 1'
 ExecStart=/usr/bin/podman run \
     --name podnest \
     --hostname podnest \

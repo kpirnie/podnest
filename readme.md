@@ -181,19 +181,19 @@ Requires=podman.socket
 [Service]
 Restart=always
 RestartSec=5
+TimeoutStartSec=60
 ExecStartPre=-/usr/bin/podman rm -f podnest
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do [ -S /run/podman/podman.sock ] && exit 0; sleep 1; done; exit 1'
 ExecStart=/usr/bin/podman run \
     --name podnest \
     --hostname podnest \
-    -p 80:80 \
-    -p 443:443 \
-    -p 9000:8080 \
+    --network host \
     -v /run/podman/podman.sock:/run/podman/podman.sock:rw \
-    -v /your/persistent/path:/opt/podnest:z \
+    -v /home/sites:/opt/podnest:z \
     --tmpfs /tmp \
     -e TZ=America/New_York \
     -e LOG_LEVEL=INFO \
-    ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 8080 --socket /run/podman/podman.sock
+    ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 9000 --socket /run/podman/podman.sock
 ExecStop=/usr/bin/podman stop podnest
 
 [Install]
