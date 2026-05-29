@@ -36,6 +36,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		// limit referrer information sent to external sites
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
+		// only set HSTS when the connection is secure — avoids breaking plain HTTP dev environments
+		if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
+
 		// restrict browser features not used by the panel
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), usb=()")
 

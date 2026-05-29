@@ -95,15 +95,8 @@ func (s *Server) Start() error {
 		}
 	}
 
-	// ensure the global SFTP container is running
-	if err := s.sftp.Ensure(context.Background()); err != nil {
-		logger.Error("failed to ensure global SFTP container: %v", err)
-	}
-
-	// ensure the global Fail2Ban container is running
-	if err := s.fail2ban.Ensure(context.Background()); err != nil {
-		logger.Error("failed to ensure global Fail2Ban container: %v", err)
-	}
+	// start background goroutine that retries until both global containers are running
+	go s.ensureGlobalContainers()
 
 	// clean up orphaned pods from previous failed runs
 	if err := s.podman.PruneOrphanedPods(context.Background()); err != nil {
@@ -202,6 +195,44 @@ func (s *Server) Start() error {
 
 	logger.Debug("PodNest server is started")
 	return s.http.ListenAndServe()
+}
+
+// ensureGlobalContainers retries SFTP and Fail2Ban Ensure until both are running.
+// It backs off to a 30-second tick after the first attempt so startup failures
+// do not spin — it stops once both report running.
+func (s *Server) ensureGlobalContainers() {
+	ctx := context.Background()
+
+	attempt := func() (sftpOK, f2bOK bool) {
+		if err := s.sftp.Ensure(ctx); err != nil {
+			logger.Error("ensureGlobalContainers: SFTP: %v", err)
+		} else {
+			sftpOK = true
+		}
+		if err := s.fail2ban.Ensure(ctx); err != nil {
+			logger.Error("ensureGlobalContainers: fail2ban: %v", err)
+		} else {
+			f2bOK = true
+		}
+		return
+	}
+
+	// first attempt immediately
+	sftpOK, f2bOK := attempt()
+	if sftpOK && f2bOK {
+		return
+	}
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		sftpOK, f2bOK = attempt()
+		if sftpOK && f2bOK {
+			logger.Info("ensureGlobalContainers: both global containers confirmed running")
+			return
+		}
+	}
 }
 
 // shutdown gracefully drains connections

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"podnest/internal/db"
@@ -32,6 +33,12 @@ var (
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrForbidden          = errors.New("forbidden")
 )
+
+// isSecure reports whether the request arrived over a secure connection,
+// either directly via TLS or via a TLS-terminating proxy.
+func isSecure(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
 
 // GeneratePassword returns a cryptographically random SFTP password
 func GeneratePassword() (string, error) {
@@ -103,11 +110,17 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 		return nil, err
 	}
 
-	// setup the session record
+	csrfToken, err := models.GenerateSessionID()
+	if err != nil {
+		logger.Error("failed to generate CSRF token: %v", err)
+		return nil, err
+	}
+
 	session := &models.Session{
 		ID:        sessionID,
 		UID:       user.ID,
 		ExpiresAt: time.Now().UTC().Add(SessionDuration),
+		CSRFToken: csrfToken,
 	}
 
 	// Store the session in the database
@@ -123,29 +136,35 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 }
 
 // CreateSession builds a full session for a user (used after TOTP verification).
-func CreateSession(database *sql.DB, userID int64) (string, error) {
+func CreateSession(database *sql.DB, userID int64) (string, string, error) {
 	sessionID, err := models.GenerateSessionID()
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	csrfToken, err := models.GenerateSessionID()
+	if err != nil {
+		return "", "", err
 	}
 	session := &models.Session{
 		ID:        sessionID,
 		UID:       userID,
 		ExpiresAt: time.Now().UTC().Add(SessionDuration),
+		CSRFToken: csrfToken,
 	}
 	if err := db.CreateSession(database, session); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return sessionID, nil
+	return sessionID, csrfToken, nil
 }
 
 // SetTOTPPendingCookie writes the short-lived TOTP pending cookie.
-func SetTOTPPendingCookie(w http.ResponseWriter, token string) {
+func SetTOTPPendingCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     TOTPPendingCookieName,
 		Value:    token,
 		Path:     "/login",
 		HttpOnly: true,
+		Secure:   isSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(TOTPPendingDuration.Seconds()),
 	})
@@ -224,19 +243,16 @@ func SessionFromRequest(r *http.Request) string {
 }
 
 // SetSessionCookie writes the session cookie to the response
-func SetSessionCookie(w http.ResponseWriter, sessionID string) {
-
-	// Set the session cookie with appropriate flags
+func SetSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false, // Set to true in production with HTTPS
+		Secure:   isSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(SessionDuration.Seconds()),
 	})
-
 	logger.Debug("set the login session cookie")
 }
 

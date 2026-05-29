@@ -6,6 +6,9 @@ import { showCreateSiteModal } from '../modals/create-site.js';
 import { fmtBytes, loadChartJS } from './site-stats.js';
 import { siteCard } from './sites.js';
 
+// holds the active Chart instance so it can be destroyed before recreating
+let _dashChart = null;
+
 export async function viewDashboard(root) {
     const [sites, traffic, pod] = await Promise.all([
         api.get("/sites").catch(() => []),
@@ -66,9 +69,7 @@ export async function viewDashboard(root) {
                 </div>
             </div>
         </div>
-        `;
 
-    root.innerHTML += `
         <!-- global traffic -->
         <div class="kp-view-header uk-margin-top">
             <h2 class="kp-view-title" style="font-size:1.25rem">Traffic
@@ -182,28 +183,68 @@ export async function viewDashboard(root) {
         await loadChartJS();
         const canvas = document.getElementById('dash-traffic-chart');
         if (canvas && window.Chart) {
-            new window.Chart(canvas, {
+            if (_dashChart) {
+                _dashChart.destroy();
+                _dashChart = null;
+            }
+            _dashChart = new window.Chart(canvas, {
                 type: 'bar',
                 data: {
                     labels: traffic.hits_per_hour.map((b) => {
                         const d = new Date(b.hour);
                         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     }),
-                    datasets: [{
-                        label: 'Requests',
-                        data: traffic.hits_per_hour.map((b) => b.count),
-                        backgroundColor: 'rgba(43,142,255,0.5)',
-                        borderColor:     'rgba(43,142,255,0.9)',
-                        borderWidth: 1,
-                        borderRadius: 3,
-                    }],
+                    datasets: [
+                        {
+                            label: '2xx',
+                            data: traffic.hits_per_hour.map((b) => b['2xx']),
+                            backgroundColor: 'rgba(39,174,96,0.75)',
+                            borderColor:     'rgba(39,174,96,1)',
+                            borderWidth: 1,
+                            borderRadius: 3,
+                        },
+                        {
+                            label: '3xx',
+                            data: traffic.hits_per_hour.map((b) => b['3xx']),
+                            backgroundColor: 'rgba(43,142,255,0.75)',
+                            borderColor:     'rgba(43,142,255,1)',
+                            borderWidth: 1,
+                            borderRadius: 3,
+                        },
+                        {
+                            label: '4xx',
+                            data: traffic.hits_per_hour.map((b) => b['4xx']),
+                            backgroundColor: 'rgba(255,171,0,0.75)',
+                            borderColor:     'rgba(255,171,0,1)',
+                            borderWidth: 1,
+                            borderRadius: 3,
+                        },
+                        {
+                            label: '5xx',
+                            data: traffic.hits_per_hour.map((b) => b['5xx']),
+                            backgroundColor: 'rgba(235,59,90,0.75)',
+                            borderColor:     'rgba(235,59,90,1)',
+                            borderWidth: 1,
+                            borderRadius: 3,
+                        },
+                    ],
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: false },
+                        legend: {
+                            display: true,
+                            labels: { color: '#6b8cae', font: { size: 11 } },
+                            onHover: (event) => {
+                                event.native.target.style.cursor = 'pointer';
+                            },
+                            onLeave: (event) => {
+                                event.native.target.style.cursor = 'default';
+                            },
+                        },
                         tooltip: {
+                            mode: 'index',
                             backgroundColor: '#0c1530',
                             borderColor:     '#1a2a4a',
                             borderWidth: 1,
@@ -213,10 +254,12 @@ export async function viewDashboard(root) {
                     },
                     scales: {
                         x: {
+                            stacked: true,
                             ticks: { color: '#6b8cae', font: { size: 10 }, maxRotation: 45 },
                             grid:  { color: 'rgba(26,42,74,0.6)' },
                         },
                         y: {
+                            stacked: true,
                             ticks: { color: '#6b8cae', font: { size: 10 } },
                             grid:  { color: 'rgba(26,42,74,0.6)' },
                             beginAtZero: true,

@@ -58,7 +58,7 @@
                 {{end}}
                 <div id="kp-view"></div>
                 <footer class="kp-footer">
-                    <span>Copyright &copy; <script>document.write(new Date().getFullYear())</script>, Kevin Pirnie. All Rights Reserved.</span>
+                    <span>Copyright &copy; {{currentYear}}, Kevin Pirnie. All Rights Reserved.</span>
                     <br>
                     <span>
                         <a href="#">Terms of Use</a> | 
@@ -95,7 +95,8 @@
                     lname: {{.User.LName | js}},
                     role:  {{.User.Role}},
                 },
-                roles: { manager: 50, admin: 99 }
+                roles: { manager: 50, admin: 99 },
+                csrf: {{.CSRFToken | js}},
             };
         </script>
 

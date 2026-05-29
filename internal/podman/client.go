@@ -252,6 +252,20 @@ func (c *Client) ContainerExists(ctx context.Context, name string) (bool, error)
 	return resp.StatusCode == 204, nil
 }
 
+// ContainerIsRunning reports whether the named container exists and is in the running state.
+func (c *Client) ContainerIsRunning(ctx context.Context, name string) (bool, error) {
+	var info struct {
+		State struct {
+			Status string `json:"Status"`
+		} `json:"State"`
+	}
+	if err := c.GetJSON(ctx, "/v4.0.0/libpod/containers/"+name+"/json", &info); err != nil {
+		// treat any error (including 404) as not running
+		return false, nil
+	}
+	return info.State.Status == "running", nil
+}
+
 // StreamPost performs a POST request and returns the raw response body for
 // streaming endpoints such as exec start — caller is responsible for closing.
 func (c *Client) StreamPost(ctx context.Context, path string, body any) (io.ReadCloser, error) {

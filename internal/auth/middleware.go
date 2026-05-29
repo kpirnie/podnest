@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 )
@@ -14,6 +15,7 @@ type contextKey string
 
 // ctxUser is the context key for the authenticated user
 const ctxUser contextKey = "user"
+const ctxCSRF contextKey = "csrf"
 
 // RequireAuth rejects unauthenticated requests with a redirect to /login
 func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
@@ -39,11 +41,35 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 
 		logger.Debug("authenticated user: %v", user.UName)
 
-		// If a valid user is found, add it to the request context and call the next handler.
+		// validate CSRF token on all state-changing requests
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			session, _ := db.GetSession(database, sessionID)
+			if session == nil || r.Header.Get("X-CSRF-Token") != session.CSRFToken {
+				logger.Error("CSRF validation failed for user %v", user.UName)
+				apiForbidden(w)
+				return
+			}
+		}
+
+		session, _ := db.GetSession(database, sessionID)
+		csrfToken := ""
+		if session != nil {
+			csrfToken = session.CSRFToken
+		}
+
 		next.ServeHTTP(w, r.WithContext(
-			context.WithValue(r.Context(), ctxUser, user),
+			context.WithValue(
+				context.WithValue(r.Context(), ctxUser, user),
+				ctxCSRF, csrfToken,
+			),
 		))
 	})
+}
+
+// CSRFTokenFromContext retrieves the CSRF token from the request context.
+func CSRFTokenFromContext(ctx context.Context) string {
+	t, _ := ctx.Value(ctxCSRF).(string)
+	return t
 }
 
 // RequireAdmin rejects non-admin users with 403

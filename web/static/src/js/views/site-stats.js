@@ -2,6 +2,9 @@
 
 import { api } from '../api.js';
 
+// holds the active Chart instance so it can be destroyed before recreating
+let _siteChart = null;
+
 // -- helpers -----------------------------------------------------------------
 
 // fmtBytes formats a raw byte count into a human-readable string
@@ -171,31 +174,70 @@ async function loadStatsTraffic(siteId) {
     // hits per hour chart
     const canvas = document.getElementById('stats-chart');
     if (canvas && window.Chart) {
-        const labels = (data.hits_per_hour ?? []).map((b) => {
+        const labels  = (data.hits_per_hour ?? []).map((b) => {
             const d = new Date(b.hour);
             return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         });
-        const counts = (data.hits_per_hour ?? []).map((b) => b.count);
 
-        new window.Chart(canvas, {
+        if (_siteChart) {
+            _siteChart.destroy();
+            _siteChart = null;
+        }
+        _siteChart = new window.Chart(canvas, {
             type: 'bar',
             data: {
                 labels,
-                datasets: [{
-                    label: 'Requests',
-                    data: counts,
-                    backgroundColor: 'rgba(43,142,255,0.5)',
-                    borderColor:     'rgba(43,142,255,0.9)',
-                    borderWidth: 1,
-                    borderRadius: 3,
-                }],
+                datasets: [
+                    {
+                        label: '2xx',
+                        data: (data.hits_per_hour ?? []).map((b) => b['2xx']),
+                        backgroundColor: 'rgba(39,174,96,0.75)',
+                        borderColor:     'rgba(39,174,96,1)',
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    },
+                    {
+                        label: '3xx',
+                        data: (data.hits_per_hour ?? []).map((b) => b['3xx']),
+                        backgroundColor: 'rgba(43,142,255,0.75)',
+                        borderColor:     'rgba(43,142,255,1)',
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    },
+                    {
+                        label: '4xx',
+                        data: (data.hits_per_hour ?? []).map((b) => b['4xx']),
+                        backgroundColor: 'rgba(255,171,0,0.75)',
+                        borderColor:     'rgba(255,171,0,1)',
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    },
+                    {
+                        label: '5xx',
+                        data: (data.hits_per_hour ?? []).map((b) => b['5xx']),
+                        backgroundColor: 'rgba(235,59,90,0.75)',
+                        borderColor:     'rgba(235,59,90,1)',
+                        borderWidth: 1,
+                        borderRadius: 3,
+                    },
+                ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { display: false },
+                    legend: {
+                        display: true,
+                        labels: { color: '#6b8cae', font: { size: 11 } },
+                        onHover: (event) => {
+                            event.native.target.style.cursor = 'pointer';
+                        },
+                        onLeave: (event) => {
+                            event.native.target.style.cursor = 'default';
+                        },
+                    },
                     tooltip: {
+                        mode: 'index',
                         backgroundColor: '#0c1530',
                         borderColor:     '#1a2a4a',
                         borderWidth: 1,
@@ -205,10 +247,12 @@ async function loadStatsTraffic(siteId) {
                 },
                 scales: {
                     x: {
+                        stacked: true,
                         ticks: { color: '#6b8cae', font: { size: 10 }, maxRotation: 45 },
                         grid:  { color: 'rgba(26,42,74,0.6)' },
                     },
                     y: {
+                        stacked: true,
                         ticks: { color: '#6b8cae', font: { size: 10 } },
                         grid:  { color: 'rgba(26,42,74,0.6)' },
                         beginAtZero: true,

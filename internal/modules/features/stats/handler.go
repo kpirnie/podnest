@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -35,10 +36,13 @@ type TrafficStats struct {
 	TopSites       []CountedEntry  `json:"top_sites,omitempty"` // global only
 }
 
-// HourBucket is a single hourly hit count for the chart.
+// HourBucket is a single hourly hit count broken down by status category.
 type HourBucket struct {
-	Hour  string `json:"hour"`
-	Count int    `json:"count"`
+	Hour string `json:"hour"`
+	S2xx int    `json:"2xx"`
+	S3xx int    `json:"3xx"`
+	S4xx int    `json:"4xx"`
+	S5xx int    `json:"5xx"`
 }
 
 // StatusBreakdown holds response code category counts.
@@ -108,7 +112,17 @@ type Handler struct {
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  512,
 	WriteBufferSize: 4096,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return u.Host == r.Host
+	},
 }
 
 // -- per-site routes ---------------------------------------------------------
@@ -340,7 +354,8 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 		domainSet[d] = struct{}{}
 	}
 
-	hourCounts := make(map[string]int)
+	type hourData struct{ s2xx, s3xx, s4xx, s5xx int }
+	hourCounts := make(map[string]*hourData)
 	ipCounts := make(map[string]int)
 	uaCounts := make(map[string]int)
 	siteCounts := make(map[string]int) // global only
@@ -397,6 +412,11 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 			ua = strings.Trim(raw, "\"")
 		}
 
+		// skip anything outside the 24h window
+		if !ts.After(cutoff) {
+			continue
+		}
+
 		// status code buckets
 		switch {
 		case statusCode >= 200 && statusCode < 300:
@@ -418,10 +438,20 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 			siteCounts[host]++
 		}
 
-		// hits per hour — last 24h only
-		if ts.After(cutoff) {
-			hourKey := ts.UTC().Truncate(time.Hour).Format(time.RFC3339)
-			hourCounts[hourKey]++
+		// hits per hour bucketing
+		hourKey := ts.UTC().Truncate(time.Hour).Format(time.RFC3339)
+		if hourCounts[hourKey] == nil {
+			hourCounts[hourKey] = &hourData{}
+		}
+		switch {
+		case statusCode >= 200 && statusCode < 300:
+			hourCounts[hourKey].s2xx++
+		case statusCode >= 300 && statusCode < 400:
+			hourCounts[hourKey].s3xx++
+		case statusCode >= 400 && statusCode < 500:
+			hourCounts[hourKey].s4xx++
+		case statusCode >= 500:
+			hourCounts[hourKey].s5xx++
 		}
 	}
 
@@ -434,9 +464,16 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 	for i := 23; i >= 0; i-- {
 		slot := now.Add(-time.Duration(i) * time.Hour).Truncate(time.Hour)
 		key := slot.UTC().Format(time.RFC3339)
+		d := hourCounts[key]
+		if d == nil {
+			d = &hourData{}
+		}
 		stats.HitsPerHour[23-i] = HourBucket{
-			Hour:  key,
-			Count: hourCounts[key],
+			Hour: key,
+			S2xx: d.s2xx,
+			S3xx: d.s3xx,
+			S4xx: d.s4xx,
+			S5xx: d.s5xx,
 		}
 	}
 

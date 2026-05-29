@@ -13,9 +13,9 @@ func CreateSession(db *sql.DB, s *models.Session) error {
 
 	// create a new session record with the provided ID, user ID, and expiry time
 	_, err := db.Exec(`
-		INSERT INTO kppn_sessions (id, uid, expires_at)
-		VALUES (?, ?, ?)`,
-		s.ID, s.UID, s.ExpiresAt.UTC(),
+    INSERT INTO kppn_sessions (id, uid, expires_at, csrf_token)
+    VALUES (?, ?, ?, ?)`,
+		s.ID, s.UID, s.ExpiresAt.UTC(), s.CSRFToken,
 	)
 	if err != nil {
 		logger.Error("Failed to create session: %v", err)
@@ -34,10 +34,10 @@ func GetSession(db *sql.DB, id string) (*models.Session, error) {
 
 	// query the database for a session matching the provided ID that has not yet expired
 	err := db.QueryRow(`
-		SELECT id, uid, expires_at
+		SELECT id, uid, expires_at, csrf_token
 		FROM kppn_sessions
 		WHERE id = ? AND expires_at > datetime('now')`, id,
-	).Scan(&s.ID, &s.UID, &s.ExpiresAt)
+	).Scan(&s.ID, &s.UID, &s.ExpiresAt, &s.CSRFToken)
 
 	// handle the case where no session was found or it has expired
 	if err == sql.ErrNoRows {

@@ -5,6 +5,9 @@ export const api = {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeout);
         const opts = { method, headers: { "Content-Type": "application/json" }, signal: controller.signal };
+        if (method !== "GET" && method !== "HEAD") {
+            opts.headers["X-CSRF-Token"] = window.KP?.csrf ?? "";
+        }
         if (body !== undefined) opts.body = JSON.stringify(body);
         try {
             const res = await fetch("/api" + path, opts);

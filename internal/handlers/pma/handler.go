@@ -109,7 +109,7 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 			Value:    tok,
 			Path:     "/pma/" + idStr,
 			HttpOnly: true,
-			Secure:   false,
+			Secure:   isSecureReq(r),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   int(pmaCookieTTL.Seconds()),
 		})
@@ -184,4 +184,9 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// isSecureReq reports whether the request arrived over TLS directly or via proxy.
+func isSecureReq(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }

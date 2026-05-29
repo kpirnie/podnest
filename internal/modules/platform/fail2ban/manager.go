@@ -38,17 +38,32 @@ func (m *Manager) SetHostAppPath(p string) {
 	}
 }
 
-// Ensure makes sure the global Fail2Ban container exists and is running
+// Ensure makes sure the global Fail2Ban container exists and is running.
+// If the container exists but is stopped or crashed, it attempts to start it.
 func (m *Manager) Ensure(ctx context.Context) error {
 
-	// check if the container already exists before attempting to create it
+	// if already running nothing to do
+	running, err := m.client.ContainerIsRunning(ctx, GlobalContainerName)
+	if err != nil {
+		return err
+	}
+	if running {
+		logger.Debug("fail2ban: global container already running")
+		return nil
+	}
+
+	// container exists but is not running — try to start it before recreating
 	exists, err := m.client.ContainerExists(ctx, GlobalContainerName)
 	if err != nil {
-		logger.Error("fail2ban: issue checking if container exists: %v", err)
 		return err
 	}
 	if exists {
-		logger.Debug("fail2ban: global container already running")
+		logger.Debug("fail2ban: container stopped or crashed, attempting restart")
+		if err := m.client.StartContainer(ctx, GlobalContainerName); err != nil {
+			logger.Error("fail2ban: restart failed: %v", err)
+			return err
+		}
+		logger.Info("fail2ban: global container restarted")
 		return nil
 	}
 
@@ -84,6 +99,8 @@ func (m *Manager) create(ctx context.Context) error {
 			{Type: "bind", Source: m.hostAppPath + "/sftp/logs", Destination: "/var/log/sftp", Options: []string{"ro", "z"}},
 			// persistent fail2ban database so bans survive container restarts
 			{Type: "bind", Source: m.hostAppPath + "/fail2ban", Destination: "/var/run/fail2ban", Options: []string{"rw", "z"}},
+			// sftp messages log — watched by alpine-ssh jail for brute-force attempts
+			{Type: "bind", Source: m.hostAppPath + "/sftp/logs/messages", Destination: "/var/log/messages", Options: []string{"ro", "z"}},
 		},
 		// NET_ADMIN and NET_RAW are required to manage iptables rules
 		CapDrop: []string{"ALL"},

@@ -17,6 +17,7 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"User":            user,
+		"CSRFToken":       auth.CSRFTokenFromContext(r.Context()),
 		"AppVersion":      version.AppVersion,
 		"UpdateAvailable": false,
 		"LatestVersion":   "",
@@ -110,7 +111,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			auth.SetTOTPPendingCookie(w, pendingToken)
+			auth.SetTOTPPendingCookie(w, r, pendingToken)
 			http.Redirect(w, r, "/login/totp", http.StatusSeeOther)
 			return
 		}
@@ -118,7 +119,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// set the session cookie and redirect to the dashboard on success
 		logger.Debug("user '%s' logged in successfully", uname)
 		auth.RecordSuccessfulLogin(r)
-		auth.SetSessionCookie(w, result.SessionID)
+		auth.SetSessionCookie(w, r, result.SessionID)
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 
 	default:
@@ -194,7 +195,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		_ = db.DeleteTOTPPending(s.cfg.DB, pendingToken)
 		auth.ClearTOTPPendingCookie(w)
 
-		sessionID, err := auth.CreateSession(s.cfg.DB, user.ID)
+		sessionID, _, err := auth.CreateSession(s.cfg.DB, user.ID)
 		if err != nil {
 			logger.Error("failed to create session after TOTP for user %d: %v", user.ID, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -202,7 +203,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		logger.Info("user '%s' completed TOTP login", user.UName)
-		auth.SetSessionCookie(w, sessionID)
+		auth.SetSessionCookie(w, r, sessionID)
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 
 	default:

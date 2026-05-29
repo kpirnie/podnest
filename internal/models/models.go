@@ -145,6 +145,7 @@ type Session struct {
 	ID        string
 	UID       int64
 	ExpiresAt time.Time
+	CSRFToken string
 }
 
 // site data structure

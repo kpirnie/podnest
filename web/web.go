@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io/fs"
 	"podnest/internal/logger"
+	"time"
 )
 
 //go:embed static templates
@@ -28,7 +29,10 @@ func init() {
 	}
 
 	// try to parse thhtml templates
-	Templates, err = template.ParseFS(assets, "templates/*.html")
+	Templates, err = template.New("").Funcs(template.FuncMap{
+		// currentYear renders the current year server-side — avoids inline JS in templates
+		"currentYear": func() int { return time.Now().Year() },
+	}).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		logger.Error("failed to parse templates: %v", err)
 		panic(fmt.Sprintf("failed to parse templates: %v", err))

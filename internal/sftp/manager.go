@@ -16,14 +16,6 @@ const (
 	GlobalContainerName = "podnest-sftp-global"
 	GlobalPort          = 2222
 	sftpUIDBase         = 3000
-
-	// chrootConf is the sshd config that locks users into their site directory
-	chrootConf = `Match Group sftpusers
-    ChrootDirectory /home/%u
-    ForceCommand internal-sftp
-    X11Forwarding no
-    AllowTcpForwarding no
-`
 )
 
 // Manager manages the global SFTP container
@@ -55,21 +47,35 @@ func (m *Manager) SetHostAppPath(p string) {
 // UIDForSite returns a deterministic UID for a site based on its ID
 func UIDForSite(siteID int64) int { return sftpUIDBase + int(siteID) }
 
-// Ensure makes sure the global SFTP container exists and is running
+// Ensure makes sure the global SFTP container exists and is running.
+// If the container exists but is stopped or crashed, it attempts to start it.
 func (m *Manager) Ensure(ctx context.Context) error {
 
-	// check if the container already exists before attempting to create it
-	exists, err := m.client.ContainerExists(ctx, GlobalContainerName)
+	// if already running nothing to do
+	running, err := m.client.ContainerIsRunning(ctx, GlobalContainerName)
 	if err != nil {
-		logger.Error("issue checking if the SFTP container exists: %v", err)
 		return err
 	}
-	if exists {
+	if running {
 		logger.Debug("global SFTP container already running")
 		return nil
 	}
 
-	// container doesn't exist yet — create it
+	// container exists but is not running — try to start it before recreating
+	exists, err := m.client.ContainerExists(ctx, GlobalContainerName)
+	if err != nil {
+		return err
+	}
+	if exists {
+		logger.Debug("SFTP: container stopped or crashed, attempting restart")
+		if err := m.client.StartContainer(ctx, GlobalContainerName); err != nil {
+			logger.Error("SFTP: restart failed: %v", err)
+			return err
+		}
+		logger.Info("global SFTP container restarted")
+		return nil
+	}
+
 	logger.Debug("SFTP container does not exist, creating it...")
 	return m.create(ctx)
 }
@@ -177,16 +183,6 @@ func (m *Manager) create(ctx context.Context) error {
 			return err
 		}
 		logger.Debug("ensured SFTP directory: %s", d)
-	}
-
-	// write the chroot sshd config if it does not already exist
-	confPath := base + "/etc-ssh/sshd_config.d/chroot.conf"
-	if _, err := os.Stat(confPath); os.IsNotExist(err) {
-		if err := os.WriteFile(confPath, []byte(chrootConf), 0644); err != nil {
-			logger.Error("failed to write chroot.conf: %v", err)
-			return err
-		}
-		logger.Debug("wrote chroot.conf to %s", confPath)
 	}
 
 	// create an empty users.conf with a placeholder user so atmoz/sftp

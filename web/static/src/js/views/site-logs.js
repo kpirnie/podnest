@@ -2,6 +2,8 @@
 
 import { router } from '../router.js';
 
+const MAX_LOG_LINES = 2000;
+
 export function renderLogsTab(siteId, siteType) {
     // reverse proxy sites have no containers — only the WAF log is available
     const isRP = siteType === 6;
@@ -73,14 +75,20 @@ export function wireLogsTab(root, siteId) {
         text.split("\n").forEach((line) => {
             if (!line) return;
             const div = document.createElement("div");
-            div.className = line.match(/WAF BLOCK/i) ? "kp-log-line-err"
-                : line.match(/WAF DETECT/i) ? "kp-log-line-warn"
-                : line.match(/error|crit|emerg/i) ? "kp-log-line-err"
-                : line.match(/warn/i) ? "kp-log-line-warn"
-                : line.match(/info|notice/i) ? "kp-log-line-info" : "";
+            div.className = line.match(/WAF BLOCK/i)  ? "kp-log-line-err"
+                : line.match(/WAF DETECT/i)           ? "kp-log-line-warn"
+                : line.match(/error|crit|emerg/i)     ? "kp-log-line-err"
+                : line.match(/warn/i)                 ? "kp-log-line-warn"
+                : line.match(/info|notice/i)          ? "kp-log-line-info" : "";
             div.textContent = line;
             output.appendChild(div);
         });
+
+        // trim oldest lines to keep the DOM bounded
+        while (output.childElementCount > MAX_LOG_LINES) {
+            output.removeChild(output.firstChild);
+        }
+
         if (autoScroll.checked) output.scrollTop = output.scrollHeight;
     }
 
