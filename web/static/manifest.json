@@ -11,6 +11,18 @@
             "src": "https://cdn.kcp.im/logos/podnest.svg",
             "sizes": "any",
             "type": "image/svg+xml"
+        },
+        {
+            "src": "https://cdn.kcp.im/logos/podnest.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "https://cdn.kcp.im/logos/podnest.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
         }
     ]
 }

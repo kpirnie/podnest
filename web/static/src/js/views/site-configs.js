@@ -11,7 +11,10 @@ export function renderConfigTab(siteId, type, cfg) {
     return `
         <div>
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                <span class="kp-muted uk-text-small">${entries.length} configuration keys</span>
+                <div class="uk-flex uk-flex-middle" style="gap:10px">
+                    <h4 class="kp-view-title uk-margin-remove">${configLabels[type]}</h4>
+                    <span class="kp-muted uk-text-small">${entries.length} keys</span>
+                </div>
                 <div class="uk-flex" style="gap:8px">
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="${type}" uk-tooltip="Add a Key">
                         <span uk-icon="plus"></span>
@@ -44,7 +47,10 @@ export function renderVarnishTab(siteId, cfg) {
     return `
         <div>
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom" uk-tooltip="Add a Key">
-                <span class="kp-muted uk-text-small">${entries.length} configuration keys</span>
+                <div class="uk-flex uk-flex-middle" style="gap:10px">
+                    <h4 class="kp-view-title uk-margin-remove">Varnish</h4>
+                    <span class="kp-muted uk-text-small">${entries.length} keys</span>
+                </div>
                 <div class="uk-flex" style="gap:8px">
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="5">
                         <span uk-icon="plus"></span>
