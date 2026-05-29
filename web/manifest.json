@@ -1,0 +1,16 @@
+{
+    "name": "PodNest",
+    "short_name": "PodNest",
+    "description": "Secure. Manage. Deploy.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#070e20",
+    "theme_color": "#070e20",
+    "icons": [
+        {
+            "src": "https://cdn.kcp.im/logos/podnest.svg",
+            "sizes": "any",
+            "type": "image/svg+xml"
+        }
+    ]
+}

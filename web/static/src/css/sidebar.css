@@ -81,7 +81,7 @@
     letter-spacing: 0.2em;
     text-transform: uppercase;
     color: var(--kp-text-dim);
-    padding: 16px 8px 6px;
+    padding: 20px 8px 8px;
     font-family: 'JetBrains Mono', monospace;
 }
 
@@ -89,7 +89,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 14px;
+    padding: 14px 18px;
     border-radius: var(--kp-radius);
     color: var(--kp-text-dim) !important;
     font-size: 0.9rem;
@@ -97,9 +97,9 @@
     font-family: 'Space Grotesk', sans-serif;
     text-decoration: none;
     position: relative;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
     transition: background var(--kp-transition), color var(--kp-transition);
-    min-height: 48px;
+    min-height: 54px;
 }
 .kp-nav-link:hover {
     background: rgba(43,142,255,0.08);

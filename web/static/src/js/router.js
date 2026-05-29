@@ -22,6 +22,11 @@ export const router = {
             el.classList.toggle("kp-active", el.dataset.view === view);
         });
 
+        // sync bottom nav active state
+        document.querySelectorAll(".kp-bn-item[data-view]").forEach((el) => {
+            el.classList.toggle("kp-active", el.dataset.view === view);
+        });
+
         const fn = this.routes[view];
         if (!fn) return;
         const el = document.getElementById("kp-view");

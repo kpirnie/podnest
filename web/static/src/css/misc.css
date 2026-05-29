@@ -135,7 +135,7 @@
 .waf-plugin-pill {
     display: inline-block;
     padding: 4px 12px;
-    border-radius: 20px;
+    border-radius: 10px;
     border: 1px solid var(--kp-border);
     color: var(--kp-muted);
     font-size: 0.75rem;
@@ -156,56 +156,6 @@
     background: var(--kp-primary);
     border-color: var(--kp-primary);
     color: #fff;
-}
-
-/* -- mobile tab dropdown -------------------------------------------------- */
-
-/* the select wrapper only appears on small screens */
-.kp-tab-select-wrap {
-    display: none;
-    position: relative;
-    width: 100%;
-    margin-bottom: 20px;
-}
-
-/* caret icon pinned to the right — non-interactive */
-.kp-tab-select-wrap [uk-icon] {
-    position: absolute;
-    right: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--kp-text-dim);
-    pointer-events: none;
-}
-
-/* the select itself: transparent, full-width, left-aligned text */
-.kp-tab-select {
-    appearance: none;
-    -webkit-appearance: none;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--kp-text);
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 0.85rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    width: 100%;
-    padding: 6px 32px 6px 0;
-    cursor: pointer;
-}
-
-/* keep the dropdown list readable when it opens */
-.kp-tab-select option {
-    background: var(--kp-bg-card);
-    color: var(--kp-text);
-}
-
-@media (max-width: 639px) {
-    .kp-tab-select-wrap { display: block; }
-    /* hide the real tab bar but keep it in the DOM for UIkit to manage state */
-    .kp-tab-bar { display: none !important; }
 }
 
 /* -- cron run detail ------------------------------------------------------- */

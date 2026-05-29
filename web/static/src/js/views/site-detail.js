@@ -69,44 +69,69 @@ function renderWAFOverride() {
         </div>`;
 }
 
-// initMobileTabSelect builds and syncs a mobile-friendly tab selector
-function initMobileTabSelect(root) {
-    const tabBar  = root.querySelector(".kp-tab-bar");
-    if (!tabBar) return;
+// initPillTabs wires the 4-pill nav to the uk-switcher and manages the manage dropdown
+function initPillTabs(root) {
+    const pills    = root.querySelector("#kp-site-pills");
+    const switcher = root.querySelector("#kp-site-switcher");
+    const managePill = root.querySelector("#kp-manage-pill");
+    const dropdown   = root.querySelector("#kp-manage-dropdown");
+    if (!pills || !switcher) return;
 
-    const anchors = Array.from(tabBar.querySelectorAll(":scope > li > a"));
-    if (!anchors.length) return;
+    // show the nth switcher panel and update pill active states
+    function showPanel(idx, fromDropdown = false) {
+        UIkit.switcher(switcher).show(idx);
 
-    // build wrapper + select
-    const wrap = document.createElement("div");
-    wrap.className = "kp-tab-select-wrap";
-    wrap.innerHTML = `<span uk-icon="chevron-down"></span>`;
+        // clear all direct-pill active classes
+        pills.querySelectorAll(":scope > li[data-pill]").forEach(li => li.classList.remove("kp-pill-active"));
 
-    const sel = document.createElement("select");
-    sel.className = "kp-tab-select";
-    anchors.forEach((a, i) => {
-        const opt = document.createElement("option");
-        opt.value = i;
-        opt.textContent = a.textContent.trim();
-        sel.appendChild(opt);
+        if (fromDropdown) {
+            // highlight the manage pill when a dropdown item is active
+            managePill?.classList.add("kp-pill-active");
+            // mark the active dropdown link
+            dropdown?.querySelectorAll("a[data-switcher]").forEach(a => {
+                a.classList.toggle("kp-dd-active", parseInt(a.dataset.switcher, 10) === idx);
+            });
+        } else {
+            managePill?.classList.remove("kp-pill-active");
+            dropdown?.querySelectorAll("a[data-switcher]").forEach(a => a.classList.remove("kp-dd-active"));
+        }
+    }
+
+    // direct pill clicks (Overview / Stats / Logs)
+    pills.querySelectorAll(":scope > li[data-pill] > a").forEach(a => {
+        a.addEventListener("click", (e) => {
+            e.preventDefault();
+            const idx = parseInt(a.closest("li").dataset.pill, 10);
+            showPanel(idx, false);
+        });
     });
-    wrap.insertBefore(sel, wrap.firstChild);
 
-    // insert before the tab bar
-    tabBar.parentNode.insertBefore(wrap, tabBar);
-
-    // select → UIkit tab
-    sel.addEventListener("change", () => {
-        UIkit.tab(tabBar).show(parseInt(sel.value, 10));
+    // manage pill toggle
+    const manageBtn = managePill?.querySelector(".kp-pill-dropdown-btn");
+    manageBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        dropdown.hidden = !dropdown.hidden;
+        managePill.classList.toggle("kp-pill-active", !dropdown.hidden);
     });
 
-    // UIkit tab → select
-    UIkit.util.on(tabBar, "shown", (e) => {
-        const li    = e.target;
-        const items = Array.from(tabBar.querySelectorAll(":scope > li"));
-        const idx   = items.indexOf(li);
-        if (idx !== -1) sel.value = idx;
+    // dropdown item clicks
+    dropdown?.querySelectorAll("a[data-switcher]").forEach(a => {
+        a.addEventListener("click", (e) => {
+            e.preventDefault();
+            dropdown.hidden = true;
+            showPanel(parseInt(a.dataset.switcher, 10), true);
+        });
     });
+
+    // close dropdown on outside click
+    document.addEventListener("click", (e) => {
+        if (dropdown && !managePill.contains(e.target)) {
+            dropdown.hidden = true;
+        }
+    }, { capture: true });
+
+    // initialise switcher to panel 0 on load
+    UIkit.switcher(switcher).show(0);
 }
 
 // loadWAFTab fetches the current WAF override for the site and populates the form
@@ -332,14 +357,25 @@ export async function viewSiteDetail(root, { id }) {
         </div>
  
         ${isRP ? `
-        <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
-            <li><a href="#">Routes</a></li>
-            <li><a href="#">Stats</a></li>
-            <li><a href="#">Logs</a></li>
-            <li><a href="#">Security</a></li>
-            <li><a href="#">WAF</a></li>
+        <!-- tab pills (reverse proxy) -->
+        <ul class="kp-tab-pills" id="kp-site-pills">
+            <li class="kp-pill-active" data-pill="0"><a href="#">Routes</a></li>
+            <li data-pill="1"><a href="#">Stats</a></li>
+            <li data-pill="2"><a href="#">Logs</a></li>
+            <li id="kp-manage-pill">
+                <a href="javascript:void(0);" class="kp-pill-dropdown-btn">
+                    Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
+                </a>
+                <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
+                    <div class="kp-pill-dropdown-section">Security</div>
+                    <a href="#" data-switcher="3"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
+                    <a href="#" data-switcher="4"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                </div>
+            </li>
         </ul>
-        <ul class="uk-switcher">
+
+        <!-- switcher panels -->
+        <ul class="uk-switcher" id="kp-site-switcher">
             <li>${renderRoutesTab()}</li>
             <li>${renderStatsTab(id, site.SiteType)}</li>
             <li>${renderLogsTab(id, site.SiteType)}</li>
@@ -347,23 +383,37 @@ export async function viewSiteDetail(root, { id }) {
             <li id="waf-tab-panel"></li>
         </ul>
         ` : `
-        <ul uk-tab class="uk-margin-medium-bottom kp-tab-bar">
-            <li><a href="#">Overview</a></li>
-            <li><a href="#">Stats</a></li>
-            <li><a href="#">Nginx</a></li>
-            ${showPHP ? `<li><a href="#">PHP</a></li>` : ""}
-            <li><a href="#">MariaDB</a></li>
-            <li><a href="#">Redis</a></li>
-            <li><a href="#">Varnish</a></li>
-            <li><a href="#">Logs</a></li>
-            <li><a href="#">Security</a></li>
-            <li><a href="#">WAF</a></li>
-            ${site.SiteType === 1 ? `<li><a href="#">WP-CLI</a></li>` : ""}
-            <li><a href="#">Backups</a></li>
-            ${showCrons ? `<li><a href="#">Crons</a></li>` : ""}
+        <!-- tab pills -->
+        <ul class="kp-tab-pills" id="kp-site-pills">
+            <li class="kp-pill-active" data-pill="0"><a href="#">Overview</a></li>
+            <li data-pill="1"><a href="#">Stats</a></li>
+            <li data-pill="${showPHP ? 7 : 6}"><a href="#">Logs</a></li>
+            <li id="kp-manage-pill">
+                <a href="javascript:void(0);" class="kp-pill-dropdown-btn">
+                    Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
+                </a>
+                <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
+                    <div class="kp-pill-dropdown-section">Config</div>
+                    <a href="#" data-switcher="2"><span uk-icon="icon: settings; ratio: 0.85"></span> Nginx</a>
+                    ${showPHP ? `<a href="#" data-switcher="3"><span uk-icon="icon: code; ratio: 0.85"></span> PHP</a>` : ""}
+                    <a href="#" data-switcher="${showPHP ? 4 : 3}"><span uk-icon="icon: database; ratio: 0.85"></span> MariaDB</a>
+                    <a href="#" data-switcher="${showPHP ? 5 : 4}"><span uk-icon="icon: server; ratio: 0.85"></span> Redis</a>
+                    <a href="#" data-switcher="${showPHP ? 6 : 5}"><span uk-icon="icon: world; ratio: 0.85"></span> Varnish</a>
+                    <hr>
+                    <div class="kp-pill-dropdown-section">Security</div>
+                    <a href="#" data-switcher="${showPHP ? 8 : 7}"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
+                    <a href="#" data-switcher="${showPHP ? 9 : 8}"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                    <hr>
+                    <div class="kp-pill-dropdown-section">Tools</div>
+                    ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 10 : 9}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
+                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 11 : 10) : (showPHP ? 10 : 9)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
+                    ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
+                </div>
+            </li>
         </ul>
 
-        <ul class="uk-switcher">
+        <!-- switcher panels (driven by pills above) -->
+        <ul class="uk-switcher" id="kp-site-switcher">
             <li>${renderOverviewTab(site, domains ?? [], sftp, site.ParentID ?? 0, allSites.find(s => s.ID === site.ParentID)?.Name ?? null)}</li>
             <li>${renderStatsTab(id, site.SiteType)}</li>
             <li>${renderConfigTab(id, 1, configs["1"])}</li>
@@ -465,7 +515,7 @@ export async function viewSiteDetail(root, { id }) {
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
-    initMobileTabSelect(root);
+    initPillTabs(root);
     // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);
 }

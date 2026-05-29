@@ -1,0 +1,193 @@
+/* ── site detail tab pills ─────────────────────────────────────────────────── */
+#kp-manage-pill {
+    position: relative;
+}
+
+#kp-manage-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 1000;
+}
+
+.kp-tab-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 24px;
+    padding: 0;
+    list-style: none;
+}
+
+.kp-tab-pills > li > a,
+.kp-tab-pills > li > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 11px 20px;
+    border-radius: 10px;
+    border: 1px solid var(--kp-border);
+    background: rgba(43,142,255,0.04);
+    color: var(--kp-text-dim);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background var(--kp-transition), color var(--kp-transition), border-color var(--kp-transition);
+    white-space: nowrap;
+}
+
+.kp-tab-pills > li > a:hover,
+.kp-tab-pills > li > button:hover {
+    background: rgba(43,142,255,0.10);
+    border-color: var(--kp-border-bright);
+    color: var(--kp-text);
+}
+
+.kp-tab-pills > li.kp-pill-active > a,
+.kp-tab-pills > li.kp-pill-active > button {
+    background: linear-gradient(135deg, rgba(43,142,255,0.18), rgba(0,212,255,0.12));
+    border-color: var(--kp-blue);
+    color: var(--kp-cyan);
+    box-shadow: 0 0 10px rgba(43,142,255,0.15);
+}
+
+/* manage dropdown button — no native button chrome */
+.kp-pill-dropdown-btn {
+    background: none;
+    outline: none;
+}
+
+/* ── manage dropdown panel ──────────────────────────────────────────────────── */
+
+.kp-pill-dropdown {
+    padding: 8px 0;
+    min-width: 160px;
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-border-bright);
+    border-radius: var(--kp-radius);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+}
+
+.kp-pill-dropdown-section {
+    padding: 4px 14px 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--kp-text-dim);
+    opacity: 0.7;
+}
+
+.kp-pill-dropdown a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--kp-text-dim);
+    text-decoration: none;
+    transition: background var(--kp-transition), color var(--kp-transition);
+}
+
+.kp-pill-dropdown a:hover {
+    background: rgba(43,142,255,0.08);
+    color: var(--kp-text);
+}
+
+.kp-pill-dropdown a.kp-dd-active {
+    color: var(--kp-cyan);
+}
+
+.kp-pill-dropdown hr {
+    margin: 4px 0;
+    border: none;
+    border-top: 1px solid var(--kp-border);
+}
+
+/* ── bottom nav bar (mobile only) ───────────────────────────────────────────── */
+
+.kp-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 64px;
+    background: rgba(4, 9, 25, 0.98);
+    border-top: 1px solid var(--kp-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 200;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 4px;
+}
+
+.kp-bottom-nav::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--kp-blue), var(--kp-cyan), transparent);
+    opacity: 0.4;
+}
+
+.kp-bn-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex: 1;
+    padding: 6px 0;
+    color: var(--kp-text-dim);
+    text-decoration: none;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    background: none;
+    border: none;
+    outline: none;
+    transition: color var(--kp-transition);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.kp-bn-item:hover,
+.kp-bn-item.kp-active {
+    color: var(--kp-cyan);
+}
+
+.kp-bn-item .kp-bn-icon {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.6;
+    transition: opacity var(--kp-transition);
+}
+
+.kp-bn-item.kp-active .kp-bn-icon,
+.kp-bn-item:hover .kp-bn-icon {
+    opacity: 1;
+}
+
+@media (max-width: 959px) {
+    .kp-bottom-nav { display: flex; }
+
+    /* push main content above the bottom nav */
+    .kp-main { padding-bottom: 80px; }
+}
+
+/* hide the hamburger when bottom nav is present — nav is handled there */
+@media (max-width: 959px) {
+    .kp-hamburger { display: none; }
+}

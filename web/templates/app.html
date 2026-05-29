@@ -9,6 +9,13 @@
         <link rel="icon" type="image/svg+xml" href="https://cdn.kcp.im/logos/podnest.svg">
         <link rel="alternate icon" type="image/svg+xml" href="https://cdn.kcp.im/logos/podnest.svg">
         <link rel="apple-touch-icon" href="https://cdn.kcp.im/logos/podnest.svg">
+        <link rel="manifest" href="/static/manifest.json">
+        <meta name="theme-color" content="#070e20">
+        <script>
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/static/sw.js');
+            }
+        </script>
     </head>
     <body class="kp-app-body">
 
@@ -22,18 +29,38 @@
                     </h1>
                 </a>
             </div>
-            <button class="kp-hamburger" uk-toggle="target: #kp-offcanvas">
-                <span uk-icon="menu"></span>
-            </button>
         </div>
 
-        <!-- -- off-canvas sidebar (mobile) ----------------------------------------- -->
-        <div id="kp-offcanvas" uk-offcanvas="overlay: true; mode: slide; flip: true">
-            <div class="uk-offcanvas-bar">
-                <button class="uk-offcanvas-close" type="button" uk-close></button>
-                {{template "sidebar-content" .}}
-            </div>
-        </div>
+        <!-- -- bottom nav bar (mobile) --------------------------------------------- -->
+        <nav class="kp-bottom-nav" id="kp-bottom-nav">
+            <a href="#" class="kp-bn-item" data-view="dashboard">
+                <span class="kp-bn-icon" uk-icon="icon: home; ratio: 1.1"></span>
+                Dashboard
+            </a>
+            <a href="#" class="kp-bn-item" data-view="sites">
+                <span class="kp-bn-icon" uk-icon="icon: world; ratio: 1.1"></span>
+                Sites
+            </a>
+            {{if eq .User.Role 99}}
+            <a href="#" class="kp-bn-item" data-view="users">
+                <span class="kp-bn-icon" uk-icon="icon: users; ratio: 1.1"></span>
+                Users
+            </a>
+            <a href="#" class="kp-bn-item" data-view="settings">
+                <span class="kp-bn-icon" uk-icon="icon: cog; ratio: 1.1"></span>
+                Settings
+            </a>
+            <a href="#" class="kp-bn-item" data-view="security">
+                <span class="kp-bn-icon" uk-icon="icon: server; ratio: 1.1"></span>
+                Security
+            </a>
+            {{else}}
+            <a href="/logout" class="kp-bn-item">
+                <span class="kp-bn-icon" uk-icon="icon: sign-out; ratio: 1.1"></span>
+                Sign Out
+            </a>
+            {{end}}
+        </nav>
 
         <!-- -- main layout --------------------------------------------------------- -->
         <div class="kp-layout">

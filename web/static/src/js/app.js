@@ -26,8 +26,6 @@ document.addEventListener("click", (e) => {
     if (!link) return;
     e.preventDefault();
     router.go(link.dataset.view);
-    const oc = document.getElementById("kp-offcanvas");
-    if (oc) UIkit.offcanvas(oc).hide();
 });
 
 /* -- global site action handler -------------------------------------------- */
