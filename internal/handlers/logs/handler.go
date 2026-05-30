@@ -55,6 +55,7 @@ var upgrader = websocket.Upgrader{
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/logs", h.apiSiteLogs)
 	api.HandleFunc("GET /sites/{id}/logs/waf", h.apiSiteWAFLog)
+	api.HandleFunc("GET /sites/{id}/logs/proxy", h.apiSiteProxyLog)
 }
 
 func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
@@ -268,4 +269,113 @@ func tailWAFLog(path string, domains []string, n int) ([]string, error) {
 		matches = matches[len(matches)-n:]
 	}
 	return matches, nil
+}
+
+// apiSiteProxyLog streams proxy-access.log entries filtered to this site's domains via WebSocket.
+func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
+	if !ok {
+		return
+	}
+
+	// RP sites use route domains; all others use assigned domains
+	var domains []string
+	if site.SiteType == models.SiteTypeReverseProxy {
+		routes, err := db.GetRPRoutesBySite(h.DB, site.ID)
+		if err != nil || len(routes) == 0 {
+			logger.Error("apiSiteProxyLog: no RP routes for site %d: %v", site.ID, err)
+			http.Error(w, "no routes configured for this site", http.StatusNotFound)
+			return
+		}
+		for _, rt := range routes {
+			domains = append(domains, rt.Domain)
+		}
+	} else {
+		siteDomains, err := db.GetDomainsBySite(h.DB, site.ID)
+		if err != nil || len(siteDomains) == 0 {
+			logger.Error("apiSiteProxyLog: no domains for site %d: %v", site.ID, err)
+			http.Error(w, "no domains found for site", http.StatusNotFound)
+			return
+		}
+		for _, d := range siteDomains {
+			domains = append(domains, d.Domain)
+		}
+	}
+
+	tail := 100
+	if t := r.URL.Query().Get("tail"); t != "" {
+		if n, err := strconv.Atoi(t); err == nil && n > 0 && n <= 5000 {
+			tail = n
+		}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Error("apiSiteProxyLog: upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	logPath := h.AppPath + "/logs/proxy-access.log"
+	ctx := r.Context()
+
+	// send initial tail of matching lines
+	initial, err := tailWAFLog(logPath, domains, tail)
+	if err != nil {
+		conn.WriteMessage(websocket.TextMessage, []byte("[proxy] no proxy log entries yet"))
+		logger.Debug("apiSiteProxyLog: proxy-access.log not readable for site %d: %v", site.ID, err)
+		return
+	}
+	for _, line := range initial {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+			return
+		}
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		logger.Error("apiSiteProxyLog: open for live tail: %v", err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		logger.Error("apiSiteProxyLog: seek: %v", err)
+		return
+	}
+
+	reader := bufio.NewReader(f)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	logger.Debug("apiSiteProxyLog: live streaming proxy-access.log for site %d domains=%v", site.ID, domains)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			for {
+				line, err := reader.ReadString('\n')
+				if len(line) > 0 {
+					line = strings.TrimRight(line, "\r\n")
+					for _, d := range domains {
+						if strings.Contains(line, d) {
+							if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+								return
+							}
+							break
+						}
+					}
+				}
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					logger.Error("apiSiteProxyLog: read error: %v", err)
+					return
+				}
+			}
+		}
+	}
 }

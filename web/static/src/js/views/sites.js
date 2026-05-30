@@ -19,18 +19,31 @@ export async function viewSites(root) {
         <div id="sites-bulk-bar" class="kp-bulk-bar">
             <div class="kp-bulk-actions">
                 <span id="sites-bulk-count" class="kp-bulk-count">0 selected</span>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-start" disabled>
+                <!-- desktop: individual buttons (hidden on mobile) -->
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-start" disabled>
                     <span uk-icon="play"></span> Start
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-stop" disabled>
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-stop" disabled>
                     <span uk-icon="ban"></span> Stop
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-restart" disabled>
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-restart" disabled>
                     <span uk-icon="refresh"></span> Restart
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm" id="bulk-flush" disabled>
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-flush" disabled>
                     <span uk-icon="bolt"></span> Flush Caches
                 </button>
+                <!-- mobile: actions dropdown (hidden on desktop), mirrors Manage dropdown -->
+                <li id="kp-bulk-mobile-pill" class="uk-hidden@s" style="position:relative;list-style:none">
+                    <a href="javascript:void(0);" class="kp-pill-dropdown-btn" id="kp-bulk-mobile-btn">
+                        Actions <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
+                    </a>
+                    <div class="kp-pill-dropdown" id="kp-bulk-mobile-dropdown" hidden>
+                        <a href="#" id="bulk-mobile-start"><span uk-icon="icon: play; ratio: 0.85"></span> Start</a>
+                        <a href="#" id="bulk-mobile-stop"><span uk-icon="icon: ban; ratio: 0.85"></span> Stop</a>
+                        <a href="#" id="bulk-mobile-restart"><span uk-icon="icon: refresh; ratio: 0.85"></span> Restart</a>
+                        <a href="#" id="bulk-mobile-flush"><span uk-icon="icon: bolt; ratio: 0.85"></span> Flush Caches</a>
+                    </div>
+                </li>
             </div>
             <input class="uk-input kp-input kp-input-sm kp-sites-search"
                    id="sites-search" type="text" placeholder="Filter sites…" autocomplete="off">
@@ -231,10 +244,17 @@ function wireBulkSelection() {
         const checked = getChecked();
         const n = checked.length;
         countEl.textContent = `${n} selected`;
+
+        // sync desktop buttons
         ["bulk-start","bulk-stop","bulk-restart","bulk-flush"].forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.disabled = n === 0;
         });
+
+        // sync mobile dropdown trigger
+        const mobileBtn = document.getElementById("kp-bulk-mobile-btn");
+        if (mobileBtn) mobileBtn.disabled = n === 0;
+
         const all = document.querySelectorAll(".kp-site-row-check");
         selAll.indeterminate = n > 0 && n < all.length;
         selAll.checked = all.length > 0 && n === all.length;
@@ -259,11 +279,7 @@ function wireBulkSelection() {
         }
 
         document.querySelectorAll(".kp-sort-icon").forEach(el => {
-            if (el.dataset.col === col) {
-                el.textContent = sortAsc ? " ↑" : " ↓";
-            } else {
-                el.textContent = " ↕";
-            }
+            el.textContent = el.dataset.col === col ? (sortAsc ? " ↑" : " ↓") : " ↕";
         });
 
         const rows = [...tbody.querySelectorAll("tr")];
@@ -305,6 +321,7 @@ function wireBulkSelection() {
         th.addEventListener("click", () => applySort(th.dataset.col));
     });
 
+    // desktop button clicks
     ["bulk-start","bulk-stop","bulk-restart","bulk-flush"].forEach(action => {
         const btnId = action.replace("bulk-","");
         document.getElementById(action)?.addEventListener("click", () => {
@@ -314,6 +331,30 @@ function wireBulkSelection() {
             }));
         });
     });
+
+    // mobile dropdown toggle
+    const mobilePill     = document.getElementById("kp-bulk-mobile-pill");
+    const mobileDropdown = document.getElementById("kp-bulk-mobile-dropdown");
+    document.getElementById("kp-bulk-mobile-btn")?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        mobileDropdown.hidden = !mobileDropdown.hidden;
+    });
+    document.addEventListener("click", (e) => {
+        if (mobileDropdown && !mobilePill?.contains(e.target)) mobileDropdown.hidden = true;
+    }, { capture: true });
+
+    // mobile dropdown item clicks
+    ["start","stop","restart","flush"].forEach(action => {
+        document.getElementById(`bulk-mobile-${action}`)?.addEventListener("click", (e) => {
+            e.preventDefault();
+            mobileDropdown.hidden = true;
+            const ids = getChecked().map(cb => cb.dataset.siteId);
+            document.dispatchEvent(new CustomEvent("kp:bulk-action", {
+                detail: { action, ids }
+            }));
+        });
+    });
+
     document.querySelectorAll(".kp-sort-icon").forEach(el => { el.textContent = " ↕"; });
     updateBulk();
 }
