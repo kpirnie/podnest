@@ -6,6 +6,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync/atomic"
+	"time"
 
 	"podnest/internal/logger"
 )
@@ -37,27 +38,46 @@ func (p *UpstreamPool) Next() *url.URL {
 }
 
 // newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
-// All request headers are forwarded including X-Forwarded-For and X-Real-IP.
-// WebSocket upgrades are passed through. SSL verification of the upstream is skipped.
+// All request headers — including method, body, and X-Forwarded-For — are forwarded.
+// WebSocket upgrades and all HTTP methods (PUT, DELETE, PATCH, etc.) are passed through.
+// SSL verification of the upstream is skipped for user-defined upstreams.
 func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
+	// shared transport per proxy instance — reuses connections across requests
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
 	}
 
 	return &httputil.ReverseProxy{
 		Transport: transport,
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
-			req.SetXForwarded()
 			req.Out.Host = req.In.Host
 
+			// explicitly preserve the HTTP method — PUT, DELETE, PATCH, etc.
+			req.Out.Method = req.In.Method
+
+			// copy the request body for methods that carry a payload
+			req.Out.Body = req.In.Body
+			req.Out.ContentLength = req.In.ContentLength
+
+			// forward all inbound headers verbatim before setting X-Forwarded-* values
+			for key, vals := range req.In.Header {
+				req.Out.Header[key] = vals
+			}
+
+			// set X-Forwarded-* headers after copying to avoid duplication
+			req.SetXForwarded()
+
 			// pass through WebSocket upgrade headers
-			if req.In.Header.Get("Upgrade") != "" {
-				req.Out.Header.Set("Upgrade", req.In.Header.Get("Upgrade"))
+			if upgrade := req.In.Header.Get("Upgrade"); upgrade != "" {
+				req.Out.Header.Set("Upgrade", upgrade)
 				req.Out.Header.Set("Connection", "Upgrade")
 			}
 
-			// forward the real client IP
+			// forward the real client IP when already set by a trusted upstream proxy
 			if clientIP := req.In.Header.Get("X-Real-IP"); clientIP != "" {
 				req.Out.Header.Set("X-Real-IP", clientIP)
 			}

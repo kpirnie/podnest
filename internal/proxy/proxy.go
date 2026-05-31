@@ -554,9 +554,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// wrap the writer to capture status + byte count for the access log
 	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 
-	// reverse proxy sites bypass container routing — proxy directly to the upstream pool
+	// reverse proxy sites bypass container routing — proxy directly to the upstream pool;
+	// the proxy instance is cached per upstream URL to preserve connection pooling across
+	// all HTTP methods (GET, POST, PUT, DELETE, PATCH, etc.)
 	if rpPool != nil {
-		newReverseProxy(rpPool.Next()).ServeHTTP(sw, r)
+		upstream := rpPool.Next()
+		rp := p.getOrCreateRPProxy(upstream)
+		rp.ServeHTTP(sw, r)
 		p.writeAccessLog(r, sw.status, sw.bytes, time.Since(start), clientIP.String())
 		return
 	}
@@ -639,12 +643,26 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 		Transport: p.transport,
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
-			req.SetXForwarded()
 			req.Out.Host = req.In.Host
 
-			// forward WebSocket upgrade headers so WS connections are proxied correctly
-			if req.In.Header.Get("Upgrade") != "" {
-				req.Out.Header.Set("Upgrade", req.In.Header.Get("Upgrade"))
+			// explicitly preserve the HTTP method — PUT, DELETE, PATCH, etc.
+			req.Out.Method = req.In.Method
+
+			// copy the request body for methods that carry a payload
+			req.Out.Body = req.In.Body
+			req.Out.ContentLength = req.In.ContentLength
+
+			// forward all inbound headers verbatim before setting X-Forwarded-* values
+			for key, vals := range req.In.Header {
+				req.Out.Header[key] = vals
+			}
+
+			// set X-Forwarded-* headers after copying to avoid duplication
+			req.SetXForwarded()
+
+			// pass through WebSocket upgrade headers
+			if upgrade := req.In.Header.Get("Upgrade"); upgrade != "" {
+				req.Out.Header.Set("Upgrade", upgrade)
 				req.Out.Header.Set("Connection", "Upgrade")
 			}
 
@@ -664,6 +682,19 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 		},
 	}
 	actual, _ := p.rpCache.LoadOrStore(port, rp)
+	return actual.(*httputil.ReverseProxy)
+}
+
+// getOrCreateRPProxy returns a cached *httputil.ReverseProxy for the given upstream URL,
+// creating one if needed. Keyed by the full upstream URL string so connection pools are
+// reused across requests rather than allocated per-request.
+func (p *Proxy) getOrCreateRPProxy(target *url.URL) *httputil.ReverseProxy {
+	key := target.String()
+	if rp, ok := p.rpCache.Load(key); ok {
+		return rp.(*httputil.ReverseProxy)
+	}
+	rp := newReverseProxy(target)
+	actual, _ := p.rpCache.LoadOrStore(key, rp)
 	return actual.(*httputil.ReverseProxy)
 }
 
