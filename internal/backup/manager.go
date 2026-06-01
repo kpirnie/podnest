@@ -5,16 +5,21 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1212,6 +1217,158 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	}
 
 	logger.Info("Export: completed archive for site %s backup %d", site.Name, backup.ID)
+	return nil
+}
+
+// CreateFinalBackup creates a complete tar.gz archive of the site immediately
+// before deletion. If S3 is configured the archive is uploaded directly;
+// otherwise the raw bytes are returned for the caller to stream to the browser.
+// Returns a human-readable destination label and the archive bytes when S3 is
+// not configured (nil bytes when uploaded to S3).
+func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (dest string, archive []byte, err error) {
+	now := time.Now().UTC()
+	filename := fmt.Sprintf("%s_final_%s.tar.gz", site.Name, now.Format("20060102-150405"))
+
+	// take a restic snapshot so Export can reuse the existing assembly logic
+	backupID, err := m.Backup(ctx, site, "final")
+	if err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: snapshot: %w", err)
+	}
+
+	// load the backup record Export requires
+	b, err := db.GetBackup(m.db, backupID)
+	if err != nil || b == nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: get backup record: %w", err)
+	}
+
+	// build the tar.gz into memory
+	var buf bytes.Buffer
+	if err := m.Export(ctx, site, b, &buf); err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: export: %w", err)
+	}
+
+	s3, err := m.loadS3Config()
+	if err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: load s3 config: %w", err)
+	}
+
+	if s3 != nil {
+		// upload to S3 via a single presigned PUT — no SDK required
+		key := site.Name + "/" + filename
+		if err := s3PutObject(ctx, s3, key, buf.Bytes()); err != nil {
+			return "", nil, fmt.Errorf("CreateFinalBackup: s3 upload: %w", err)
+		}
+		logger.Info("CreateFinalBackup: uploaded %s to S3 bucket %s", key, s3.bucket)
+		return "s3:" + s3.bucket + "/" + key, nil, nil
+	}
+
+	logger.Info("CreateFinalBackup: returning archive %s for browser download", filename)
+	return "browser:" + filename, buf.Bytes(), nil
+}
+
+// s3PutObject uploads data to an S3-compatible bucket using AWS Signature V4.
+// Uses only stdlib — no AWS SDK.
+func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) error {
+	ep := strings.TrimRight(s3.endpoint, "/")
+	rawURL := fmt.Sprintf("%s/%s/%s", ep, s3.bucket, key)
+
+	now := time.Now().UTC()
+	dateStamp := now.Format("20060102")
+	amzDate := now.Format("20060102T150405Z")
+
+	bodyHash := fmt.Sprintf("%x", sha256.Sum256(data))
+
+	// canonical headers (must be sorted)
+	canonHeaders := map[string]string{
+		"host":                 strings.TrimPrefix(strings.TrimPrefix(ep, "https://"), "http://"),
+		"x-amz-content-sha256": bodyHash,
+		"x-amz-date":           amzDate,
+	}
+	headerKeys := make([]string, 0, len(canonHeaders))
+	for k := range canonHeaders {
+		headerKeys = append(headerKeys, k)
+	}
+	sort.Strings(headerKeys)
+
+	var canonHeaderStr, signedHeaderStr strings.Builder
+	for _, k := range headerKeys {
+		canonHeaderStr.WriteString(k + ":" + canonHeaders[k] + "\n")
+		if signedHeaderStr.Len() > 0 {
+			signedHeaderStr.WriteByte(';')
+		}
+		signedHeaderStr.WriteString(k)
+	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("s3PutObject: parse url: %w", err)
+	}
+
+	canonRequest := strings.Join([]string{
+		"PUT",
+		parsedURL.EscapedPath(),
+		"", // no query string
+		canonHeaderStr.String(),
+		signedHeaderStr.String(),
+		bodyHash,
+	}, "\n")
+
+	credScope := strings.Join([]string{dateStamp, s3.region, "s3", "aws4_request"}, "/")
+	strToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		credScope,
+		fmt.Sprintf("%x", sha256.Sum256([]byte(canonRequest))),
+	}, "\n")
+
+	// derive the signing key
+	sign := func(key, data []byte) []byte {
+		h := hmac.New(sha256.New, key)
+		h.Write(data)
+		return h.Sum(nil)
+	}
+	signingKey := sign(
+		sign(
+			sign(
+				sign([]byte("AWS4"+s3.secretKey), []byte(dateStamp)),
+				[]byte(s3.region),
+			),
+			[]byte("s3"),
+		),
+		[]byte("aws4_request"),
+	)
+	signature := fmt.Sprintf("%x", hmac.New(sha256.New, signingKey).Sum([]byte(strToSign)))[len(strToSign)*2:]
+
+	// rebuild signature correctly
+	mac := hmac.New(sha256.New, signingKey)
+	mac.Write([]byte(strToSign))
+	signature = hex.EncodeToString(mac.Sum(nil))
+
+	authHeader := fmt.Sprintf(
+		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		s3.accessKey, credScope, signedHeaderStr.String(), signature,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rawURL, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("s3PutObject: new request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("X-Amz-Date", amzDate)
+	req.Header.Set("X-Amz-Content-Sha256", bodyHash)
+	req.Header.Set("Content-Type", "application/gzip")
+	req.ContentLength = int64(len(data))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("s3PutObject: do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("s3PutObject: unexpected status %d: %s", resp.StatusCode, string(body))
+	}
 	return nil
 }
 

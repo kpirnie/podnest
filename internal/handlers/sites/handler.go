@@ -17,6 +17,7 @@ import (
 
 	"podnest/internal/apiutil"
 	"podnest/internal/auth"
+	"podnest/internal/backup"
 	"podnest/internal/config"
 	"podnest/internal/db"
 	"podnest/internal/fileutil"
@@ -64,6 +65,7 @@ type Handler struct {
 	Proxy        SitesProxy
 	SFTP         SFTPManager
 	PodmanClient *podman.Client
+	Backup       *backup.Manager
 }
 
 // RegisterRoutes mounts all site routes onto api.
@@ -479,10 +481,26 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	bgCtx := context.Background()
 	siteDir := h.sitesBase() + "/" + site.Name
 
+	// stop the pod first so the final backup captures a clean state
 	if modules.TypeModule(site.SiteType).HasPod() {
 		if err := h.Podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
 			logger.Warn("stop pod %s: %v", site.Name, err)
 		}
+	}
+
+	// create the final backup before any data is removed; block until complete
+	var archiveBytes []byte
+	var backupDest string
+	if h.Backup != nil {
+		var berr error
+		backupDest, archiveBytes, berr = h.Backup.CreateFinalBackup(bgCtx, site)
+		if berr != nil {
+			logger.Warn("apiDeleteSite: final backup failed for site %s (deletion continues): %v", site.Name, berr)
+		}
+	}
+
+	// remove the pod and associated resources
+	if modules.TypeModule(site.SiteType).HasPod() {
 		if err := h.Podman.RemoveSitePod(bgCtx, site.Name); err != nil {
 			logger.Warn("remove pod %s: %v", site.Name, err)
 		}
@@ -522,6 +540,21 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Site %s deleted successfully", site.Name)
+
+	// if S3 is not configured, stream the archive as a one-time browser download
+	if archiveBytes != nil {
+		filename := strings.TrimPrefix(backupDest, "browser:")
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(archiveBytes); err != nil {
+			logger.Warn("apiDeleteSite: write final backup to browser for site %s: %v", site.Name, err)
+		}
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

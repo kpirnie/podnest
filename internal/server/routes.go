@@ -54,6 +54,7 @@ func (s *Server) routes() http.Handler {
 		PodmanClient: s.podman,
 		Proxy:        s.proxy,
 		SFTP:         s.sftp,
+		Backup:       s.backup,
 	}
 	sitesHandler.RegisterRoutes(api)
 

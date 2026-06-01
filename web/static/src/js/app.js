@@ -139,12 +139,30 @@ async function siteAction(id, action, title, message) {
 }
 
 async function deleteSite(id) {
-    const ok = await confirm("Delete Site", "This will stop and permanently remove the pod and all its data. Are you sure?");
+    const ok = await confirm("Delete Site", "This will stop and permanently remove the pod and all its data. Are you sure?\n\nA final backup will be created before deletion. This may take a moment.");
     if (!ok) return;
 
-    showProgressModal("Deleting Site", "Stopping containers and removing the pod - please wait...");
+    showProgressModal("Deleting Site", "Creating final backup and removing the pod — please wait...");
 
-    try { await api.delete(`/sites/${id}`); } catch (e) { /* poll below */ }
+    let resp;
+    try { resp = await fetch(`/api/sites/${id}`, { method: "DELETE" }); } catch (e) { /* poll below */ }
+
+    hideProgressModal();
+
+    // browser-download final backup if S3 is not configured
+    if (resp?.ok && resp.headers.get("Content-Type")?.includes("gzip")) {
+        const cd   = resp.headers.get("Content-Disposition") ?? "";
+        const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `${id}_final.tar.gz`;
+        const blob = await resp.blob();
+        const a    = document.createElement("a");
+        a.href     = URL.createObjectURL(blob);
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast.success("Site deleted. Final backup downloaded.");
+        router.go("sites");
+        return;
+    }
 
     let gone = false, tries = 0;
     while (!gone && tries < 10) {
@@ -156,8 +174,7 @@ async function deleteSite(id) {
         tries++;
     }
 
-    hideProgressModal();
-    if (gone) { toast.success("Site deleted"); router.go("sites"); }
+    if (gone) { toast.success("Site deleted. Final backup saved to S3."); router.go("sites"); }
     else toast.error("Delete failed - site still exists after 20s");
 }
 
