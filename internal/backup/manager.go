@@ -1229,31 +1229,91 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 	now := time.Now().UTC()
 	filename := fmt.Sprintf("%s_final_%s.tar.gz", site.Name, now.Format("20060102-150405"))
 
-	// take a restic snapshot so Export can reuse the existing assembly logic
-	backupID, err := m.Backup(ctx, site, "final")
-	if err != nil {
-		return "", nil, fmt.Errorf("CreateFinalBackup: snapshot: %w", err)
-	}
-
-	// load the backup record Export requires
-	b, err := db.GetBackup(m.db, backupID)
-	if err != nil || b == nil {
-		return "", nil, fmt.Errorf("CreateFinalBackup: get backup record: %w", err)
-	}
-
-	// build the tar.gz into memory
-	var buf bytes.Buffer
-	if err := m.Export(ctx, site, b, &buf); err != nil {
-		return "", nil, fmt.Errorf("CreateFinalBackup: export: %w", err)
-	}
-
 	s3, err := m.loadS3Config()
 	if err != nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: load s3 config: %w", err)
 	}
 
+	repo, err := m.ensureRepo(ctx, site)
+	if err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: ensure repo: %w", err)
+	}
+
+	tagBytes := make([]byte, 8)
+	if _, err := rand.Read(tagBytes); err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: generate tag: %w", err)
+	}
+	tag := "podnest-final-" + hex.EncodeToString(tagBytes)
+
+	siteDir := filepath.Join(m.appPath, "sites", site.Name)
+	includePaths := []string{
+		filepath.Join(siteDir, "html"),
+		filepath.Join(siteDir, "nginx"),
+		filepath.Join(siteDir, "php-fpm"),
+		filepath.Join(siteDir, "redis"),
+		filepath.Join(siteDir, ".env"),
+	}
+	excludePaths := []string{
+		filepath.Join(siteDir, "nginx", "cache"),
+		filepath.Join(siteDir, "db"),
+	}
+
+	// force S3 when globally configured, regardless of per-site repo settings
+	var repoPath string
+	var repoEnv []string
 	if s3 != nil {
-		// upload to S3 via a single presigned PUT — no SDK required
+		repoPath = s3RepoURL(s3.endpoint, s3.bucket, site.Name)
+		repoEnv = resticEnv(repo.RepoPassword, s3)
+		if err := initRepo(ctx, repoPath, repoEnv); err != nil {
+			return "", nil, fmt.Errorf("CreateFinalBackup: init s3 repo: %w", err)
+		}
+	} else {
+		// fall back to local repo so Export has a snapshot to work from
+		repoPath = repo.LocalPath
+		repoEnv = resticEnv(repo.RepoPassword, nil)
+		if err := os.MkdirAll(repoPath, 0750); err != nil {
+			return "", nil, fmt.Errorf("CreateFinalBackup: create local repo dir: %w", err)
+		}
+		if err := initRepo(ctx, repoPath, repoEnv); err != nil {
+			return "", nil, fmt.Errorf("CreateFinalBackup: init local repo: %w", err)
+		}
+	}
+
+	if _, err := m.backupFiles(ctx, repoPath, repoEnv, includePaths, excludePaths, tag); err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: backup files: %w", err)
+	}
+	if err := m.backupDB(ctx, site, repoPath, repoEnv, tag, siteDir); err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: backup db: %w", err)
+	}
+
+	// record in DB so Export can find the snapshot
+	b := &models.Backup{
+		SiteID:     site.ID,
+		SnapshotID: tag,
+		Label:      "final",
+		BackupType: func() int {
+			if s3 != nil {
+				return models.BackupTypeS3
+			}
+			return models.BackupTypeLocal
+		}(),
+	}
+	bid, err := db.CreateBackup(m.db, b)
+	if err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: record backup: %w", err)
+	}
+
+	stored, err := db.GetBackup(m.db, bid)
+	if err != nil || stored == nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: get backup record: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := m.Export(ctx, site, stored, &buf); err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: export: %w", err)
+	}
+
+	if s3 != nil {
 		key := site.Name + "/" + filename
 		if err := s3PutObject(ctx, s3, key, buf.Bytes()); err != nil {
 			return "", nil, fmt.Errorf("CreateFinalBackup: s3 upload: %w", err)

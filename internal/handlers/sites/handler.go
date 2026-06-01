@@ -481,14 +481,7 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	bgCtx := context.Background()
 	siteDir := h.sitesBase() + "/" + site.Name
 
-	// stop the pod first so the final backup captures a clean state
-	if modules.TypeModule(site.SiteType).HasPod() {
-		if err := h.Podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
-			logger.Warn("stop pod %s: %v", site.Name, err)
-		}
-	}
-
-	// create the final backup before any data is removed; block until complete
+	// create the final backup while the pod is still running
 	var archiveBytes []byte
 	var backupDest string
 	if h.Backup != nil {
@@ -496,6 +489,13 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 		backupDest, archiveBytes, berr = h.Backup.CreateFinalBackup(bgCtx, site)
 		if berr != nil {
 			logger.Warn("apiDeleteSite: final backup failed for site %s (deletion continues): %v", site.Name, berr)
+		}
+	}
+
+	// stop the pod after the backup is complete
+	if modules.TypeModule(site.SiteType).HasPod() {
+		if err := h.Podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
+			logger.Warn("stop pod %s: %v", site.Name, err)
 		}
 	}
 
