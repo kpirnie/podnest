@@ -1134,6 +1134,9 @@ func clearDirContents(dir string) error {
 // maybeUpgradeMariaDB runs mariadb-upgrade inside the DB container if the
 // MariaDB version has changed since the data directory was last initialised.
 // It is a no-op for site types without a database.
+// maybeUpgradeMariaDB runs mariadb-upgrade inside the DB container if the
+// MariaDB version has changed since the data directory was last initialised.
+// It is a no-op for site types without a database.
 func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 	if !modules.TypeModule(site.SiteType).HasDatabase() {
 		return
@@ -1148,28 +1151,12 @@ func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 	}
 
 	dbContainer := modules.ContainerName(site.Name, "db")
-	var execResp struct {
-		ID string `json:"Id"`
-	}
-	if err := h.Podman.PostJSON(ctx,
-		"/v4.0.0/libpod/containers/"+dbContainer+"/exec",
-		map[string]any{
-			"AttachStdout": true,
-			"AttachStderr": true,
-			"Detach":       false,
-			"User":         "mysql",
-			"Cmd":          []string{"mariadb-upgrade", "-uroot", "-p" + rootPass},
-		}, &execResp,
-	); err != nil {
-		logger.Warn("maybeUpgradeMariaDB: site %s: create exec: %v", site.Name, err)
-		return
-	}
-
-	if err := h.Podman.PostJSON(ctx,
-		"/v4.0.0/libpod/exec/"+execResp.ID+"/start",
-		map[string]any{"Detach": false}, nil,
-	); err != nil {
-		logger.Warn("maybeUpgradeMariaDB: site %s: start exec: %v", site.Name, err)
+	cmd := exec.CommandContext(ctx, "podman",
+		"exec", "--user=mysql", dbContainer,
+		"mariadb-upgrade", "-uroot", "-p"+rootPass,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		logger.Warn("maybeUpgradeMariaDB: site %s: %v — %s", site.Name, err, string(out))
 		return
 	}
 
