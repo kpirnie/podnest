@@ -342,8 +342,9 @@ func (m *Manager) backupFiles(ctx context.Context, repoPath string, env, paths, 
 // backupDB pipes mysqldump from the MariaDB container directly into
 // restic backup --stdin, storing it as db_dump.sql in the snapshot
 func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath string, env []string, tag, siteDir string) error {
+
 	// only sites with a MariaDB container need a DB backup
-	if site.SiteType != models.SiteTypeWordPress && site.SiteType != models.SiteTypePHP {
+	if !modules.TypeModule(site.SiteType).HasDatabase() {
 		logger.Debug("backupDB: skipping non-PHP site %s", site.Name)
 		return nil
 	}
@@ -374,7 +375,7 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	// CONTAINER_HOST points the CLI at the correct socket
 	dbContainer := podman.ContainerName(site.Name, "db")
 	dumpCmd := exec.CommandContext(ctx, "podman",
-		"exec", dbContainer,
+		"exec", "--user=mysql", dbContainer,
 		"sh", "-c",
 		fmt.Sprintf(
 			"mysqldump -uroot -p%s --single-transaction --quick --routines %s 2>/dev/null || "+
