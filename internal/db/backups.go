@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"podnest/internal/logger"
@@ -98,12 +100,17 @@ func ClearBackupError(db *sql.DB, siteID int64) error {
 // CreateBackup inserts a new backup record and returns its assigned ID
 func CreateBackup(db *sql.DB, b *models.Backup) (int64, error) {
 
+	domainsJSON, err := json.Marshal(b.Domains)
+	if err != nil {
+		return 0, fmt.Errorf("CreateBackup: marshal domains: %w", err)
+	}
+
 	// insert the backup record; created is set by the DB default
 	res, err := db.Exec(`
 		INSERT INTO kppn_backups
-			(site_id, snapshot_id, label, backup_type, size_bytes)
-		VALUES (?, ?, ?, ?, ?)`,
-		b.SiteID, b.SnapshotID, b.Label, b.BackupType, b.SizeBytes,
+			(site_id, snapshot_id, label, backup_type, size_bytes, domains)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		b.SiteID, b.SnapshotID, b.Label, b.BackupType, b.SizeBytes, string(domainsJSON),
 	)
 	if err != nil {
 		logger.Error("CreateBackup: site %d: %v", b.SiteID, err)
@@ -125,7 +132,7 @@ func ListBackups(db *sql.DB, siteID int64) ([]*models.Backup, error) {
 
 	// order newest-first so the UI can display most recent at the top
 	rows, err := db.Query(`
-		SELECT id, site_id, snapshot_id, label, backup_type, size_bytes, created
+		SELECT id, site_id, snapshot_id, label, backup_type, size_bytes, created, domains
 		FROM kppn_backups WHERE site_id = ?
 		ORDER BY created DESC`, siteID,
 	)
@@ -139,12 +146,16 @@ func ListBackups(db *sql.DB, siteID int64) ([]*models.Backup, error) {
 	var backups []*models.Backup
 	for rows.Next() {
 		b := &models.Backup{}
+		var domainsJSON string
 		if err := rows.Scan(
 			&b.ID, &b.SiteID, &b.SnapshotID,
-			&b.Label, &b.BackupType, &b.SizeBytes, &b.Created,
+			&b.Label, &b.BackupType, &b.SizeBytes, &b.Created, &domainsJSON,
 		); err != nil {
 			logger.Error("ListBackups: scan: %v", err)
 			return nil, err
+		}
+		if domainsJSON != "" {
+			_ = json.Unmarshal([]byte(domainsJSON), &b.Domains)
 		}
 		backups = append(backups, b)
 	}
@@ -155,15 +166,16 @@ func ListBackups(db *sql.DB, siteID int64) ([]*models.Backup, error) {
 
 // GetBackup returns a single backup record by ID
 func GetBackup(db *sql.DB, id int64) (*models.Backup, error) {
+	var domainsJSON string
 
 	// query for the specific backup record
 	b := &models.Backup{}
 	err := db.QueryRow(`
-		SELECT id, site_id, snapshot_id, label, backup_type, size_bytes, created
+		SELECT id, site_id, snapshot_id, label, backup_type, size_bytes, created, domains
 		FROM kppn_backups WHERE id = ?`, id,
 	).Scan(
 		&b.ID, &b.SiteID, &b.SnapshotID,
-		&b.Label, &b.BackupType, &b.SizeBytes, &b.Created,
+		&b.Label, &b.BackupType, &b.SizeBytes, &b.Created, &domainsJSON,
 	)
 	if err == sql.ErrNoRows {
 		logger.Debug("GetBackup: no backup with id %d", id)
@@ -172,6 +184,11 @@ func GetBackup(db *sql.DB, id int64) (*models.Backup, error) {
 	if err != nil {
 		logger.Error("GetBackup: %v", err)
 		return nil, err
+	}
+
+	// set the Domains field by unmarshaling the stored JSON string
+	if domainsJSON != "" {
+		_ = json.Unmarshal([]byte(domainsJSON), &b.Domains)
 	}
 
 	logger.Debug("GetBackup: found backup %d", id)

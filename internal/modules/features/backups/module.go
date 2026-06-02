@@ -83,6 +83,27 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		}
 		m.apiDownloadBackup(w, r, site)
 	})
+	mux.HandleFunc("GET /sites/{id}/backups/import/files", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiListImportFiles(w, r, site)
+	})
+	mux.HandleFunc("POST /sites/{id}/backups/import/upload", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiImportUpload(w, r, site)
+	})
+	mux.HandleFunc("POST /sites/{id}/backups/import/sftp", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiImportSFTP(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; backup repos are created on demand.

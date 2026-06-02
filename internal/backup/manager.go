@@ -2,6 +2,8 @@ package backup
 
 import (
 	"archive/tar"
+	"archive/zip"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -28,6 +30,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"podnest/internal/modules"
 	"podnest/internal/podman"
 )
 
@@ -278,6 +281,16 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		}
 	}
 
+	// fetch the site's domains to store with the backup record
+	siteDomains, err := db.GetDomainsBySite(m.db, site.ID)
+	if err != nil {
+		logger.Warn("CreateFinalBackup: failed to fetch domains for site %d: %v", site.ID, err)
+	}
+	var domainList []string
+	for _, d := range siteDomains {
+		domainList = append(domainList, d.Domain)
+	}
+
 	// record the completed backup in the database
 	b := &models.Backup{
 		SiteID:     site.ID,
@@ -285,6 +298,7 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		Label:      label,
 		BackupType: backupType,
 		SizeBytes:  totalSize,
+		Domains:    domainList,
 	}
 	id, err := db.CreateBackup(m.db, b)
 	if err != nil {
@@ -990,6 +1004,11 @@ func (m *Manager) EnsureRepo(ctx context.Context, site *models.Site) (*models.Ba
 	return m.ensureRepo(ctx, site)
 }
 
+// ImportDirFor returns the SFTP import drop directory path for a site
+func (m *Manager) ImportDirFor(siteName string) string {
+	return m.importDir(siteName)
+}
+
 // DeleteSnapshot removes the restic snapshots for a backup from all configured
 // repos. The DB record deletion is handled by the calling handler.
 func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *models.Backup) error {
@@ -1174,7 +1193,7 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	// -- database dump -------------------------------------------------------
 
 	// only sites with a MariaDB container have a DB snapshot
-	if site.SiteType == models.SiteTypeWordPress || site.SiteType == models.SiteTypePHP {
+	if modules.TypeModule(site.SiteType).HasDatabase() {
 		dbSnapID, err := m.findSnapshot(ctx, repoPath, env, backup.SnapshotID, "db")
 		if err != nil {
 			return fmt.Errorf("export: find db snapshot: %w", err)
@@ -1205,6 +1224,26 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		}
 		if _, err := tw.Write(sqlData); err != nil {
 			return fmt.Errorf("export: write db entry: %w", err)
+		}
+	}
+
+	// write manifest.json with the site's domains for use during import restore
+	if len(backup.Domains) > 0 {
+		manifestData, err := json.Marshal(map[string]any{
+			"domains": backup.Domains,
+		})
+		if err == nil {
+			if err := tw.WriteHeader(&tar.Header{
+				Name:    "manifest.json",
+				Size:    int64(len(manifestData)),
+				Mode:    0644,
+				ModTime: backup.Created,
+			}); err != nil {
+				return fmt.Errorf("export: write manifest header: %w", err)
+			}
+			if _, err := tw.Write(manifestData); err != nil {
+				return fmt.Errorf("export: write manifest: %w", err)
+			}
 		}
 	}
 
@@ -1286,6 +1325,16 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 		return "", nil, fmt.Errorf("CreateFinalBackup: backup db: %w", err)
 	}
 
+	// fetch the site's domains to store with the backup record
+	siteDomains, err := db.GetDomainsBySite(m.db, site.ID)
+	if err != nil {
+		logger.Warn("CreateFinalBackup: failed to fetch domains for site %d: %v", site.ID, err)
+	}
+	var domainList []string
+	for _, d := range siteDomains {
+		domainList = append(domainList, d.Domain)
+	}
+
 	// record in DB so Export can find the snapshot
 	b := &models.Backup{
 		SiteID:     site.ID,
@@ -1297,6 +1346,7 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 			}
 			return models.BackupTypeLocal
 		}(),
+		Domains: domainList,
 	}
 	bid, err := db.CreateBackup(m.db, b)
 	if err != nil {
@@ -1466,4 +1516,534 @@ func (m *Manager) fixPostRestorePerms(siteDir string, siteID int64) {
 	os.Chown(siteDir+"/db", 999, 999)
 
 	logger.Debug("fixPostRestorePerms: permissions restored for %s", siteDir)
+}
+
+// -- import restore ----------------------------------------------------------
+
+// importDir returns the SFTP import drop directory for a site
+func (m *Manager) importDir(siteName string) string {
+	return filepath.Join(m.appPath, "sites", siteName, "backups", "import")
+}
+
+// ListImportFiles returns the filenames of any importable archives in the
+// site's SFTP import directory (.tar.gz, .tar.xz, .zip)
+func (m *Manager) ListImportFiles(siteName string) ([]string, error) {
+	dir := m.importDir(siteName)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("ListImportFiles: %w", err)
+	}
+
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		// only surface recognised archive formats
+		if strings.HasSuffix(n, ".tar.gz") ||
+			strings.HasSuffix(n, ".tar.xz") ||
+			strings.HasSuffix(n, ".zip") {
+			files = append(files, n)
+		}
+	}
+	return files, nil
+}
+
+// ImportRestore extracts the archive at archivePath and restores it onto
+// targetSite. On success the archive file is deleted. The site is placed in
+// maintenance mode for the duration of the restore.
+func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, archivePath string) error {
+	m.restoring.Store(targetSite.ID, true)
+	defer m.restoring.Delete(targetSite.ID)
+
+	siteDir := filepath.Join(m.appPath, "sites", targetSite.Name)
+
+	// enable maintenance mode before touching any site data
+	if err := m.enableMaintenance(ctx, targetSite, siteDir); err != nil {
+		return fmt.Errorf("ImportRestore: enable maintenance: %w", err)
+	}
+	defer func() {
+		if err := m.disableMaintenance(ctx, targetSite, siteDir); err != nil {
+			logger.Error("ImportRestore: disable maintenance for site %s: %v", targetSite.Name, err)
+		}
+	}()
+
+	// extract the archive to a temp directory
+	tmpDir, err := os.MkdirTemp("", "podnest-import-*")
+	if err != nil {
+		return fmt.Errorf("ImportRestore: create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	if err := extractArchive(archivePath, tmpDir); err != nil {
+		return fmt.Errorf("ImportRestore: extract: %w", err)
+	}
+
+	// copy extracted files into the site directory, excluding .env and db_dump.sql
+	if err := importFiles(tmpDir, siteDir); err != nil {
+		return fmt.Errorf("ImportRestore: import files: %w", err)
+	}
+
+	// reapply correct ownership after the file copy
+	m.fixPostRestorePerms(siteDir, targetSite.ID)
+
+	// restore the database if a dump is present and the site type has a database
+	dbDump := filepath.Join(tmpDir, "db_dump.sql")
+	if _, err := os.Stat(dbDump); err == nil {
+		if modules.TypeModule(targetSite.SiteType).HasDatabase() {
+			if err := m.importDB(ctx, targetSite, dbDump, siteDir); err != nil {
+				return fmt.Errorf("ImportRestore: import db: %w", err)
+			}
+		}
+	}
+
+	// read the manifest to get source domains for search-replace
+	sourceDomains := readImportManifest(tmpDir)
+
+	// run search-replace for WordPress sites if we have a source domain to replace
+	if targetSite.SiteType == models.SiteTypeWordPress && len(sourceDomains) > 0 {
+		// fetch the target site's primary domain
+		targetDomains, err := db.GetDomainsBySite(m.db, targetSite.ID)
+		if err != nil || len(targetDomains) == 0 {
+			logger.Warn("ImportRestore: could not fetch target domains for site %s: %v", targetSite.Name, err)
+		} else {
+			fromDomain := sourceDomains[0]
+			toDomain := targetDomains[0].Domain
+			if fromDomain != toDomain {
+				if err := m.wpSearchReplace(ctx, targetSite, fromDomain, toDomain); err != nil {
+					logger.Error("ImportRestore: search-replace failed for site %s: %v", targetSite.Name, err)
+				}
+			}
+		}
+	}
+
+	// delete the source archive now that the restore succeeded
+	if err := os.Remove(archivePath); err != nil {
+		logger.Warn("ImportRestore: remove archive %s: %v", archivePath, err)
+	}
+
+	logger.Info("ImportRestore: completed for site %s from %s", targetSite.Name, filepath.Base(archivePath))
+	return nil
+}
+
+// extractArchive dispatches to the correct extractor based on file extension
+func extractArchive(src, destDir string) error {
+	switch {
+	case strings.HasSuffix(src, ".tar.gz"):
+		return extractTarGz(src, destDir)
+	case strings.HasSuffix(src, ".tar.xz"):
+		return extractTarXz(src, destDir)
+	case strings.HasSuffix(src, ".zip"):
+		return extractZip(src, destDir)
+	default:
+		return fmt.Errorf("extractArchive: unsupported format: %s", filepath.Base(src))
+	}
+}
+
+// extractTarGz extracts a .tar.gz archive into destDir
+func extractTarGz(src, destDir string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("extractTarGz: gzip reader: %w", err)
+	}
+	defer gr.Close()
+
+	return extractTar(tar.NewReader(gr), destDir)
+}
+
+// extractTarXz extracts a .tar.xz archive into destDir via the xz binary
+func extractTarXz(src, destDir string) error {
+	// decompress via xz CLI, pipe stdout into the tar reader
+	xzCmd := exec.Command("xz", "-d", "-c", src)
+	pr, err := xzCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("extractTarXz: stdout pipe: %w", err)
+	}
+	if err := xzCmd.Start(); err != nil {
+		return fmt.Errorf("extractTarXz: start xz: %w", err)
+	}
+
+	tarErr := extractTar(tar.NewReader(pr), destDir)
+	waitErr := xzCmd.Wait()
+
+	if tarErr != nil {
+		return tarErr
+	}
+	return waitErr
+}
+
+// extractTar reads all entries from a tar.Reader into destDir, guarding
+// against path traversal attacks
+func extractTar(tr *tar.Reader, destDir string) error {
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("extractTar: next: %w", err)
+		}
+
+		// guard against path traversal
+		target := filepath.Join(destDir, filepath.Clean("/"+hdr.Name))
+		if !strings.HasPrefix(target, destDir+string(os.PathSeparator)) && target != destDir {
+			logger.Warn("extractTar: skipping unsafe path %s", hdr.Name)
+			continue
+		}
+
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return fmt.Errorf("extractTar: mkdir %s: %w", hdr.Name, err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				return fmt.Errorf("extractTar: mkdir parent %s: %w", hdr.Name, err)
+			}
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, hdr.FileInfo().Mode())
+			if err != nil {
+				return fmt.Errorf("extractTar: create %s: %w", hdr.Name, err)
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return fmt.Errorf("extractTar: write %s: %w", hdr.Name, err)
+			}
+			f.Close()
+		}
+	}
+	return nil
+}
+
+// extractZip extracts a .zip archive into destDir, guarding against path traversal
+func extractZip(src, destDir string) error {
+	// stat the file to get its size for zip.OpenReader
+	fi, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("extractZip: stat: %w", err)
+	}
+
+	f, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("extractZip: open: %w", err)
+	}
+	defer f.Close()
+
+	zr, err := zip.NewReader(f, fi.Size())
+	if err != nil {
+		return fmt.Errorf("extractZip: reader: %w", err)
+	}
+
+	for _, zf := range zr.File {
+		target := filepath.Join(destDir, filepath.Clean("/"+zf.Name))
+		if !strings.HasPrefix(target, destDir+string(os.PathSeparator)) && target != destDir {
+			logger.Warn("extractZip: skipping unsafe path %s", zf.Name)
+			continue
+		}
+
+		if zf.FileInfo().IsDir() {
+			os.MkdirAll(target, 0755)
+			continue
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("extractZip: mkdir %s: %w", zf.Name, err)
+		}
+
+		rc, err := zf.Open()
+		if err != nil {
+			return fmt.Errorf("extractZip: open entry %s: %w", zf.Name, err)
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, zf.Mode())
+		if err != nil {
+			rc.Close()
+			return fmt.Errorf("extractZip: create %s: %w", zf.Name, err)
+		}
+		_, copyErr := io.Copy(out, rc)
+		rc.Close()
+		out.Close()
+		if copyErr != nil {
+			return fmt.Errorf("extractZip: write %s: %w", zf.Name, copyErr)
+		}
+	}
+	return nil
+}
+
+// importFiles copies the extracted archive contents into siteDir, skipping
+// .env (target site credentials are preserved) and db_dump.sql (handled separately)
+func importFiles(srcDir, siteDir string) error {
+	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return fmt.Errorf("importFiles: rel path: %w", err)
+		}
+
+		// skip the root itself
+		if rel == "." {
+			return nil
+		}
+
+		// never overwrite the target site's credentials or import the raw dump
+		if rel == ".env" || rel == "db_dump.sql" || rel == "manifest.json" ||
+			rel == "html/wp-config.php" || rel == "html/web.config" || rel == "html/.env" {
+			return nil
+		}
+
+		dest := filepath.Join(siteDir, rel)
+
+		if info.IsDir() {
+			return os.MkdirAll(dest, 0755)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+			return fmt.Errorf("importFiles: mkdir %s: %w", rel, err)
+		}
+		src, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("importFiles: open %s: %w", rel, err)
+		}
+		defer src.Close()
+
+		dst, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return fmt.Errorf("importFiles: create %s: %w", rel, err)
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, src); err != nil {
+			return fmt.Errorf("importFiles: copy %s: %w", rel, err)
+		}
+		return nil
+	})
+}
+
+// importDB pipes db_dump.sql into the target site's MariaDB container,
+// rewriting USE / CREATE DATABASE statements to match the target site name
+func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, siteDir string) error {
+	rootPass, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_ROOT_PASS")
+	if err != nil {
+		return fmt.Errorf("importDB: DB_ROOT_PASS: %w", err)
+	}
+	dbName, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_NAME")
+	if err != nil {
+		return fmt.Errorf("importDB: DB_NAME: %w", err)
+	}
+
+	// rewrite the dump to a temp file with corrected db references
+	rewritten, err := os.CreateTemp("", "podnest-import-db-*.sql")
+	if err != nil {
+		return fmt.Errorf("importDB: create temp: %w", err)
+	}
+	defer os.Remove(rewritten.Name())
+
+	if err := rewriteDBDump(dumpPath, rewritten, dbName); err != nil {
+		rewritten.Close()
+		return fmt.Errorf("importDB: rewrite: %w", err)
+	}
+	rewritten.Close()
+
+	// get the databse container name
+	dbContainer := podman.ContainerName(site.Name, "db")
+
+	// ensure no stale directory exists at the import path inside the container
+	cleanCmd := exec.CommandContext(ctx, "podman",
+		"exec", dbContainer, "rm", "-rf", "/tmp/podnest-import.sql",
+	)
+
+	// copy the rewritten dump into the container
+	cleanCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	_ = cleanCmd.Run()
+	cpCmd := exec.CommandContext(ctx, "podman",
+		"cp", rewritten.Name(), dbContainer+":/tmp/podnest-import.sql",
+	)
+	cpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	if out, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("importDB: podman cp: %w — %s", err, string(out))
+	}
+
+	// run the import inside the container
+	mysqlCmd := exec.CommandContext(ctx, "podman",
+		"exec", dbContainer,
+		"sh", "-c",
+		fmt.Sprintf("mariadb -uroot -p%s %s < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql", rootPass, dbName),
+	)
+	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	var mysqlStderr bytes.Buffer
+	mysqlCmd.Stderr = &mysqlStderr
+	if err := mysqlCmd.Run(); err != nil {
+		return fmt.Errorf("importDB: mariadb: %w — %s", err, mysqlStderr.String())
+	}
+
+	logger.Debug("importDB: DB imported for site %s", site.Name)
+	return nil
+}
+
+// rewriteDBDump copies src to dst line by line, replacing USE / CREATE DATABASE
+// statements that reference any database name with the target database name
+func rewriteDBDump(srcPath string, dst *os.File, targetDB string) error {
+	f, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// patterns to match and rewrite — case-insensitive prefix checks
+	usePrefix := "use `"
+	createPrefix := "create database "
+
+	// always inject the target database selection at the top of the dump
+	if _, err := fmt.Fprintf(dst, "USE `%s`;\n", targetDB); err != nil {
+		return fmt.Errorf("rewriteDBDump: write USE: %w", err)
+	}
+
+	scanner := bufio.NewScanner(f)
+	// increase the buffer for very long lines (e.g. large INSERT rows)
+	scanner.Buffer(make([]byte, 4*1024*1024), 4*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lower := strings.ToLower(line)
+
+		if strings.HasPrefix(lower, usePrefix) {
+			// rewrite: USE `anything`; → USE `targetDB`;
+			line = fmt.Sprintf("USE `%s`;", targetDB)
+		} else if strings.HasPrefix(lower, createPrefix) {
+			// rewrite: CREATE DATABASE `anything` ... → CREATE DATABASE IF NOT EXISTS `targetDB`;
+			line = fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`;", targetDB)
+		}
+
+		if _, err := fmt.Fprintln(dst, line); err != nil {
+			return fmt.Errorf("rewriteDBDump: write: %w", err)
+		}
+	}
+	return scanner.Err()
+}
+
+// ensureWPCLI installs wp-cli into the PHP container if not already present
+func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
+	var checkResp struct {
+		ID string `json:"Id"`
+	}
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/containers/"+containerName+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			"Detach":       false,
+			"Cmd":          []string{"test", "-f", "/usr/local/bin/wp"},
+		}, &checkResp,
+	); err == nil {
+		_ = m.podman.PostJSON(ctx, "/v4.0.0/libpod/exec/"+checkResp.ID+"/start",
+			map[string]any{"Detach": false}, nil)
+		var inspect struct {
+			ExitCode int  `json:"ExitCode"`
+			Running  bool `json:"Running"`
+		}
+		if err := m.podman.GetJSON(ctx, "/v4.0.0/libpod/exec/"+checkResp.ID+"/json", &inspect); err == nil &&
+			!inspect.Running && inspect.ExitCode == 0 {
+			return nil
+		}
+	}
+
+	logger.Info("ensureWPCLI: installing wp-cli in container %s", containerName)
+	var installResp struct {
+		ID string `json:"Id"`
+	}
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/containers/"+containerName+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			"Detach":       false,
+			"Cmd": []string{"sh", "-c",
+				"wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" +
+					" -O /tmp/wp.phar && chmod +x /tmp/wp.phar && mv /tmp/wp.phar /usr/local/bin/wp",
+			},
+		}, &installResp,
+	); err != nil {
+		return fmt.Errorf("ensureWPCLI: create install exec: %w", err)
+	}
+
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/exec/"+installResp.ID+"/start",
+		map[string]any{"Detach": false}, nil,
+	); err != nil {
+		return fmt.Errorf("ensureWPCLI: start install exec: %w", err)
+	}
+
+	logger.Debug("ensureWPCLI: wp-cli installed in %s", containerName)
+	return nil
+}
+
+// wpSearchReplace runs wp search-replace inside the PHP container to rewrite
+// the source domain to the target domain throughout the WordPress database
+func (m *Manager) wpSearchReplace(ctx context.Context, site *models.Site, fromDomain, toDomain string) error {
+	containerName := podman.ContainerName(site.Name, "php")
+
+	if err := m.ensureWPCLI(ctx, containerName); err != nil {
+		return fmt.Errorf("wpSearchReplace: %w", err)
+	}
+
+	var execResp struct {
+		ID string `json:"Id"`
+	}
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/containers/"+containerName+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			"Detach":       false,
+			"Cmd": []string{
+				"/usr/local/bin/wp",
+				"--path=/var/www/html",
+				"--allow-root",
+				"search-replace",
+				"--all-tables",
+				"--precise",
+				fromDomain,
+				toDomain,
+			},
+		}, &execResp,
+	); err != nil {
+		return fmt.Errorf("wpSearchReplace: create exec: %w", err)
+	}
+
+	if err := m.podman.PostJSON(ctx,
+		"/v4.0.0/libpod/exec/"+execResp.ID+"/start",
+		map[string]any{"Detach": false}, nil,
+	); err != nil {
+		return fmt.Errorf("wpSearchReplace: start exec: %w", err)
+	}
+
+	logger.Debug("wpSearchReplace: replaced %s → %s for site %s", fromDomain, toDomain, site.Name)
+	return nil
+}
+
+// readImportManifest reads manifest.json from the extracted archive temp dir
+// and returns the domain list, or nil if no manifest is present
+func readImportManifest(tmpDir string) []string {
+	data, err := os.ReadFile(filepath.Join(tmpDir, "manifest.json"))
+	if err != nil {
+		return nil
+	}
+	var m struct {
+		Domains []string `json:"domains"`
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil
+	}
+	return m.Domains
 }

@@ -231,6 +231,7 @@ type Backup struct {
 	Label      string // human-readable label (e.g. "pre-update")
 	BackupType int    // BackupTypeLocal or BackupTypeS3
 	SizeBytes  int64
+	Domains    []string // site domains at time of backup; first is primary
 	Created    time.Time
 }
 

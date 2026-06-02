@@ -38,13 +38,61 @@ export function renderBackupsTab(siteId) {
             <div class="kp-card uk-padding-small">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">Snapshots</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn" uk-tooltip="Run a Manual Backup">
-                        <span uk-icon="cloud-upload"></span>
-                    </button>
+                    <div class="uk-flex" style="gap:6px">
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="backup-run-btn" uk-tooltip="Run a Manual Backup">
+                            <span uk-icon="cloud-upload"></span>
+                        </button>
+                        <button class="uk-button kp-btn-secondary kp-btn-sm" id="backup-import-btn"
+                            uk-toggle="target: #import-backup-modal" uk-tooltip="Import a backup archive">
+                            <span uk-icon="upload"></span>
+                        </button>
+                    </div>
                 </div>
                 <div id="backup-error-banner"></div>
                 <div id="backup-list-wrap">
                     <div uk-spinner="ratio: 0.8" style="color:var(--kp-blue)"></div>
+                </div>
+            </div>
+
+            <!-- import modal -->
+            <div id="import-backup-modal" uk-modal>
+                <div class="uk-modal-dialog uk-modal-body">
+                    <button class="uk-modal-close-default" type="button" uk-close></button>
+                    <h3 class="kp-view-title uk-margin-small-bottom">Import Backup Archive</h3>
+
+                    <!-- target site selector -->
+                    <div class="uk-margin-small">
+                        <label class="uk-form-label kp-text">Restore To</label>
+                        <select class="uk-select kp-input" id="import-target-site"></select>
+                    </div>
+
+                    <hr class="uk-divider-small">
+
+                    <!-- upload section -->
+                    <h4 class="kp-text uk-margin-small-bottom">Upload Archive</h4>
+                    <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                        Maximum upload size is <strong>512 MB</strong>. For larger archives, transfer
+                        the file to <span class="kp-mono">backups/import/</span> via SFTP and use
+                        the <em>Import from SFTP</em> section below.
+                    </p>
+                    <div class="uk-margin-small">
+                        <input type="file" class="uk-input kp-input" id="import-file-input"
+                            accept=".tar.gz,.tar.xz,.zip">
+                    </div>
+                    <button class="uk-button kp-btn-primary kp-btn-sm uk-margin-small-top" id="import-upload-btn">
+                        Upload &amp; Restore
+                    </button>
+
+                    <hr class="uk-divider-small uk-margin-small">
+
+                    <!-- SFTP section -->
+                    <h4 class="kp-text uk-margin-small-bottom">Import from SFTP</h4>
+                    <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                        Files found in <span class="kp-mono">backups/import/</span> on this site's SFTP.
+                    </p>
+                    <div id="import-sftp-list">
+                        <div uk-spinner="ratio: 0.6" style="color:var(--kp-blue)"></div>
+                    </div>
                 </div>
             </div>
 
@@ -107,6 +155,27 @@ function renderBackupList(backups) {
             </thead>
             <tbody>${rows}</tbody>
         </table>`;
+}
+
+// pollRestoreStatus polls the restore-status endpoint and dismisses the
+// progress modal once the restore completes or the deadline is exceeded
+function pollRestoreStatus(root, siteId) {
+    const deadline = Date.now() + 30 * 60 * 1000;
+    const poll = setInterval(async () => {
+        try {
+            const res = await api.get(`/sites/${siteId}/backups/restore-status`);
+            if (!res?.active || Date.now() > deadline) {
+                clearInterval(poll);
+                hideProgressModal();
+                if (!res?.active) {
+                    toast.success('Import complete');
+                } else {
+                    toast.error('Import timed out — check server logs');
+                }
+                await loadBackupsPanel(root, siteId);
+            }
+        } catch (_) { /* keep polling on transient errors */ }
+    }, 3000);
 }
 
 // loadBackupsPanel fetches repo config and backup list and populates the panel
@@ -301,5 +370,102 @@ export function wireBackupsPanel(root, siteId) {
             return;
         }
         
+    });
+
+    // -- import modal --------------------------------------------------------
+
+    const importModal = root.querySelector('#import-backup-modal');
+    if (!importModal) return;
+
+    // populate the target site dropdown when the modal opens
+    UIkit.util.on(importModal, 'beforeshow', async () => {
+        const select = importModal.querySelector('#import-target-site');
+        try {
+            const sites = await api.get('/sites');
+            select.innerHTML = sites
+                .map(s => `<option value="${s.ID}"${s.ID === siteId ? ' selected' : ''}>${s.Name}</option>`)
+                .join('');
+        } catch (err) {
+            select.innerHTML = '<option value="">Failed to load sites</option>';
+        }
+
+        // refresh the SFTP file list each time the modal opens
+        const sftpList = importModal.querySelector('#import-sftp-list');
+        try {
+            const files = await api.get(`/sites/${siteId}/backups/import/files`);
+            if (!files || files.length === 0) {
+                sftpList.innerHTML = `<p class="kp-muted uk-text-small">No files found.</p>`;
+            } else {
+                sftpList.innerHTML = files.map(f => `
+                    <div class="uk-flex uk-flex-middle uk-flex-between uk-margin-small-bottom">
+                        <span class="kp-mono uk-text-small">${f}</span>
+                        <button class="uk-button kp-btn-primary kp-btn-sm import-sftp-btn" data-file="${f}">
+                            Restore
+                        </button>
+                    </div>`).join('');
+            }
+        } catch (err) {
+            sftpList.innerHTML = `<p class="kp-muted uk-text-small">Failed to list files: ${err.message}</p>`;
+        }
+    });
+
+    // upload & restore
+    importModal.querySelector('#import-upload-btn')?.addEventListener('click', async () => {
+        const fileInput = importModal.querySelector('#import-file-input');
+        const targetID  = importModal.querySelector('#import-target-site')?.value;
+        if (!fileInput?.files?.length) {
+            toast.error('Select an archive file first');
+            return;
+        }
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('archive', file);
+        formData.append('target_site_id', targetID);
+
+        UIkit.modal(importModal).hide();
+        showProgressModal('Importing Backup', 'Uploading and restoring — this may take several minutes.');
+
+        try {
+            await fetch(`/api/sites/${siteId}/backups/import/upload`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+            }).then(async res => {
+                if (!res.ok) {
+                    const j = await res.json().catch(() => ({}));
+                    throw new Error(j.error || `HTTP ${res.status}`);
+                }
+            });
+        } catch (err) {
+            hideProgressModal();
+            toast.error(err.message);
+            return;
+        }
+
+        pollRestoreStatus(root, siteId);
+    });
+
+    // SFTP restore (delegated)
+    importModal.querySelector('#import-sftp-list')?.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.import-sftp-btn');
+        if (!btn) return;
+        const filename = btn.dataset.file;
+        const targetID = importModal.querySelector('#import-target-site')?.value;
+
+        UIkit.modal(importModal).hide();
+        showProgressModal('Importing from SFTP', 'Restoring archive — this may take several minutes.');
+
+        try {
+            await api.post(`/sites/${siteId}/backups/import/sftp`, {
+                filename,
+                target_site_id: parseInt(targetID, 10),
+            });
+        } catch (err) {
+            hideProgressModal();
+            toast.error(err.message);
+            return;
+        }
+
+        pollRestoreStatus(root, siteId);
     });
 }

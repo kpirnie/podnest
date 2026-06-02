@@ -4,8 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"podnest/internal/apiutil"
 	"podnest/internal/db"
@@ -212,4 +217,190 @@ func parseBID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return bid, true
+}
+
+// apiListImportFiles returns the list of archive files available in the
+// site's SFTP import directory for selection via the UI
+func (m Module) apiListImportFiles(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	files, err := m.Manager.ListImportFiles(site.Name)
+	if err != nil {
+		logger.Error("apiListImportFiles: site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	logger.Debug("apiListImportFiles: site %s — %d files", site.Name, len(files))
+	apiutil.JSON(w, http.StatusOK, files)
+}
+
+// apiImportUpload accepts a multipart archive upload (max 512 MB), streams it
+// to the site's import directory, then kicks off an async ImportRestore
+func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	// enforce the 512 MB hard limit before touching the body
+	const maxBytes = 512 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if strings.Contains(err.Error(), "http: request body too large") {
+			apiutil.ErrorMsg(w, http.StatusRequestEntityTooLarge,
+				"Import upload too large — upload it via SFTP and use Import From SFTP instead")
+			return
+		}
+		logger.Error("apiImportUpload: parse form site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	// resolve the target site from the form field; defaults to the current site
+	targetSite, ok := m.resolveImportTarget(w, r, site)
+	if !ok {
+		return
+	}
+
+	fh, handler, err := r.FormFile("archive")
+	if err != nil {
+		logger.Error("apiImportUpload: form file site %d: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "archive field missing")
+		return
+	}
+	defer fh.Close()
+
+	// validate extension
+	name := handler.Filename
+	if !validArchiveName(name) {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "unsupported archive format — use .tar.gz, .tar.xz, or .zip")
+		return
+	}
+
+	// ensure the import directory exists
+	importDir := m.Manager.ImportDirFor(site.Name)
+	if err := os.MkdirAll(importDir, 0750); err != nil {
+		logger.Error("apiImportUpload: mkdir import dir site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// stream directly to disk — never buffer the whole upload in RAM
+	destPath := filepath.Join(importDir, fmt.Sprintf("upload-%d%s", time.Now().UnixNano(), archiveExt(name)))
+	out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0640)
+	if err != nil {
+		logger.Error("apiImportUpload: create dest file site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if _, err := io.Copy(out, fh); err != nil {
+		out.Close()
+		os.Remove(destPath)
+		logger.Error("apiImportUpload: write archive site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	out.Close()
+
+	// kick off the restore asynchronously
+	go func() {
+		ctx := context.Background()
+		if err := m.Manager.ImportRestore(ctx, targetSite, destPath); err != nil {
+			logger.Error("apiImportUpload: ImportRestore site %d: %v", targetSite.ID, err)
+			return
+		}
+		logger.Info("apiImportUpload: import complete for site %s", targetSite.Name)
+	}()
+
+	logger.Debug("apiImportUpload: queued import restore for site %d → target %d", site.ID, targetSite.ID)
+	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "import started"})
+}
+
+// apiImportSFTP triggers an ImportRestore from a file already present in the
+// site's SFTP import directory
+func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	var req struct {
+		Filename string `json:"filename"`
+		TargetID int64  `json:"target_site_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("apiImportSFTP: decode site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Filename == "" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "filename is required")
+		return
+	}
+	if !validArchiveName(req.Filename) {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "unsupported archive format")
+		return
+	}
+	// reject any path traversal attempts in the filename
+	if strings.Contains(req.Filename, "/") || strings.Contains(req.Filename, "..") {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid filename")
+		return
+	}
+
+	archivePath := filepath.Join(m.Manager.ImportDirFor(site.Name), req.Filename)
+	if _, err := os.Stat(archivePath); err != nil {
+		apiutil.ErrorMsg(w, http.StatusNotFound, "file not found in import directory")
+		return
+	}
+
+	// resolve target site
+	targetSite := site
+	if req.TargetID != 0 && req.TargetID != site.ID {
+		var err error
+		targetSite, err = db.GetSiteByID(m.DB, req.TargetID)
+		if err != nil || targetSite == nil {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "target site not found")
+			return
+		}
+	}
+
+	go func() {
+		ctx := context.Background()
+		if err := m.Manager.ImportRestore(ctx, targetSite, archivePath); err != nil {
+			logger.Error("apiImportSFTP: ImportRestore site %d: %v", targetSite.ID, err)
+			return
+		}
+		logger.Info("apiImportSFTP: import complete for site %s", targetSite.Name)
+	}()
+
+	logger.Debug("apiImportSFTP: queued SFTP import for site %d → target %d", site.ID, targetSite.ID)
+	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "import started"})
+}
+
+// resolveImportTarget returns the target site for an import operation.
+// If target_site_id is present in the form and differs from the current site,
+// it loads and returns that site instead.
+func (m Module) resolveImportTarget(w http.ResponseWriter, r *http.Request, current *models.Site) (*models.Site, bool) {
+	idStr := r.FormValue("target_site_id")
+	if idStr == "" {
+		return current, true
+	}
+	targetID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || targetID == current.ID {
+		return current, true
+	}
+	target, err := db.GetSiteByID(m.DB, targetID)
+	if err != nil || target == nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "target site not found")
+		return nil, false
+	}
+	return target, true
+}
+
+// validArchiveName reports whether the filename has a supported archive extension
+func validArchiveName(name string) bool {
+	return strings.HasSuffix(name, ".tar.gz") ||
+		strings.HasSuffix(name, ".tar.xz") ||
+		strings.HasSuffix(name, ".zip")
+}
+
+// archiveExt returns the full compound extension for an archive filename
+func archiveExt(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".tar.gz"):
+		return ".tar.gz"
+	case strings.HasSuffix(name, ".tar.xz"):
+		return ".tar.xz"
+	default:
+		return ".zip"
+	}
 }
