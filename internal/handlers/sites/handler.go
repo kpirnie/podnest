@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -576,6 +577,10 @@ func (h *Handler) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "pod failed to reach running state")
 		return
 	}
+
+	// run mariadb-upgrade if the DB version has changed
+	go h.maybeUpgradeMariaDB(r.Context(), site)
+
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
 }
@@ -762,6 +767,10 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "pod failed to reach running state")
 		return
 	}
+
+	// run mariadb-upgrade if the DB version has changed
+	go h.maybeUpgradeMariaDB(r.Context(), site)
+
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
 }
@@ -1120,4 +1129,49 @@ func clearDirContents(dir string) error {
 		}
 	}
 	return nil
+}
+
+// maybeUpgradeMariaDB runs mariadb-upgrade inside the DB container if the
+// MariaDB version has changed since the data directory was last initialised.
+// It is a no-op for site types without a database.
+func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
+	if !modules.TypeModule(site.SiteType).HasDatabase() {
+		return
+	}
+
+	rootPass, err := fileutil.ReadEnvValue(
+		filepath.Join(h.sitesBase(), site.Name, ".env"), "DB_ROOT_PASS",
+	)
+	if err != nil {
+		logger.Warn("maybeUpgradeMariaDB: site %s: read DB_ROOT_PASS: %v", site.Name, err)
+		return
+	}
+
+	dbContainer := modules.ContainerName(site.Name, "db")
+	var execResp struct {
+		ID string `json:"Id"`
+	}
+	if err := h.Podman.PostJSON(ctx,
+		"/v4.0.0/libpod/containers/"+dbContainer+"/exec",
+		map[string]any{
+			"AttachStdout": true,
+			"AttachStderr": true,
+			"Detach":       false,
+			"User":         "mysql",
+			"Cmd":          []string{"mariadb-upgrade", "-uroot", "-p" + rootPass},
+		}, &execResp,
+	); err != nil {
+		logger.Warn("maybeUpgradeMariaDB: site %s: create exec: %v", site.Name, err)
+		return
+	}
+
+	if err := h.Podman.PostJSON(ctx,
+		"/v4.0.0/libpod/exec/"+execResp.ID+"/start",
+		map[string]any{"Detach": false}, nil,
+	); err != nil {
+		logger.Warn("maybeUpgradeMariaDB: site %s: start exec: %v", site.Name, err)
+		return
+	}
+
+	logger.Debug("maybeUpgradeMariaDB: upgrade check complete for site %s", site.Name)
 }
