@@ -261,7 +261,7 @@ func GenerateUHash() (string, error) {
 	}
 
 	// Log the generated hash for debugging purposes
-	logger.Info("Generated user hash")
+	logger.Debug("Generated user hash")
 	return hex.EncodeToString(b), nil
 }
 
@@ -276,7 +276,7 @@ func GenerateSessionID() (string, error) {
 	}
 
 	// Log the generated session ID for debugging purposes
-	logger.Info("Generated session ID")
+	logger.Debug("Generated session ID")
 	return hex.EncodeToString(b), nil
 }
 
@@ -302,7 +302,7 @@ func NodeImage(version int) string {
 	if !ok {
 		ver = "22"
 	}
-	logger.Info("Generated Node.js image tag")
+	logger.Debug("Generated Node.js image tag")
 	return ImgNode + ver + "-alpine"
 }
 
@@ -312,7 +312,7 @@ func DotNetImage(version int) string {
 	if !ok {
 		ver = "8.0"
 	}
-	logger.Info("Generated .NET image tag")
+	logger.Debug("Generated .NET image tag")
 	return ImgDotNet + ver
 }
 

@@ -112,7 +112,7 @@ func (s *Server) detectHostGateway() string {
 
 		for netName, netInfo := range inspect.NetworkSettings.Networks {
 			if netInfo.Gateway != "" {
-				logger.Info("detected host gateway %s from container network %s", netInfo.Gateway, netName)
+				logger.Debug("detected host gateway %s from container network %s", netInfo.Gateway, netName)
 				return netInfo.Gateway
 			}
 		}
@@ -205,7 +205,7 @@ func (s *Server) startupRestore() {
 			continue
 		}
 
-		logger.Info("startupRestore: pod for site %s restored successfully", site.Name)
+		logger.Debug("startupRestore: pod for site %s restored successfully", site.Name)
 	}
 }
 

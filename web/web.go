@@ -30,6 +30,7 @@ func init() {
 
 	// try to parse thhtml templates
 	Templates, err = template.New("").Funcs(template.FuncMap{
+
 		// currentYear renders the current year server-side — avoids inline JS in templates
 		"currentYear": func() int { return time.Now().Year() },
 	}).ParseFS(assets, "templates/*.html")

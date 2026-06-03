@@ -151,7 +151,7 @@ func New(cfg Config) *Proxy {
 			logger.Error("proxy: failed to open access log %s: %v", logPath, err)
 		} else {
 			p.accessLog = f
-			logger.Info("proxy: access log opened at %s", logPath)
+			logger.Debug("proxy: access log opened at %s", logPath)
 		}
 	}
 
@@ -210,20 +210,20 @@ func New(cfg Config) *Proxy {
 // Start launches HTTP, HTTPS, and HTTP/3 listeners.
 func (p *Proxy) Start() error {
 	go func() {
-		logger.Info("proxy HTTP listener starting on :80")
+		logger.Debug("proxy HTTP listener starting on :80")
 		if err := p.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("proxy HTTP listener: %v", err)
 		}
 	}()
 
 	go func() {
-		logger.Info("proxy HTTP/3 listener starting on :443 (UDP)")
+		logger.Debug("proxy HTTP/3 listener starting on :443 (UDP)")
 		if err := p.http3Srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 			logger.Error("proxy HTTP/3 listener: %v", err)
 		}
 	}()
 
-	logger.Info("proxy HTTPS listener starting on :443")
+	logger.Debug("proxy HTTPS listener starting on :443")
 	return p.httpsSrv.ListenAndServeTLS("", "")
 }
 
@@ -301,10 +301,10 @@ func (p *Proxy) WarmCache() error {
 
 		// atomically install the updated cache with attached pools
 		p.cache.Store(&next)
-		logger.Info("proxy: RP routes loaded — %d domains with upstream pools", len(poolMap))
+		logger.Debug("proxy: RP routes loaded — %d domains with upstream pools", len(poolMap))
 	}
 
-	logger.Info("proxy: domain cache warmed with %d entries", len(m))
+	logger.Debug("proxy: domain cache warmed with %d entries", len(m))
 	return nil
 }
 
@@ -313,7 +313,7 @@ func (p *Proxy) WarmCache() error {
 func (p *Proxy) WarmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) {
 	cache := buildSecurityCache(ipRules, uaRules)
 	p.secCache.Store(&cache)
-	logger.Info("proxy: security cache warmed — %d IP rules, %d UA rules", len(ipRules), len(uaRules))
+	logger.Debug("proxy: security cache warmed — %d IP rules, %d UA rules", len(ipRules), len(uaRules))
 }
 
 // WarmTrustedProxies loads trusted proxy CIDRs from the database, compiles them
@@ -331,7 +331,7 @@ func (p *Proxy) WarmTrustedProxies(cidrs []string) {
 		nets = append(nets, network)
 	}
 	p.trustedProxies.Store(&nets)
-	logger.Info("proxy: trusted proxies warmed — %d ranges", len(nets))
+	logger.Debug("proxy: trusted proxies warmed — %d ranges", len(nets))
 }
 
 // WarmWAFCache loads WAF settings and per-site overrides from the database,
@@ -355,7 +355,7 @@ func (p *Proxy) WarmWAFCache() error {
 		p.wafEngine.Store(nil)
 		empty := make(map[int64]db.WAFSiteOverride)
 		p.wafOverrides.Store(&empty)
-		logger.Info("proxy: WAF disabled")
+		logger.Debug("proxy: WAF disabled")
 		return nil
 	}
 
@@ -365,7 +365,7 @@ func (p *Proxy) WarmWAFCache() error {
 	localCRS := CRSDir(p.appPath)
 	if _, err := os.Stat(filepath.Join(localCRS, ".version")); err == nil {
 		crsDir = localCRS
-		logger.Info("proxy: using local CRS rules from %s", crsDir)
+		logger.Debug("proxy: using local CRS rules from %s", crsDir)
 	} else {
 		logger.Warn("proxy: local CRS not found, falling back to embedded coraza-coreruleset")
 	}
@@ -408,7 +408,7 @@ func (p *Proxy) WarmWAFCache() error {
 	p.wafEngine.Store(engine)
 	p.wafOverrides.Store(&overrideMap)
 	p.wafEnabled.Store(true)
-	logger.Info("proxy: WAF cache warmed — %d site overrides", len(siteOverrides))
+	logger.Debug("proxy: WAF cache warmed — %d site overrides", len(siteOverrides))
 	return nil
 }
 
@@ -467,7 +467,7 @@ func (p *Proxy) SetAdminDomain(domain string) {
 	p.adminMu.Lock()
 	defer p.adminMu.Unlock()
 	p.adminDomain = domain
-	logger.Info("proxy admin domain updated to '%s'", domain)
+	logger.Debug("proxy admin domain updated to '%s'", domain)
 }
 
 // ServeHTTP routes requests by domain, enforcing IP and UA security rules
@@ -586,13 +586,13 @@ func (p *Proxy) hostPolicy(_ context.Context, host string) error {
 // ObtainCert proactively triggers Let's Encrypt certificate issuance for a domain.
 func (p *Proxy) ObtainCert(domain string) {
 	go func() {
-		logger.Info("proactively obtaining certificate for domain '%s'", domain)
+		logger.Debug("proactively obtaining certificate for domain '%s'", domain)
 		hello := &tls.ClientHelloInfo{ServerName: domain}
 		if _, err := p.manager.GetCertificate(hello); err != nil {
 			logger.Error("failed to obtain certificate for '%s': %v", domain, err)
 			return
 		}
-		logger.Info("certificate obtained successfully for '%s'", domain)
+		logger.Debug("certificate obtained successfully for '%s'", domain)
 	}()
 }
 

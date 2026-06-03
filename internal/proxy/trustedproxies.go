@@ -168,7 +168,7 @@ func RefreshTrustedProxyRanges(database *goDb.DB) error {
 		return err
 	}
 
-	logger.Info("RefreshTrustedProxyRanges: saved %d total ranges", len(all))
+	logger.Debug("RefreshTrustedProxyRanges: saved %d total ranges", len(all))
 	return nil
 }
 

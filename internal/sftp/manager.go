@@ -72,7 +72,7 @@ func (m *Manager) Ensure(ctx context.Context) error {
 			logger.Error("SFTP: restart failed: %v", err)
 			return err
 		}
-		logger.Info("global SFTP container restarted")
+		logger.Debug("global SFTP container restarted")
 		return nil
 	}
 
@@ -240,7 +240,7 @@ func (m *Manager) create(ctx context.Context) error {
 		return err
 	}
 
-	logger.Info("global SFTP container started on port %d", GlobalPort)
+	logger.Debug("global SFTP container started on port %d", GlobalPort)
 	return nil
 }
 

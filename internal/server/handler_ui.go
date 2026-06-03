@@ -188,7 +188,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
-			logger.Info("user '%s' authenticated with backup code", user.UName)
+			logger.Debug("user '%s' authenticated with backup code", user.UName)
 		}
 
 		// TOTP verified — consume the pending token and create a full session
@@ -202,7 +202,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		logger.Info("user '%s' completed TOTP login", user.UName)
+		logger.Debug("user '%s' completed TOTP login", user.UName)
 		auth.SetSessionCookie(w, r, sessionID)
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 

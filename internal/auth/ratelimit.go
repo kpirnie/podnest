@@ -49,9 +49,11 @@ func init() {
 func LoginAllowed(r *http.Request) bool {
 	ip := clientIP(r)
 
+	// lock the limiter while we check the IP's status
 	loginLimiter.Lock()
 	defer loginLimiter.Unlock()
 
+	// if we haven't seen this IP before, allow the attempt
 	a, ok := loginLimiter.ips[ip]
 	if !ok {
 		return true
@@ -81,9 +83,11 @@ func LoginAllowed(r *http.Request) bool {
 func RecordFailedLogin(r *http.Request) {
 	ip := clientIP(r)
 
+	// lock the limiter while we update the IP's record
 	loginLimiter.Lock()
 	defer loginLimiter.Unlock()
 
+	// if we haven't seen this IP before, create a new record
 	a, ok := loginLimiter.ips[ip]
 	if !ok {
 		loginLimiter.ips[ip] = &loginAttempt{
@@ -102,8 +106,8 @@ func RecordFailedLogin(r *http.Request) {
 		return
 	}
 
+	// increment the count and check for lockout
 	a.count++
-
 	if a.count >= rlMaxAttempts {
 		a.lockedAt = time.Now()
 		logger.Warn("login rate limit: IP %s locked out after %d failed attempts", ip, a.count)
@@ -114,9 +118,11 @@ func RecordFailedLogin(r *http.Request) {
 func RecordSuccessfulLogin(r *http.Request) {
 	ip := clientIP(r)
 
+	// lock the limiter while we clear the IP's record
 	loginLimiter.Lock()
 	defer loginLimiter.Unlock()
 
+	// successful login — remove any existing record for this IP
 	delete(loginLimiter.ips, ip)
 }
 
@@ -124,6 +130,7 @@ func RecordSuccessfulLogin(r *http.Request) {
 // X-Forwarded-For (set by the reverse proxy) over RemoteAddr
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+
 		// X-Forwarded-For may contain a comma-separated list; the first entry is the client
 		if idx := len(xff); idx > 0 {
 			if comma := strings.IndexByte(xff, ','); comma != -1 {
@@ -133,6 +140,7 @@ func clientIP(r *http.Request) string {
 		}
 	}
 
+	// fallback to RemoteAddr if X-Forwarded-For is not set
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -142,9 +150,12 @@ func clientIP(r *http.Request) string {
 
 // cleanupLoginLimiter removes stale entries from the IP map to prevent unbounded growth
 func cleanupLoginLimiter() {
+
+	// lock the limiter while we clean up the map
 	loginLimiter.Lock()
 	defer loginLimiter.Unlock()
 
+	// iterate over the IPs and remove any that are expired (either lockout expired or window expired)
 	for ip, a := range loginLimiter.ips {
 		expired := !a.lockedAt.IsZero() && time.Since(a.lockedAt) >= rlLockout ||
 			a.lockedAt.IsZero() && time.Since(a.firstSeen) >= rlWindow

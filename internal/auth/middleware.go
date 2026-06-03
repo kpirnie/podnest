@@ -51,12 +51,12 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 			}
 		}
 
+		// Add the authenticated user and CSRF token to the request context and call the next handler.
 		session, _ := db.GetSession(database, sessionID)
 		csrfToken := ""
 		if session != nil {
 			csrfToken = session.CSRFToken
 		}
-
 		next.ServeHTTP(w, r.WithContext(
 			context.WithValue(
 				context.WithValue(r.Context(), ctxUser, user),

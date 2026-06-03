@@ -353,7 +353,7 @@ func (h *Handler) apiTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Info("TOTP enabled for user %d", target.ID)
+	logger.Debug("TOTP enabled for user %d", target.ID)
 	apiutil.JSON(w, http.StatusOK, map[string]any{"enabled": true, "backup_codes": backupCodes})
 }
 
@@ -376,7 +376,7 @@ func (h *Handler) apiTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = db.DeleteBackupCodes(h.DB, target.ID)
 
-	logger.Info("TOTP disabled for user %d by caller %d", target.ID, caller.ID)
+	logger.Debug("TOTP disabled for user %d by caller %d", target.ID, caller.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

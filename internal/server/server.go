@@ -73,7 +73,7 @@ func (s *Server) Start() error {
 	// resolve host paths before anything else that depends on them
 	s.cfg.HostAppPath = s.detectHostAppPath()
 	s.cfg.HostGateway = s.detectHostGateway()
-	logger.Info("host gateway detected: %s", s.cfg.HostGateway)
+	logger.Debug("host gateway detected: %s", s.cfg.HostGateway)
 
 	// push the resolved host path into the SFTP manager & fail2ban manager before Ensure runs
 	s.sftp.SetHostAppPath(s.cfg.HostAppPath)
@@ -229,7 +229,7 @@ func (s *Server) ensureGlobalContainers() {
 	for range ticker.C {
 		sftpOK, f2bOK = attempt()
 		if sftpOK && f2bOK {
-			logger.Info("ensureGlobalContainers: both global containers confirmed running")
+			logger.Debug("ensureGlobalContainers: both global containers confirmed running")
 			return
 		}
 	}

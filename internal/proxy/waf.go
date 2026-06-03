@@ -106,7 +106,7 @@ Include @crs-setup.conf.example
 		return nil, fmt.Errorf("waf: engine init: %w", err)
 	}
 
-	logger.Info("waf: engine ready (mode=%d pl=%d audit=%v plugins=%v)", s.Mode, s.ParanoiaLevel, s.AuditLog, plugins)
+	logger.Debug("waf: engine ready (mode=%d pl=%d audit=%v plugins=%v)", s.Mode, s.ParanoiaLevel, s.AuditLog, plugins)
 	return &WAFEngine{waf: waf, mode: s.Mode, log: s.AuditLog}, nil
 }
 

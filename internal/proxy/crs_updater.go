@@ -74,23 +74,23 @@ func UpdateCRS(appPath string) error {
 	// skip the download if this version is already installed
 	versionFile := filepath.Join(crsDir, ".version")
 	if current, err := os.ReadFile(versionFile); err == nil && strings.TrimSpace(string(current)) == tag {
-		logger.Info("crs: already up to date (%s)", tag)
+		logger.Debug("crs: already up to date (%s)", tag)
 		// sync plugins only when the plugins version file is missing or out of date
 		pluginsVersionFile := filepath.Join(crsDir, ".plugins-version")
 		if pv, err := os.ReadFile(pluginsVersionFile); err != nil || strings.TrimSpace(string(pv)) != tag {
-			logger.Info("crs: plugins out of date — syncing")
+			logger.Debug("crs: plugins out of date — syncing")
 			if err := downloadCRSPlugins(filepath.Join(crsDir, "plugins")); err != nil {
 				logger.Warn("crs: plugin sync failed: %v", err)
 			} else {
 				_ = os.WriteFile(pluginsVersionFile, []byte(tag), 0640)
 			}
 		} else {
-			logger.Info("crs: plugins already up to date (%s)", tag)
+			logger.Debug("crs: plugins already up to date (%s)", tag)
 		}
 		return nil
 	}
 
-	logger.Info("crs: downloading %s from %s", tag, tarURL)
+	logger.Debug("crs: downloading %s from %s", tag, tarURL)
 
 	resp, err := crsHTTPGet(tarURL)
 	if err != nil {
@@ -156,7 +156,7 @@ func UpdateCRS(appPath string) error {
 		return fmt.Errorf("crs: install: %w", err)
 	}
 
-	logger.Info("crs: updated to %s", tag)
+	logger.Debug("crs: updated to %s", tag)
 	return nil
 }
 

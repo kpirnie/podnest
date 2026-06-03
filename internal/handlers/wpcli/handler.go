@@ -193,7 +193,7 @@ func (h *Handler) ensureWPCLI(ctx context.Context, siteName string, conn *websoc
 	}
 
 	conn.WriteMessage(websocket.TextMessage, []byte("[info] installing WP-CLI into container..."))
-	logger.Info("ensureWPCLI: installing wp-cli inside container %s", containerName)
+	logger.Debug("ensureWPCLI: installing wp-cli inside container %s", containerName)
 
 	installSpec := map[string]any{
 		"AttachStdout": true,
@@ -249,7 +249,7 @@ func (h *Handler) ensureWPCLI(ctx context.Context, siteName string, conn *websoc
 		return fmt.Errorf("wp-cli install failed with exit code %d", installInspect.ExitCode)
 	}
 
-	logger.Info("ensureWPCLI: wp-cli installed successfully in container %s", containerName)
+	logger.Debug("ensureWPCLI: wp-cli installed successfully in container %s", containerName)
 	conn.WriteMessage(websocket.TextMessage, []byte("[info] WP-CLI installed successfully"))
 	return nil
 }

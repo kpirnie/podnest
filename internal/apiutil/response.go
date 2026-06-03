@@ -9,6 +9,8 @@ import (
 
 // JSON writes v as a JSON response with the given HTTP status code.
 func JSON(w http.ResponseWriter, status int, v any) {
+
+	// Set the Content-Type header and status code before encoding the response body.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {

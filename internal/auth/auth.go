@@ -18,7 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// setup the session cookie name and duration, and define common auth errors
+// setup the session cookie name and duration
 const (
 	SessionCookieName = "podnest_session"
 	SessionDuration   = 8 * time.Hour
@@ -33,6 +33,13 @@ var (
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrForbidden          = errors.New("forbidden")
 )
+
+// LoginResult is returned by Login to indicate the outcome of a login attempt.
+type LoginResult struct {
+	SessionID    string
+	TOTPRequired bool
+	UserID       int64
+}
 
 // isSecure reports whether the request arrived over a secure connection,
 // either directly via TLS or via a TLS-terminating proxy.
@@ -57,16 +64,6 @@ func GeneratePassword() (string, error) {
 		b[i] = PassChars[n.Int64()]
 	}
 	return string(b), nil
-}
-
-// LoginResult is returned by Login to indicate the outcome of a login attempt.
-type LoginResult struct {
-	// SessionID is non-empty when the user is fully authenticated (no TOTP required).
-	SessionID string
-	// TOTPRequired is true when the password was correct but TOTP must be verified.
-	TOTPRequired bool
-	// UserID is the authenticated user's ID; set when TOTPRequired is true.
-	UserID int64
 }
 
 // Login verifies credentials. When TOTP is not enabled it creates and returns
@@ -99,7 +96,7 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 
 	// If TOTP is enabled, signal the caller to handle the second step
 	if user.TOTPEnabled {
-		logger.Info("TOTP required for user: %s", uname)
+		logger.Debug("TOTP required for user: %s", uname)
 		return &LoginResult{TOTPRequired: true, UserID: user.ID}, nil
 	}
 
@@ -110,12 +107,14 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 		return nil, err
 	}
 
+	// Generate a CSRF token for the session
 	csrfToken, err := models.GenerateSessionID()
 	if err != nil {
 		logger.Error("failed to generate CSRF token: %v", err)
 		return nil, err
 	}
 
+	// Create a new session object
 	session := &models.Session{
 		ID:        sessionID,
 		UID:       user.ID,
@@ -129,7 +128,7 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 		return nil, err
 	}
 
-	logger.Info("User logged in: %s", uname)
+	logger.Debug("User logged in: %s", uname)
 
 	// Return the session ID to be set in the cookie
 	return &LoginResult{SessionID: sessionID}, nil
@@ -194,7 +193,7 @@ func TOTPPendingFromRequest(r *http.Request) string {
 // Logout deletes the session record
 func Logout(database *sql.DB, sessionID string) error {
 
-	logger.Info("User logged out: %s", sessionID)
+	logger.Debug("User logged out: %s", sessionID)
 
 	// Delete the session from the database
 	return db.DeleteSession(database, sessionID)
@@ -296,6 +295,6 @@ func HashPassword(password string) (string, error) {
 // PurgeExpiredSessions deletes all expired sessions — called by the server reaper
 func PurgeExpiredSessions(database *sql.DB) error {
 
-	logger.Info("Purging expired sessions")
+	logger.Debug("Purging expired sessions")
 	return db.DeleteExpiredSessions(database)
 }

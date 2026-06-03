@@ -63,7 +63,7 @@ func (m *Manager) Ensure(ctx context.Context) error {
 			logger.Error("fail2ban: restart failed: %v", err)
 			return err
 		}
-		logger.Info("fail2ban: global container restarted")
+		logger.Debug("fail2ban: global container restarted")
 		return nil
 	}
 
@@ -118,6 +118,6 @@ func (m *Manager) create(ctx context.Context) error {
 		return err
 	}
 
-	logger.Info("fail2ban: global container started")
+	logger.Debug("fail2ban: global container started")
 	return nil
 }

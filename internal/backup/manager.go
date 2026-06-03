@@ -53,6 +53,15 @@ type Manager struct {
 	restoring   sync.Map    // map[int64]bool
 }
 
+// s3Config holds the S3 connection settings resolved from global settings
+type s3Config struct {
+	endpoint  string
+	bucket    string
+	region    string
+	accessKey string
+	secretKey string
+}
+
 // New returns a backup Manager
 func New(database *sql.DB, pc *podman.Client, podmanSock, appPath string) *Manager {
 	return &Manager{
@@ -64,8 +73,6 @@ func New(database *sql.DB, pc *podman.Client, podmanSock, appPath string) *Manag
 	}
 }
 
-// -- repo paths --------------------------------------------------------------
-
 // localRepoPath returns the local restic repo directory for a site
 func (m *Manager) localRepoPath(siteName string) string {
 	return filepath.Join(m.appPath, "sites", siteName, "backups", "local")
@@ -73,28 +80,22 @@ func (m *Manager) localRepoPath(siteName string) string {
 
 // s3RepoURL builds the restic S3 repository URL for a site
 func s3RepoURL(endpoint, bucket, siteName string) string {
+
 	// restic S3 format: s3:https://endpoint/bucket/prefix
 	ep := strings.TrimRight(endpoint, "/")
 	return fmt.Sprintf("s3:%s/%s/%s", ep, bucket, siteName)
 }
 
-// -- s3 config ---------------------------------------------------------------
-
-// s3Config holds the S3 connection settings resolved from global settings
-type s3Config struct {
-	endpoint  string
-	bucket    string
-	region    string
-	accessKey string
-	secretKey string
-}
-
 // loadS3Config reads S3 settings from the database; returns nil if incomplete
 func (m *Manager) loadS3Config() (*s3Config, error) {
+
+	// restic S3 backend requires endpoint and bucket at minimum; access key and secret key can be empty for public buckets
 	keys := []string{
 		"s3_endpoint", "s3_bucket", "s3_region",
 		"s3_access_key", "s3_secret_key",
 	}
+
+	// read all S3 settings in one batch
 	vals := make(map[string]string, len(keys))
 	for _, k := range keys {
 		v, err := db.GetSetting(m.db, k)
@@ -109,11 +110,13 @@ func (m *Manager) loadS3Config() (*s3Config, error) {
 		return nil, nil
 	}
 
+	// default to us-east-1 if region is not set
 	region := vals["s3_region"]
 	if region == "" {
 		region = "us-east-1"
 	}
 
+	// return the config struct
 	return &s3Config{
 		endpoint:  vals["s3_endpoint"],
 		bucket:    vals["s3_bucket"],
@@ -122,8 +125,6 @@ func (m *Manager) loadS3Config() (*s3Config, error) {
 		secretKey: vals["s3_secret_key"],
 	}, nil
 }
-
-// -- restic helpers ----------------------------------------------------------
 
 // resticEnv builds the environment slice for a restic command
 func resticEnv(password string, s3 *s3Config) []string {
@@ -142,9 +143,13 @@ func resticEnv(password string, s3 *s3Config) []string {
 // initRepo runs restic init for the given repo, treating an already-initialized
 // repo as a non-error
 func initRepo(ctx context.Context, repoPath string, env []string) error {
+
+	// restic init will create the repo directory if it doesn't exist
 	cmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "init")
 	cmd.Env = env
 	out, err := cmd.CombinedOutput()
+
+	// if the repo is already initialized, treat that as a non-error
 	if err != nil {
 		if strings.Contains(string(out), "already initialized") ||
 			strings.Contains(string(out), "config file already exists") {
@@ -157,23 +162,25 @@ func initRepo(ctx context.Context, repoPath string, env []string) error {
 	return nil
 }
 
-// -- repo management ---------------------------------------------------------
-
 // ensureRepo returns the site's BackupRepo record, creating and persisting one
 // (with a fresh random password) if none exists yet
 func (m *Manager) ensureRepo(ctx context.Context, site *models.Site) (*models.BackupRepo, error) {
+
+	// check if a repo record already exists for this site
 	repo, err := db.GetBackupRepo(m.db, site.ID)
 	if err != nil {
 		return nil, err
 	}
-
 	if repo == nil {
+
 		// generate a cryptographically random password for this site's repos
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			logger.Error("ensureRepo: generate password: %v", err)
 			return nil, err
 		}
+
+		// create a new repo record with the generated password and local path
 		repo = &models.BackupRepo{
 			SiteID:       site.ID,
 			RepoPassword: hex.EncodeToString(b),
@@ -185,20 +192,22 @@ func (m *Manager) ensureRepo(ctx context.Context, site *models.Site) (*models.Ba
 		logger.Debug("ensureRepo: created repo record for site %d", site.ID)
 	}
 
+	// return the existing or newly created repo record
 	return repo, nil
 }
-
-// -- backup ------------------------------------------------------------------
 
 // Backup creates a restic snapshot for the given site across all enabled
 // destinations. File tree and DB dump are tagged with a shared run ID so they
 // can be located together at restore time. Returns the created Backup ID.
 func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (int64, error) {
+
+	// ensure a repo record exists for this site, creating one if needed
 	repo, err := m.ensureRepo(ctx, site)
 	if err != nil {
 		return 0, err
 	}
 
+	// load S3 config if S3 backup is enabled
 	s3, err := m.loadS3Config()
 	if err != nil {
 		return 0, err
@@ -211,6 +220,7 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 	}
 	tag := "podnest-" + hex.EncodeToString(tagBytes)
 
+	// the siteDir is the root for all file operations in this backup
 	siteDir := filepath.Join(m.appPath, "sites", site.Name)
 
 	// paths included in the file snapshot
@@ -230,15 +240,17 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		filepath.Join(siteDir, "db"),
 	}
 
+	// hold the total size of data added across all repos for this backup run
 	var totalSize int64
 	var backupType int
 
-	// -- local ---------------------------------------------------------------
+	// if local backup is enabled, run restic backup for the file tree and DB dump
 	if repo.LocalEnabled {
 		localEnv := resticEnv(repo.RepoPassword, nil)
 		if err := os.MkdirAll(repo.LocalPath, 0750); err != nil {
 			return 0, fmt.Errorf("backup: create local repo dir: %w", err)
 		}
+		logger.Debug("Backup: starting local backup for site %d (%s)", site.ID, site.Name)
 		if err := initRepo(ctx, repo.LocalPath, localEnv); err != nil {
 			return 0, err
 		}
@@ -256,12 +268,11 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		backupType = models.BackupTypeLocal
 	}
 
-	// -- S3 ------------------------------------------------------------------
+	// if S3 backup is enabled and configured, run restic backup for the file tree and DB dump
 	if repo.S3Enabled && s3 != nil {
 		s3Repo := s3RepoURL(s3.endpoint, s3.bucket, site.Name)
 		s3Env := resticEnv(repo.RepoPassword, s3)
-		logger.Info("Backup: starting S3 backup for site %d (%s)", site.ID, site.Name) // ← add
-
+		logger.Debug("Backup: starting S3 backup for site %d (%s)", site.ID, site.Name)
 		if err := initRepo(ctx, s3Repo, s3Env); err != nil {
 			return 0, err
 		}
@@ -305,7 +316,7 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		return 0, err
 	}
 
-	logger.Info("Backup: completed %s for site %s (id=%d, size=%d)", tag, site.Name, id, totalSize)
+	logger.Debug("Backup: completed %s for site %s (id=%d, size=%d)", tag, site.Name, id, totalSize)
 	return id, nil
 }
 
@@ -395,7 +406,7 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 		return fmt.Errorf("backupDB: stdout pipe: %w", err)
 	}
 
-	logger.Info("backupDB: starting DB stream to restic for site %s", site.Name)
+	logger.Debug("backupDB: starting DB stream to restic for site %s", site.Name)
 
 	if err := dumpCmd.Start(); err != nil {
 		return fmt.Errorf("backupDB: start mysqldump: %w", err)
@@ -477,7 +488,7 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 		return fmt.Errorf("restore db: %w", err)
 	}
 
-	logger.Info("Restore: completed for site %s from tag %s", site.Name, backup.SnapshotID)
+	logger.Debug("Restore: completed for site %s from tag %s", site.Name, backup.SnapshotID)
 	return nil
 }
 
@@ -784,7 +795,7 @@ func (m *Manager) runScheduler(ctx context.Context) {
 			return
 		}
 		d := time.Until(next)
-		logger.Info("scheduler: next backup at %s (in %s)", next.Format(time.RFC3339), d.Round(time.Second))
+		logger.Debug("scheduler: next backup at %s (in %s)", next.Format(time.RFC3339), d.Round(time.Second))
 		timer = time.NewTimer(d)
 		timerCh = timer.C
 	}
@@ -817,7 +828,7 @@ func (m *Manager) runScheduler(ctx context.Context) {
 // runScheduledBackups fires a concurrent backup for every site that has a
 // repo with at least one destination enabled
 func (m *Manager) runScheduledBackups(ctx context.Context) {
-	logger.Info("scheduler: starting backup run")
+	logger.Debug("scheduler: starting backup run")
 
 	sites, err := db.GetAllSites(m.db)
 	if err != nil {
@@ -844,14 +855,14 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 				logger.Error("scheduler: backup failed for site %s: %v", site.Name, err)
 				_ = db.SetBackupError(m.db, site.ID, err.Error())
 			} else {
-				logger.Info("scheduler: backup complete for site %s", site.Name)
+				logger.Debug("scheduler: backup complete for site %s", site.Name)
 				_ = db.ClearBackupError(m.db, site.ID)
 			}
 		}()
 	}
 
 	wg.Wait()
-	logger.Info("scheduler: backup run complete")
+	logger.Debug("scheduler: backup run complete")
 }
 
 // -- cron parser -------------------------------------------------------------
@@ -1256,7 +1267,7 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		return fmt.Errorf("export: close gzip: %w", err)
 	}
 
-	logger.Info("Export: completed archive for site %s backup %d", site.Name, backup.ID)
+	logger.Debug("Export: completed archive for site %s backup %d", site.Name, backup.ID)
 	return nil
 }
 
@@ -1369,11 +1380,11 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 		if err := s3PutObject(ctx, s3, key, buf.Bytes()); err != nil {
 			return "", nil, fmt.Errorf("CreateFinalBackup: s3 upload: %w", err)
 		}
-		logger.Info("CreateFinalBackup: uploaded %s to S3 bucket %s", key, s3.bucket)
+		logger.Debug("CreateFinalBackup: uploaded %s to S3 bucket %s", key, s3.bucket)
 		return "s3:" + s3.bucket + "/" + key, nil, nil
 	}
 
-	logger.Info("CreateFinalBackup: returning archive %s for browser download", filename)
+	logger.Debug("CreateFinalBackup: returning archive %s for browser download", filename)
 	return "browser:" + filename, buf.Bytes(), nil
 }
 
@@ -1627,7 +1638,7 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 		logger.Warn("ImportRestore: remove archive %s: %v", archivePath, err)
 	}
 
-	logger.Info("ImportRestore: completed for site %s from %s", targetSite.Name, filepath.Base(archivePath))
+	logger.Debug("ImportRestore: completed for site %s from %s", targetSite.Name, filepath.Base(archivePath))
 	return nil
 }
 
@@ -1959,7 +1970,7 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 		}
 	}
 
-	logger.Info("ensureWPCLI: installing wp-cli in container %s", containerName)
+	logger.Debug("ensureWPCLI: installing wp-cli in container %s", containerName)
 	var installResp struct {
 		ID string `json:"Id"`
 	}

@@ -58,20 +58,24 @@ func totpCode(secret string, t time.Time) (string, error) {
 		}
 	}
 
+	// TOTP code is based on the number of 30-second intervals since Unix epoch
 	counter := uint64(t.Unix()) / 30
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], counter)
 
+	// Compute HMAC-SHA1 of the counter using the secret key
 	mac := hmac.New(sha1.New, key)
 	mac.Write(buf[:])
 	h := mac.Sum(nil)
 
+	// Dynamic truncation to extract a 4-byte code from the HMAC result
 	offset := h[len(h)-1] & 0x0f
 	code := (uint32(h[offset])&0x7f)<<24 |
 		uint32(h[offset+1])<<16 |
 		uint32(h[offset+2])<<8 |
 		uint32(h[offset+3])
 
+	// Return the code as a zero-padded 6-digit string
 	return fmt.Sprintf("%06d", code%1_000_000), nil
 }
 

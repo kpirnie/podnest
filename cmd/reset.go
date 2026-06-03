@@ -6,6 +6,7 @@ import (
 
 	"podnest/internal/auth"
 	"podnest/internal/db"
+	"podnest/internal/logger"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -88,6 +89,6 @@ func runReset(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("User '%s' password reset and TOTP cleared successfully.\n", resetUsername)
+	logger.Info("User '%s' password reset and TOTP cleared successfully.\n", resetUsername)
 	return nil
 }

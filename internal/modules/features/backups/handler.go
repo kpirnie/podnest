@@ -94,7 +94,7 @@ func (m Module) apiCreateBackup(w http.ResponseWriter, r *http.Request, site *mo
 			logger.Error("apiCreateBackup: site %d: %v", site.ID, err)
 			return
 		}
-		logger.Info("apiCreateBackup: backup %d complete for site %d", id, site.ID)
+		logger.Debug("apiCreateBackup: backup %d complete for site %d", id, site.ID)
 	}()
 	logger.Debug("apiCreateBackup: queued backup for site %d", site.ID)
 	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "backup started"})
@@ -126,7 +126,7 @@ func (m Module) apiRestoreBackup(w http.ResponseWriter, r *http.Request, site *m
 			logger.Error("apiRestoreBackup: site %d backup %d: %v", site.ID, bid, err)
 			return
 		}
-		logger.Info("apiRestoreBackup: restore complete for site %d from backup %d", site.ID, bid)
+		logger.Debug("apiRestoreBackup: restore complete for site %d from backup %d", site.ID, bid)
 	}()
 	logger.Debug("apiRestoreBackup: queued restore for site %d from backup %d", site.ID, bid)
 	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "restore started"})
@@ -201,7 +201,7 @@ func (m Module) apiDownloadBackup(w http.ResponseWriter, r *http.Request, site *
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
-	logger.Info("apiDownloadBackup: streaming backup %d for site %s as %s", bid, site.Name, filename)
+	logger.Debug("apiDownloadBackup: streaming backup %d for site %s as %s", bid, site.Name, filename)
 	if err := m.Manager.Export(r.Context(), site, backup, w); err != nil {
 		logger.Error("apiDownloadBackup: export failed for backup %d: %v", bid, err)
 	}
@@ -303,7 +303,7 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 			logger.Error("apiImportUpload: ImportRestore site %d: %v", targetSite.ID, err)
 			return
 		}
-		logger.Info("apiImportUpload: import complete for site %s", targetSite.Name)
+		logger.Debug("apiImportUpload: import complete for site %s", targetSite.Name)
 	}()
 
 	logger.Debug("apiImportUpload: queued import restore for site %d → target %d", site.ID, targetSite.ID)
@@ -359,7 +359,7 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 			logger.Error("apiImportSFTP: ImportRestore site %d: %v", targetSite.ID, err)
 			return
 		}
-		logger.Info("apiImportSFTP: import complete for site %s", targetSite.Name)
+		logger.Debug("apiImportSFTP: import complete for site %s", targetSite.Name)
 	}()
 
 	logger.Debug("apiImportSFTP: queued SFTP import for site %d → target %d", site.ID, targetSite.ID)

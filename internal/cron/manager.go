@@ -115,7 +115,7 @@ func (m *Manager) run(ctx context.Context) {
 		}
 
 		d := time.Until(earliest)
-		logger.Info("cron: next fire at %s (in %s)", earliest.Format(time.RFC3339), d.Round(time.Second))
+		logger.Debug("cron: next fire at %s (in %s)", earliest.Format(time.RFC3339), d.Round(time.Second))
 		timer = time.NewTimer(d)
 		timerCh = timer.C
 	}
@@ -206,7 +206,7 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 	containerName := podman.ContainerName(site.Name, role)
 	siteUID := sftp.UIDForSite(site.ID)
 
-	logger.Info("cron: running job %d (%s) in container %s", job.ID, job.Label, containerName)
+	logger.Debug("cron: running job %d (%s) in container %s", job.ID, job.Label, containerName)
 
 	// for WordPress sites, auto-install WP-CLI if the command starts with "wp "
 	// and rewrite it to use the absolute path with required flags
@@ -264,7 +264,7 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 		return fmt.Errorf("exec: %w", execErr)
 	}
 
-	logger.Info("cron: job %d (%s) completed", job.ID, job.Label)
+	logger.Debug("cron: job %d (%s) completed", job.ID, job.Label)
 	return nil
 }
 
@@ -453,7 +453,7 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 	}
 
 	// not present — download and install inside the container
-	logger.Info("cron: installing WP-CLI in container %s", containerName)
+	logger.Debug("cron: installing WP-CLI in container %s", containerName)
 	var installResp struct {
 		ID string `json:"Id"`
 	}
@@ -503,6 +503,6 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 		return fmt.Errorf("WP-CLI install exited %d", inspect.ExitCode)
 	}
 
-	logger.Info("cron: WP-CLI installed in container %s", containerName)
+	logger.Debug("cron: WP-CLI installed in container %s", containerName)
 	return nil
 }
