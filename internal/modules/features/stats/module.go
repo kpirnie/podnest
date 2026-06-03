@@ -39,6 +39,7 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 	mux.HandleFunc("GET /sites/{id}/stats/traffic", h.apiSiteTraffic)
 	mux.HandleFunc("GET /sites/{id}/stats/pod", h.apiSitePodStats)
 	mux.HandleFunc("GET /sites/{id}/stats/disk", h.apiSiteDisk)
+	mux.HandleFunc("GET /sites/{id}/stats/drilldown", h.apiSiteDrilldown)
 
 	// global dashboard routes
 	mux.HandleFunc("GET /stats/traffic", h.apiGlobalTraffic)

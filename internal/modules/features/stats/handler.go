@@ -59,6 +59,16 @@ type CountedEntry struct {
 	Count int    `json:"count"`
 }
 
+// DrilldownEntry is a single request record for the 4xx/5xx drilldown modal.
+type DrilldownEntry struct {
+	Time     string `json:"time"`
+	Method   string `json:"method"`
+	Path     string `json:"path"`
+	Status   int    `json:"status"`
+	ClientIP string `json:"client_ip"`
+	UA       string `json:"ua"`
+}
+
 // podStatEntry is a single container's live resource snapshot.
 type podStatEntry struct {
 	Name       string  `json:"name"`
@@ -145,7 +155,8 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := parseTrafficLog(h.AppPath+"/logs/proxy-access.log", domains, false)
+	// per-site log is already filtered — no domain matching needed
+	stats, err := parseTrafficLog(fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name), nil, false)
 	if err != nil {
 		logger.Error("stats: traffic parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -154,6 +165,38 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 
 	globalCache.set(site.ID, stats)
 	apiutil.JSON(w, http.StatusOK, stats)
+}
+
+// apiSiteDrilldown returns individual request records for a given hour and
+// status class (4xx or 5xx). Used by the stats tab drilldown modal.
+func (h *Handler) apiSiteDrilldown(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
+	if !ok {
+		return
+	}
+
+	hour := r.URL.Query().Get("hour")
+	statusClass := r.URL.Query().Get("status")
+
+	// validate status class — only 4xx and 5xx are supported
+	if statusClass != "4xx" && statusClass != "5xx" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "status must be 4xx or 5xx")
+		return
+	}
+	if hour == "" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "hour param required")
+		return
+	}
+
+	logPath := fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)
+	entries, err := parseDrilldown(logPath, hour, statusClass)
+	if err != nil {
+		logger.Error("stats: drilldown parse for site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	apiutil.JSON(w, http.StatusOK, entries)
 }
 
 // apiSitePodStats upgrades to WebSocket and pushes container stats every 2s.
@@ -382,9 +425,10 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 		}
 
 		host := fields[2]
-
-		// per-site: skip lines not matching any registered domain
-		if !global {
+		// per-site with a domain set: filter to matching domains only;
+		// when domainSet is empty and global is false the file is already
+		// site-specific so no filtering is needed
+		if !global && len(domainSet) > 0 {
 			if _, ok := domainSet[host]; !ok {
 				continue
 			}
@@ -485,6 +529,87 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 	}
 
 	return &stats, nil
+}
+
+// parseDrilldown reads the site access log and returns up to 500 entries
+// matching the given hour and status class ("4xx" or "5xx").
+func parseDrilldown(logPath, hour, statusClass string) ([]DrilldownEntry, error) {
+	f, err := os.Open(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []DrilldownEntry{}, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	// parse the hour boundary once
+	hourTime, err := time.Parse(time.RFC3339, hour)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hour param: %w", err)
+	}
+	hourEnd := hourTime.Add(time.Hour)
+
+	var results []DrilldownEntry
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		// format: timestamp method host path status bytes duration clientIP "ua"
+		if len(fields) < 8 {
+			continue
+		}
+
+		ts, err := time.Parse(time.RFC3339, fields[0])
+		if err != nil {
+			continue
+		}
+
+		// filter to the requested hour window
+		if ts.Before(hourTime) || !ts.Before(hourEnd) {
+			continue
+		}
+
+		statusCode, err := strconv.Atoi(fields[4])
+		if err != nil {
+			continue
+		}
+
+		// filter to the requested status class
+		match := (statusClass == "4xx" && statusCode >= 400 && statusCode < 500) ||
+			(statusClass == "5xx" && statusCode >= 500)
+		if !match {
+			continue
+		}
+
+		ua := ""
+		if len(fields) >= 9 {
+			ua = strings.Trim(strings.Join(fields[8:], " "), "\"")
+		}
+
+		results = append(results, DrilldownEntry{
+			Time:     ts.UTC().Format(time.RFC3339),
+			Method:   fields[1],
+			Path:     fields[3],
+			Status:   statusCode,
+			ClientIP: fields[7],
+			UA:       ua,
+		})
+
+		if len(results) >= 500 {
+			break
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 // topN returns the top n entries from a count map, sorted descending.

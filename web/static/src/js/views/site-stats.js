@@ -112,6 +112,17 @@ export function renderStatsTab(siteId, siteType) {
                 </div>
             </div>
 
+            <!-- drilldown modal — populated on 4xx/5xx bar click -->
+            <div id="stats-drilldown-modal" uk-modal>
+                <div class="uk-modal-dialog uk-modal-body" style="min-width:min(96vw,900px)">
+                    <button class="uk-modal-close-default" type="button" uk-close></button>
+                    <h3 class="kp-view-title uk-margin-small-bottom" id="stats-drilldown-title">Request Detail</h3>
+                    <div id="stats-drilldown-body">
+                        <div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- top IPs + UAs -->
             <div class="uk-grid-small uk-child-width-1-1 uk-child-width-1-2@m uk-margin-bottom" uk-grid>
                 <div>
@@ -225,6 +236,31 @@ async function loadStatsTraffic(siteId) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                onClick: (evt, elements) => {
+                    if (!elements || !elements.length) return;
+
+                    // only handle 4xx and 5xx dataset clicks
+                    const datasetIndex = elements[0].datasetIndex;
+                    const label = _siteChart.data.datasets[datasetIndex].label;
+                    if (label !== '4xx' && label !== '5xx') return;
+
+                    // get raw RFC3339 hour from stored hits_per_hour
+                    const barIndex = elements[0].index;
+                    const panel = document.getElementById('stats-panel');
+                    if (!panel || !panel._hitsPerHour) return;
+                    const rawHour = panel._hitsPerHour[barIndex]?.hour;
+                    if (!rawHour) return;
+
+                    openDrilldown(siteId, rawHour, label);
+                },
+                onHover: (evt, elements) => {
+                    if (!elements || !elements.length) {
+                        evt.native.target.style.cursor = 'default';
+                        return;
+                    }
+                    const label = _siteChart.data.datasets[elements[0].datasetIndex].label;
+                    evt.native.target.style.cursor = (label === '4xx' || label === '5xx') ? 'pointer' : 'default';
+                },
                 plugins: {
                     legend: {
                         display: true,
@@ -260,6 +296,10 @@ async function loadStatsTraffic(siteId) {
                 },
             },
         });
+
+        // store raw hour data on the panel for drilldown click handler
+        const panel = document.getElementById('stats-panel');
+        if (panel) panel._hitsPerHour = data.hits_per_hour ?? [];
     }
 
     // top IPs
@@ -361,6 +401,111 @@ function renderPodTable(containers) {
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>`;
+}
+
+// -- drilldown ---------------------------------------------------------------
+
+// renderDrilldownTable builds the paginated, sortable drilldown table HTML
+function renderDrilldownTable(entries, page, sortDesc) {
+    if (!entries || entries.length === 0) {
+        return `<p class="kp-muted uk-text-small">No matching requests found.</p>`;
+    }
+
+    // sort by status — descending puts 5xx above 4xx
+    const sorted = [...entries].sort((a, b) => sortDesc ? b.status - a.status : a.status - b.status);
+
+    const pageSize   = 50;
+    const totalPages = Math.ceil(sorted.length / pageSize);
+    const slice      = sorted.slice(page * pageSize, (page + 1) * pageSize);
+
+    const rows = slice.map((e) => {
+        const uaShort    = e.ua.length > 60 ? e.ua.slice(0, 60) + '…' : e.ua;
+        const statusClass = e.status >= 500 ? 'kp-badge-danger' : 'kp-badge-warning';
+        return `
+            <tr>
+                <td class="kp-stats-table-cell-mono" style="white-space:nowrap">${e.time.slice(11, 19)}</td>
+                <td class="kp-stats-table-cell-mono">${e.method}</td>
+                <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
+                <td><span class="kp-badge ${statusClass}">${e.status}</span></td>
+                <td class="kp-stats-table-cell-mono">${e.client_ip}</td>
+                <td style="font-size:0.75rem;color:var(--kp-text-dim)" uk-tooltip="title:${e.ua.replace(/"/g, '&quot;')}">${uaShort}</td>
+            </tr>`;
+    }).join('');
+
+    const pager = totalPages > 1 ? `
+        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-top">
+            <span class="kp-muted uk-text-small">Page ${page + 1} of ${totalPages} — ${entries.length} total</span>
+            <div>
+                ${page > 0 ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-dd-page="${page - 1}">‹ Prev</button>` : ''}
+                ${page < totalPages - 1 ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-dd-page="${page + 1}">Next ›</button>` : ''}
+            </div>
+        </div>` : '';
+
+    return `
+        <div class="kp-table-wrap">
+            <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+                <thead><tr>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem">Time</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem">Method</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem">
+                        <button class="uk-button kp-btn-ghost kp-btn-sm" id="stats-dd-sort" style="padding:0;font-size:0.75rem">
+                            Status ${sortDesc ? '↓' : '↑'}
+                        </button>
+                    </th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem">IP</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+        ${pager}`;
+}
+
+// openDrilldown fetches and displays the drilldown modal for a given hour and status class
+async function openDrilldown(siteId, hour, statusClass) {
+    const modal = document.getElementById('stats-drilldown-modal');
+    const title = document.getElementById('stats-drilldown-title');
+    const body  = document.getElementById('stats-drilldown-body');
+    if (!modal || !body) return;
+
+    title.textContent = `${statusClass} Requests — ${new Date(hour).toLocaleString([], {
+        hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric',
+    })}`;
+    body.innerHTML = `<div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>`;
+    UIkit.modal(modal).show();
+
+    let entries  = [];
+    let page     = 0;
+    let sortDesc = true;
+
+    function redraw() {
+        body.innerHTML = renderDrilldownTable(entries, page, sortDesc);
+
+        // sort toggle
+        body.querySelector('#stats-dd-sort')?.addEventListener('click', () => {
+            sortDesc = !sortDesc;
+            page = 0;
+            redraw();
+        });
+
+        // pagination buttons
+        body.querySelectorAll('[data-dd-page]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                page = parseInt(btn.dataset.ddPage, 10);
+                redraw();
+            });
+        });
+    }
+
+    try {
+        entries = await api.get(`/sites/${siteId}/stats/drilldown?hour=${encodeURIComponent(hour)}&status=${statusClass}`);
+    } catch (err) {
+        body.innerHTML = `<p class="kp-muted uk-text-small">Failed to load: ${err.message}</p>`;
+        return;
+    }
+
+    redraw();
 }
 
 // -- wire --------------------------------------------------------------------

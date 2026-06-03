@@ -109,6 +109,9 @@ func (s *Server) Start() error {
 	// background session cleanup
 	go s.sessionReaper()
 
+	// rotate logs daily at midnight
+	go s.rotateLogs()
+
 	// background permission fixer
 	go s.permissionReaper()
 

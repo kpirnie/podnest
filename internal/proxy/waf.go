@@ -126,7 +126,7 @@ Include @crs-setup.conf.example
 // Inspect runs a Coraza transaction against the incoming request.
 // Returns true if the request should proceed to the upstream proxy.
 // On a block decision a 403 has already been written to w.
-func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, accessLog *os.File, logMu *sync.Mutex) bool {
+func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, accessLog *os.File, logMu *sync.Mutex, siteID int64, siteName string, appPath string) bool {
 	tx := e.waf.NewTransaction()
 	defer func() {
 		tx.ProcessLogging()
@@ -161,7 +161,7 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 		}
 	}
 	if it := tx.ProcessRequestHeaders(); it != nil {
-		return e.interrupt(w, r, it, clientIP, accessLog, logMu)
+		return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
 	}
 
 	// request body phase — buffer up to wafMaxBodyBytes using a pooled buffer to
@@ -180,7 +180,8 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 				logger.Error("waf: WriteRequestBody: %v", err)
 			} else if it != nil {
 				wafBodyPool.Put(bufPtr) // return buffer before early exit
-				return e.interrupt(w, r, it, clientIP, accessLog, logMu)
+
+				return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
 			}
 		}
 		wafBodyPool.Put(bufPtr) // return buffer after use
@@ -193,7 +194,8 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 		logger.Error("waf: ProcessRequestBody: %v", err)
 	} else if it != nil {
 		// interrupt call — pass logMu through so writeWAFLog can lock correctly
-		return e.interrupt(w, r, it, clientIP, accessLog, logMu)
+
+		return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
 	}
 
 	if logger.IsDebug() {
@@ -204,12 +206,12 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 
 // interrupt handles a WAF interruption. In detect mode it logs and passes the
 // request through. In prevent mode it logs and returns a 403.
-func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, accessLog *os.File, logMu *sync.Mutex) bool {
+func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, accessLog *os.File, logMu *sync.Mutex, siteID int64, siteName string, appPath string) bool {
 	action := "DETECT"
 	if e.mode == db.WAFModePrevent {
 		action = "BLOCK"
 	}
-	writeWAFLog(accessLog, logMu, r, clientIP, it.RuleID, action)
+	writeWAFLog(accessLog, logMu, r, clientIP, it.RuleID, action, siteID, siteName, appPath)
 
 	if e.mode == db.WAFModePrevent {
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -218,12 +220,10 @@ func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.
 	return true
 }
 
-// writeWAFLog writes a WAF event to the WAF log in a structured format.
-// mu must be Proxy.wafLogMu — passed in to avoid a package-level global.
-func writeWAFLog(f *os.File, mu *sync.Mutex, r *http.Request, clientIP string, ruleID int, action string) {
-	if f == nil {
-		return
-	}
+// writeWAFLog writes a WAF event to the correct WAF log.
+// siteID > 0 routes to {appPath}/sites/{siteName}/logs/waf.log;
+// siteID 0 routes to the global waf.log file handle f.
+func writeWAFLog(f *os.File, mu *sync.Mutex, r *http.Request, clientIP string, ruleID int, action string, siteID int64, siteName string, appPath string) {
 	line := fmt.Sprintf("%s WAF %s %s %s rule=%d %s %q\n",
 		time.Now().UTC().Format(time.RFC3339),
 		action,
@@ -233,6 +233,33 @@ func writeWAFLog(f *os.File, mu *sync.Mutex, r *http.Request, clientIP string, r
 		clientIP,
 		r.UserAgent(),
 	)
+
+	if siteID > 0 {
+		dir := fmt.Sprintf("%s/sites/%s/logs", appPath, siteName)
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			logger.Error("proxy: writeWAFLog: mkdir %s: %v", dir, err)
+			return
+		}
+		path := dir + "/waf.log"
+		sf, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+		if err != nil {
+			logger.Error("proxy: writeWAFLog: open %s: %v", path, err)
+			return
+		}
+		defer sf.Close()
+		mu.Lock()
+		_, err = sf.WriteString(line)
+		mu.Unlock()
+		if err != nil {
+			logger.Error("proxy: site WAF log write failed siteID=%d: %v", siteID, err)
+		}
+		return
+	}
+
+	// global WAF log — siteID 0
+	if f == nil {
+		return
+	}
 	mu.Lock()
 	_, err := f.WriteString(line)
 	mu.Unlock()

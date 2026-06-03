@@ -1,8 +1,13 @@
 package server
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -250,4 +255,134 @@ func (s *Server) syncPodStatuses() {
 	for range ticker.C {
 		fix()
 	}
+}
+
+// rotateLogs compresses access and WAF logs older than 2 days and deletes
+// archives older than 7 days. Runs daily at midnight.
+func (s *Server) rotateLogs() {
+	// wait until next midnight to start, then tick every 24h
+	now := time.Now()
+	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+	time.Sleep(time.Until(next))
+
+	run := func() {
+		// collect all log directories to rotate: global + per-site
+		dirs := []string{s.cfg.AppPath + "/logs"}
+
+		sites, err := db.GetAllSites(s.cfg.DB)
+		if err != nil {
+			logger.Error("rotateLogs: failed to load sites: %v", err)
+		} else {
+			for _, site := range sites {
+				dirs = append(dirs, fmt.Sprintf("%s/sites/%s/logs", s.cfg.AppPath, site.Name))
+			}
+		}
+
+		for _, dir := range dirs {
+			if _, err := os.Stat(dir); os.IsNotExist(err) {
+				continue
+			}
+			rotateLogDir(dir)
+		}
+	}
+
+	run()
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		run()
+	}
+}
+
+// rotateLogDir rotates access.log and waf.log in a single log directory.
+// Files older than 2 days are compressed; archives older than 7 days are deleted.
+func rotateLogDir(dir string) {
+	cutoffRotate := time.Now().AddDate(0, 0, -2)
+	cutoffDelete := time.Now().AddDate(0, 0, -7)
+
+	for _, name := range []string{"access.log", "waf.log"} {
+		path := dir + "/" + name
+		info, err := os.Stat(path)
+		if err != nil {
+			continue // file does not exist yet
+		}
+
+		// rotate if the file is older than 2 days
+		if info.ModTime().Before(cutoffRotate) {
+			dateSuffix := info.ModTime().Format("2006-01-02")
+			base := strings.TrimSuffix(name, ".log")
+			archivePath := fmt.Sprintf("%s/%s-%s.tar.gz", dir, base, dateSuffix)
+
+			if err := compressLogFile(path, archivePath); err != nil {
+				logger.Error("rotateLogs: compress %s: %v", path, err)
+				continue
+			}
+			if err := os.Remove(path); err != nil {
+				logger.Error("rotateLogs: remove %s after compress: %v", path, err)
+			}
+			logger.Debug("rotateLogs: rotated %s → %s", path, archivePath)
+		}
+	}
+
+	// delete archives older than 7 days
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		logger.Error("rotateLogs: readdir %s: %v", dir, err)
+		return
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".tar.gz") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoffDelete) {
+			p := dir + "/" + entry.Name()
+			if err := os.Remove(p); err != nil {
+				logger.Error("rotateLogs: delete old archive %s: %v", p, err)
+				continue
+			}
+			logger.Debug("rotateLogs: deleted old archive %s", p)
+		}
+	}
+}
+
+// compressLogFile writes src into a .tar.gz archive at dst.
+func compressLogFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	gz := gzip.NewWriter(out)
+	defer gz.Close()
+
+	tw := tar.NewWriter(gz)
+	defer tw.Close()
+
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+
+	hdr := &tar.Header{
+		Name:    filepath.Base(src),
+		Size:    info.Size(),
+		Mode:    int64(info.Mode()),
+		ModTime: info.ModTime(),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	_, err = io.Copy(tw, in)
+	return err
 }

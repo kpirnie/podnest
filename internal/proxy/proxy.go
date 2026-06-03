@@ -98,6 +98,8 @@ type Proxy struct {
 	accessLogMu    sync.Mutex                                   // guards concurrent writes to accessLog
 	wafLog         *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
 	wafLogMu       sync.Mutex                                   // guards concurrent writes to wafLog
+	siteAccessLogs sync.Map                                     // int64(siteID) → *os.File for per-site access.log
+	siteWAFLogs    sync.Map                                     // int64(siteID) → *os.File for per-site waf.log
 	manager        *autocert.Manager
 	httpSrv        *http.Server
 	httpsSrv       *http.Server
@@ -672,16 +674,27 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		port = p.adminPort
 	} else {
 		entry, ok := p.lookupEntry(host)
+
 		// allow RP sites through even when port is 0; they route via pool, not port
 		if !ok || (entry.port == 0 && entry.pool == nil) {
 			http.Error(w, "domain not registered", http.StatusNotFound)
 			dur := time.Since(start)
-			p.writeAccessLog(r, http.StatusNotFound, 0, start, dur, clientIPStr)
+			p.writeAccessLog(r, http.StatusNotFound, 0, start, dur, clientIPStr, 0, "")
 			return
 		}
 		port = entry.port
 		siteID = entry.siteID
 		rpPool = entry.pool
+	}
+
+	// resolve site name for per-site log routing — looked up once and reused
+	// by writeAccessLog and WAF inspect; empty string for admin/unmatched traffic
+	siteName := ""
+	if siteID > 0 {
+		if site, err := db.GetSiteByID(p.database, siteID); err == nil && site != nil {
+			siteName = site.Name
+		}
+		logger.Debug("proxy: siteID=%d siteName=%q", siteID, siteName)
 	}
 
 	// load the compiled security cache — single atomic load, no lock
@@ -699,7 +712,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		dur := time.Since(start)
-		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr)
+		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
 		return
 	}
 
@@ -707,7 +720,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !checkUA(r.UserAgent(), sec.global, siteRules) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		dur := time.Since(start)
-		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr)
+		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
 		return
 	}
 
@@ -726,10 +739,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
 	if wafEngine != nil {
-		if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu) {
+		if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
 			// WAF wrote the 403; record it in the access log for Fail2Ban
 			dur := time.Since(start)
-			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr)
+			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
 			return
 		}
 	}
@@ -748,12 +761,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upstream := rpPool.Next()
 		rp := p.getOrCreateRPProxy(upstream)
 		rp.ServeHTTP(sw, r)
-		p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr)
+		p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 		return
 	}
 
 	p.siteProxy(sw, r, port)
-	p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr)
+	p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 }
 
 // hostPolicy restricts certificate issuance to registered domains only.
@@ -892,17 +905,52 @@ func (p *Proxy) getOrCreateRPProxy(target *url.URL) *httputil.ReverseProxy {
 	return actual.(*httputil.ReverseProxy)
 }
 
-// writeAccessLog writes a single structured line to the proxy access log.
-// start is the request arrival time — logged as the entry timestamp per standard
-// access log convention (request start, not response end).
-// Acquires accessLogMu to prevent interleaving under concurrent request goroutines.
-func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Time, dur time.Duration, clientIP string) {
-	if p.accessLog == nil {
-		return
+// siteLogFile returns the open *os.File for a per-site log, creating the file
+// and its parent logs/ directory on first access. The result is cached in the
+// appropriate sync.Map (cache) so the file is opened at most once per site.
+// logType must be "access" or "waf"; the corresponding filename is derived from it.
+func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType string) *os.File {
+	// fast path — already open
+	if v, ok := cache.Load(siteID); ok {
+		return v.(*os.File)
 	}
 
+	// slow path — create directory and open file
+	dir := fmt.Sprintf("%s/sites/%s/logs", p.appPath, siteName)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		logger.Error("proxy: siteLogFile: mkdir %s: %v", dir, err)
+		return nil
+	}
+
+	filename := "access.log"
+	if logType == "waf" {
+		filename = "waf.log"
+	}
+
+	path := dir + "/" + filename
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	if err != nil {
+		logger.Error("proxy: siteLogFile: open %s: %v", path, err)
+		return nil
+	}
+	logger.Debug("proxy: siteLogFile: opened %s for siteID=%d", path, siteID)
+
+	// store; if another goroutine raced us, close the duplicate and use theirs
+	actual, loaded := cache.LoadOrStore(siteID, f)
+	if loaded {
+		f.Close()
+		return actual.(*os.File)
+	}
+	return f
+}
+
+// writeAccessLog writes a single structured line to the correct access log.
+// siteID 0 (admin/unmatched traffic) routes to the global proxy-access.log;
+// all other sites route to {appPath}/sites/{siteName}/logs/access.log.
+// siteName is only required when siteID > 0.
+func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Time, dur time.Duration, clientIP string, siteID int64, siteName string) {
 	line := fmt.Sprintf("%s %s %s %s %d %d %s %s %q\n",
-		start.UTC().Format(time.RFC3339), // request arrival time, not completion time
+		start.UTC().Format(time.RFC3339),
 		r.Method,
 		r.Host,
 		r.URL.Path,
@@ -913,10 +961,28 @@ func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Ti
 		r.UserAgent(),
 	)
 
+	if siteID > 0 {
+		// per-site log
+		f := p.siteLogFile(&p.siteAccessLogs, siteID, siteName, "access")
+		if f == nil {
+			return
+		}
+		p.accessLogMu.Lock()
+		_, err := f.WriteString(line)
+		p.accessLogMu.Unlock()
+		if err != nil {
+			logger.Error("proxy: site access log write failed siteID=%d: %v", siteID, err)
+		}
+		return
+	}
+
+	// global log — siteID 0 (admin domain, unmatched)
+	if p.accessLog == nil {
+		return
+	}
 	p.accessLogMu.Lock()
 	_, err := p.accessLog.WriteString(line)
 	p.accessLogMu.Unlock()
-
 	if err != nil {
 		logger.Error("proxy: access log write failed: %v", err)
 	}
