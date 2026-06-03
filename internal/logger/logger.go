@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,7 +42,8 @@ var (
 	defaultLogger *Logger
 	once          sync.Once
 
-	logBuffer     []LogEntry
+	logCh         = make(chan LogEntry, 2048) // async drain channel — callers never block on buffer writes
+	logBuf        []LogEntry                  // drained by background goroutine; guarded by logMutex for reads
 	logMutex      sync.RWMutex
 	maxLogEntries = 1000
 
@@ -58,15 +60,35 @@ var (
 	}
 )
 
-// Logger provides leveled logging with thread-safe configuration
+// init drains logCh into the circular buffer in a dedicated goroutine,
+// keeping write contention off the hot request path entirely.
+func init() {
+	logBuf = make([]LogEntry, 0, maxLogEntries)
+	go func() {
+		for entry := range logCh {
+			logMutex.Lock()
+			logBuf = append(logBuf, entry)
+			if len(logBuf) > maxLogEntries {
+				logBuf = logBuf[len(logBuf)-maxLogEntries:]
+			}
+			logMutex.Unlock()
+		}
+	}()
+}
+
+// Logger provides leveled logging with thread-safe, zero-contention level reads.
+// The level field is stored as an atomic int32 so hot-path shouldLog checks
+// never block — level changes (rare) use a store, reads are lock-free.
 type Logger struct {
-	level LogLevel
-	mu    sync.RWMutex
+	level atomic.Int32 // stores LogLevel; read lock-free, written only on SetLevel
+	mu    sync.RWMutex // reserved for future non-level state
 }
 
 // New creates a new Logger instance with the specified log level
 func New(level string) *Logger {
-	return &Logger{level: ParseLogLevel(level)}
+	l := &Logger{}
+	l.level.Store(int32(ParseLogLevel(level)))
+	return l
 }
 
 // Init reads the DEBUG environment variable and configures the default logger
@@ -80,15 +102,18 @@ func Init() {
 	log.SetFlags(log.Ldate | log.Ltime)
 }
 
-// IsDebug returns true if the default logger is set to DEBUG level
+// IsDebug returns true if the default logger is set to DEBUG level.
+// Uses an atomic load — safe to call from concurrent request goroutines.
 func IsDebug() bool {
-	return getDefaultLogger().level <= DEBUG
+	return LogLevel(getDefaultLogger().level.Load()) <= DEBUG
 }
 
 // getDefaultLogger returns the singleton default logger instance
 func getDefaultLogger() *Logger {
 	once.Do(func() {
-		defaultLogger = &Logger{level: INFO}
+		l := &Logger{}
+		l.level.Store(int32(INFO))
+		defaultLogger = l
 	})
 	return defaultLogger
 }
@@ -121,18 +146,14 @@ func GetLogLevel() string {
 	return getDefaultLogger().GetLevel()
 }
 
-// SetLevel updates this logger instance's minimum level
+// SetLevel updates this logger instance's minimum level atomically
 func (l *Logger) SetLevel(level string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.level = ParseLogLevel(level)
+	l.level.Store(int32(ParseLogLevel(level)))
 }
 
 // GetLevel retrieves this logger instance's current level as a string
 func (l *Logger) GetLevel() string {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	switch l.level {
+	switch LogLevel(l.level.Load()) {
 	case DEBUG:
 		return "DEBUG"
 	case WARN:
@@ -148,34 +169,35 @@ func (l *Logger) GetLevel() string {
 	}
 }
 
-// shouldLog determines whether a message at the specified level should be logged
+// shouldLog determines whether a message at the specified level should be logged.
+// Uses an atomic load so concurrent request goroutines never contend for the level.
 func (l *Logger) shouldLog(level LogLevel) bool {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	if l.level == NONE || level == NONE {
+	cur := LogLevel(l.level.Load())
+	if cur == NONE || level == NONE {
 		return false
 	}
 	if level == INFO {
 		return true
 	}
-	return level >= l.level
+	return level >= cur
 }
 
-// addToBuffer appends a log entry to the circular buffer
+// addToBuffer enqueues a log entry for async drain — never blocks the caller
+// unless the channel is full (2048 entries backlogged), in which case the
+// entry is silently dropped to protect request throughput.
 func addToBuffer(level, message string) {
 	if strings.ToUpper(level) == "NONE" {
 		return
 	}
-	logMutex.Lock()
-	defer logMutex.Unlock()
 	entry := LogEntry{
 		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 		Level:     strings.ToLower(level),
 		Message:   message,
 	}
-	logBuffer = append(logBuffer, entry)
-	if len(logBuffer) > maxLogEntries {
-		logBuffer = logBuffer[len(logBuffer)-maxLogEntries:]
+	// non-blocking send — drop rather than stall a request goroutine
+	select {
+	case logCh <- entry:
+	default:
 	}
 }
 
@@ -183,8 +205,8 @@ func addToBuffer(level, message string) {
 func GetLogs() []LogEntry {
 	logMutex.RLock()
 	defer logMutex.RUnlock()
-	result := make([]LogEntry, len(logBuffer))
-	copy(result, logBuffer)
+	result := make([]LogEntry, len(logBuf))
+	copy(result, logBuf)
 	return result
 }
 
@@ -192,7 +214,7 @@ func GetLogs() []LogEntry {
 func ClearLogs() {
 	logMutex.Lock()
 	defer logMutex.Unlock()
-	logBuffer = logBuffer[:0]
+	logBuf = logBuf[:0]
 }
 
 // colorizeLevel wraps the log level string with ANSI color codes

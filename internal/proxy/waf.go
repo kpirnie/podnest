@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
@@ -23,6 +24,16 @@ import (
 // wafMaxBodyBytes is the maximum request body size inspected per request.
 // Bytes beyond this limit are forwarded to the upstream uninspected.
 const wafMaxBodyBytes = 1 << 20 // 1 MB
+
+// wafBodyPool pools 1MB byte slices for WAF request body inspection to avoid
+// a fresh heap allocation per POST/PUT request — significantly reduces GC pressure
+// on sites with frequent form submissions, WooCommerce checkouts, or REST API writes
+var wafBodyPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 0, wafMaxBodyBytes)
+		return &b
+	},
+}
 
 // pluginSuffixes are the three file types that make up a CRS plugin
 var pluginSuffixes = []string{"-config.conf", "-before.conf", "-after.conf"}
@@ -113,7 +124,7 @@ Include @crs-setup.conf.example
 // Inspect runs a Coraza transaction against the incoming request.
 // Returns true if the request should proceed to the upstream proxy.
 // On a block decision a 403 has already been written to w.
-func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, accessLog *os.File) bool {
+func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, accessLog *os.File, logMu *sync.Mutex) bool {
 	tx := e.waf.NewTransaction()
 	defer func() {
 		tx.ProcessLogging()
@@ -124,11 +135,14 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	tx.ProcessConnection(clientIP, 0, "", 0)
 	tx.ProcessURI(r.URL.RequestURI(), r.Method, r.Proto)
 
-	// explicitly populate ARGS from query string so CRS rules can inspect them
+	// query string args — only log individual entries when debug is explicitly enabled
+	// to avoid fmt.Sprintf allocations on every arg for every request
 	for key, vals := range r.URL.Query() {
 		for _, v := range vals {
 			tx.AddGetRequestArgument(key, v)
-			logger.Debug("waf: adding GET arg key=%q val=%q", key, v)
+			if logger.IsDebug() {
+				logger.Debug("waf: adding GET arg key=%q val=%q", key, v)
+			}
 		}
 	}
 
@@ -138,45 +152,62 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	for name, vals := range r.Header {
 		for _, v := range vals {
 			tx.AddRequestHeader(name, v)
-			logger.Debug("waf: HEADER name=%q val=%q", name, v)
-		}
-	}
-	if it := tx.ProcessRequestHeaders(); it != nil {
-		return e.interrupt(w, r, it, clientIP, accessLog)
-	}
-
-	// request body phase — buffer up to wafMaxBodyBytes; restore full stream for upstream
-	if r.Body != nil {
-		chunk, _ := io.ReadAll(io.LimitReader(r.Body, wafMaxBodyBytes))
-		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(chunk), r.Body))
-		if len(chunk) > 0 {
-			if it, _, err := tx.WriteRequestBody(chunk); err != nil {
-				logger.Error("waf: WriteRequestBody: %v", err)
-			} else if it != nil {
-				return e.interrupt(w, r, it, clientIP, accessLog)
+			// only log individual headers when debug is explicitly enabled
+			if logger.IsDebug() {
+				logger.Debug("waf: HEADER name=%q val=%q", name, v)
 			}
 		}
 	}
+	if it := tx.ProcessRequestHeaders(); it != nil {
+		return e.interrupt(w, r, it, clientIP, accessLog, logMu)
+	}
 
-	logger.Debug("waf: calling ProcessRequestBody")
+	// request body phase — buffer up to wafMaxBodyBytes using a pooled buffer to
+	// avoid per-request heap allocation; restore full stream for upstream after inspection
+	if r.Body != nil {
+		// acquire a pooled buffer and reset length, keeping capacity
+		bufPtr := wafBodyPool.Get().(*[]byte)
+		buf := (*bufPtr)[:0]
+		buf, _ = io.ReadAll(io.LimitReader(r.Body, wafMaxBodyBytes))
+
+		// restore the full body stream for the upstream — chunk already read + remainder
+		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), r.Body))
+
+		if len(buf) > 0 {
+			if it, _, err := tx.WriteRequestBody(buf); err != nil {
+				logger.Error("waf: WriteRequestBody: %v", err)
+			} else if it != nil {
+				wafBodyPool.Put(bufPtr) // return buffer before early exit
+				return e.interrupt(w, r, it, clientIP, accessLog, logMu)
+			}
+		}
+		wafBodyPool.Put(bufPtr) // return buffer after use
+	}
+
+	if logger.IsDebug() {
+		logger.Debug("waf: calling ProcessRequestBody")
+	}
 	if it, err := tx.ProcessRequestBody(); err != nil {
 		logger.Error("waf: ProcessRequestBody: %v", err)
 	} else if it != nil {
-		return e.interrupt(w, r, it, clientIP, accessLog)
+		// interrupt call — pass logMu through so writeWAFLog can lock correctly
+		return e.interrupt(w, r, it, clientIP, accessLog, logMu)
 	}
 
-	logger.Debug("waf: inspect complete — no interruption (method=%s uri=%s)", r.Method, r.URL.RequestURI())
+	if logger.IsDebug() {
+		logger.Debug("waf: inspect complete — no interruption (method=%s uri=%s)", r.Method, r.URL.RequestURI())
+	}
 	return true
 }
 
 // interrupt handles a WAF interruption. In detect mode it logs and passes the
 // request through. In prevent mode it logs and returns a 403.
-func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, accessLog *os.File) bool {
+func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, accessLog *os.File, logMu *sync.Mutex) bool {
 	action := "DETECT"
 	if e.mode == db.WAFModePrevent {
 		action = "BLOCK"
 	}
-	writeWAFLog(accessLog, r, clientIP, it.RuleID, action)
+	writeWAFLog(accessLog, logMu, r, clientIP, it.RuleID, action)
 
 	if e.mode == db.WAFModePrevent {
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -185,9 +216,9 @@ func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.
 	return true
 }
 
-// writeWAFLog writes a WAF event to the proxy access log in a structured format
-// compatible with the standard access log so Fail2Ban filters can match both.
-func writeWAFLog(f *os.File, r *http.Request, clientIP string, ruleID int, action string) {
+// writeWAFLog writes a WAF event to the WAF log in a structured format.
+// mu must be Proxy.wafLogMu — passed in to avoid a package-level global.
+func writeWAFLog(f *os.File, mu *sync.Mutex, r *http.Request, clientIP string, ruleID int, action string) {
 	if f == nil {
 		return
 	}
@@ -200,7 +231,10 @@ func writeWAFLog(f *os.File, r *http.Request, clientIP string, ruleID int, actio
 		clientIP,
 		r.UserAgent(),
 	)
-	if _, err := f.WriteString(line); err != nil {
+	mu.Lock()
+	_, err := f.WriteString(line)
+	mu.Unlock()
+	if err != nil {
 		logger.Error("waf: access log write: %v", err)
 	}
 }

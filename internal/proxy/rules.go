@@ -142,7 +142,9 @@ func checkIP(ip net.IP, global, site ruleSet) bool {
 	// global blacklist — hard block, no override
 	for _, r := range global.ipBlacklist {
 		if r.matchesIP(ip) {
-			logger.Debug("checkIP: blocked by global blacklist: %s", ip)
+			if logger.IsDebug() {
+				logger.Debug("checkIP: blocked by global blacklist: %s", ip)
+			}
 			return false
 		}
 	}
@@ -150,7 +152,9 @@ func checkIP(ip net.IP, global, site ruleSet) bool {
 	// per-site blacklist — hard block, no override
 	for _, r := range site.ipBlacklist {
 		if r.matchesIP(ip) {
-			logger.Debug("checkIP: blocked by site blacklist: %s", ip)
+			if logger.IsDebug() {
+				logger.Debug("checkIP: blocked by site blacklist: %s", ip)
+			}
 			return false
 		}
 	}
@@ -165,7 +169,9 @@ func checkIP(ip net.IP, global, site ruleSet) bool {
 			}
 		}
 		if !allowed {
-			logger.Debug("checkIP: blocked by global whitelist miss: %s", ip)
+			if logger.IsDebug() {
+				logger.Debug("checkIP: blocked by site whitelist miss: %s", ip)
+			}
 			return false
 		}
 	}
@@ -199,7 +205,9 @@ func checkUA(ua string, global, site ruleSet) bool {
 	// global blacklist — hard block, no override
 	for _, r := range global.uaBlacklist {
 		if strings.Contains(uaLower, r.pattern) {
-			logger.Debug("checkUA: blocked by global blacklist pattern '%s'", r.pattern)
+			if logger.IsDebug() {
+				logger.Debug("checkUA: blocked by global blacklist pattern '%s'", r.pattern)
+			}
 			return false
 		}
 	}
@@ -207,7 +215,9 @@ func checkUA(ua string, global, site ruleSet) bool {
 	// per-site blacklist — hard block, no override
 	for _, r := range site.uaBlacklist {
 		if strings.Contains(uaLower, r.pattern) {
-			logger.Debug("checkUA: blocked by site blacklist pattern '%s'", r.pattern)
+			if logger.IsDebug() {
+				logger.Debug("checkUA: blocked by site blacklist pattern '%s'", r.pattern)
+			}
 			return false
 		}
 	}
@@ -222,7 +232,9 @@ func checkUA(ua string, global, site ruleSet) bool {
 			}
 		}
 		if !allowed {
-			logger.Debug("checkUA: blocked by global whitelist miss")
+			if logger.IsDebug() {
+				logger.Debug("checkUA: blocked by global whitelist miss")
+			}
 			return false
 		}
 	}
@@ -237,7 +249,9 @@ func checkUA(ua string, global, site ruleSet) bool {
 			}
 		}
 		if !allowed {
-			logger.Debug("checkUA: blocked by site whitelist miss")
+			if logger.IsDebug() {
+				logger.Debug("checkUA: blocked by site whitelist miss")
+			}
 			return false
 		}
 	}

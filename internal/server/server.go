@@ -156,35 +156,14 @@ func (s *Server) Start() error {
 		px.ObtainCert(adminDomain)
 	}
 
-	// warm the domain→port cache from the database before the proxy starts serving
-	if err := px.WarmCache(); err != nil {
-		logger.Warn("proxy cache warm failed, falling back to DB lookups: %v", err)
+	// warm all proxy caches — domain routes, WAF, security rules, trusted proxies,
+	// TLS certs, and backend connections; non-fatal on partial failure
+	if err := px.WarmCaches(false); err != nil {
+		logger.Warn("proxy: cache warm failed: %v", err)
 	}
 
-	// warm the security rule cache from the database
-	ipRules, err := db.GetAllIPRules(s.cfg.DB)
-	if err != nil {
-		logger.Warn("security cache: failed to load IP rules: %v", err)
-	}
-	uaRules, err := db.GetAllUARules(s.cfg.DB)
-	if err != nil {
-		logger.Warn("security cache: failed to load UA rules: %v", err)
-	}
-	px.WarmSecurityCache(ipRules, uaRules)
-
-	// warm the WAF engine — compiles CRS rules; non-fatal on failure so a
-	// misconfigured exclusion does not prevent the proxy from starting
-	if err := px.WarmWAFCache(); err != nil {
-		logger.Warn("WAF cache warm failed, WAF will be inactive: %v", err)
-	}
-
-	// warm the trusted proxy ranges and start the weekly auto-refresh goroutine
-	if cidrs, err := db.GetTrustedProxies(s.cfg.DB); err != nil {
-		logger.Warn("trusted proxy warm failed: %v", err)
-	} else {
-		px.WarmTrustedProxies(cidrs)
-	}
-	proxy.StartTrustedProxyRefresher(s.cfg.DB, 7*24*time.Hour)
+	// start the weekly trusted proxy CIDR auto-refresh
+	proxy.StartTrustedProxyRefresher(px, 7*24*time.Hour)
 
 	// run the proxy
 	go func() {
@@ -240,9 +219,9 @@ func (s *Server) shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
-// WarmWAFCache triggers a WAF engine recompile via the proxy.
-func (s *Server) WarmWAFCache() error {
-	return s.proxy.WarmWAFCache()
+// WarmCaches triggers a full proxy cache rewarm via the proxy.
+func (s *Server) WarmCaches() error {
+	return s.proxy.WarmCaches(false)
 }
 
 // sitesBase returns the base directory path for all site data on disk.

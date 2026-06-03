@@ -19,7 +19,7 @@ import (
 
 // SecurityProxy is the subset of proxy.Proxy consumed by this handler.
 type SecurityProxy interface {
-	WarmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule)
+	WarmCaches(justTrustedProxies bool) error
 }
 
 // Handler handles IP and UA security rule management API routes.
@@ -374,15 +374,9 @@ func (h *Handler) importUARules(w http.ResponseWriter, r *http.Request, siteID *
 }
 
 func (h *Handler) refreshSecurityCache() error {
-	ipRules, err := db.GetAllIPRules(h.DB)
-	if err != nil {
-		return err
+	if err := h.Proxy.WarmCaches(false); err != nil {
+		logger.Error("security: failed to rewarm caches after rule update: %v", err)
 	}
-	uaRules, err := db.GetAllUARules(h.DB)
-	if err != nil {
-		return err
-	}
-	h.Proxy.WarmSecurityCache(ipRules, uaRules)
 	return nil
 }
 

@@ -92,8 +92,11 @@ type Proxy struct {
 	trustedProxies atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy; write-rarely, read-heavy
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
+	rpTransport    *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
+	accessLogMu    sync.Mutex                                   // guards concurrent writes to accessLog
 	wafLog         *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
+	wafLogMu       sync.Mutex                                   // guards concurrent writes to wafLog
 	manager        *autocert.Manager
 	httpSrv        *http.Server
 	httpsSrv       *http.Server
@@ -119,9 +122,32 @@ func New(cfg Config) *Proxy {
 		adminPort:   cfg.AdminPort,
 		appPath:     cfg.AppPath,
 		transport: &http.Transport{
-			MaxIdleConns:        500,
-			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
+			// dial timeout prevents stalls on first connection to a container that is
+			// slow to accept — without this the OS default applies (~130s on Linux),
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second, // max time to establish TCP connection
+				KeepAlive: 30 * time.Second, // keep-alive probe interval
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second, // max time for TLS handshake to upstream
+			ResponseHeaderTimeout: 60 * time.Second, // max time waiting for first response byte
+			MaxIdleConns:          500,
+			MaxIdleConnsPerHost:   100,
+			IdleConnTimeout:       90 * time.Second,
+		},
+		// shared transport for all reverse-proxy-type upstream sites — allows idle
+		// connection reuse across multiple RP sites rather than each upstream having
+		// an isolated pool; TLS verification intentionally skipped for user-defined targets
+		rpTransport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+			MaxIdleConns:          200,
+			MaxIdleConnsPerHost:   20,
+			IdleConnTimeout:       90 * time.Second,
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
 		},
 	}
 
@@ -178,6 +204,13 @@ func New(cfg Config) *Proxy {
 	p.httpsSrv = &http.Server{
 		Addr:    ":443",
 		Handler: p,
+		// ReadHeaderTimeout caps the header-send phase — safe for streaming since
+		// it only applies before headers complete; guards against slowloris attacks
+		ReadHeaderTimeout: 10 * time.Second,
+		// IdleTimeout caps keep-alive connection idle time between requests
+		IdleTimeout: 120 * time.Second,
+		// WriteTimeout intentionally omitted — streaming responses (WP-CLI, chunked
+		// uploads) require unlimited write time; set per-handler if needed
 		TLSConfig: &tls.Config{
 			GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 				cert, err := p.manager.GetCertificate(hello)
@@ -188,6 +221,9 @@ func New(cfg Config) *Proxy {
 				return cert, err
 			},
 			MinVersion: tls.VersionTLS12,
+			// LRU session cache reduces full TLS handshakes for returning clients;
+			// 1024 entries covers ~1024 concurrent session tickets in memory
+			ClientSessionCache: tls.NewLRUClientSessionCache(1024),
 		},
 	}
 
@@ -200,8 +236,10 @@ func New(cfg Config) *Proxy {
 
 	// SERVE IT - HTTP
 	p.httpSrv = &http.Server{
-		Addr:    ":80",
-		Handler: p.manager.HTTPHandler(p),
+		Addr:              ":80",
+		Handler:           p.manager.HTTPHandler(p),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return p
@@ -244,9 +282,44 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	}
 }
 
+// WarmCaches warms all proxy caches and connections in the correct order.
+// Pass justTrustedProxies=true to only refresh the trusted proxy ranges —
+// used by StartTrustedProxyRefresher to avoid unnecessary full rewarming.
+func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
+	// get the data we'll need for the others
+	cidrs, err := db.GetTrustedProxies(p.database)
+	if err != nil {
+		return err
+	}
+	ipRules, err := db.GetAllIPRules(p.database)
+	if err != nil {
+		return err
+	}
+	uaRules, err := db.GetAllUARules(p.database)
+	if err != nil {
+		return err
+	}
+	if justTrustedProxies {
+		p.warmTrustedProxies(cidrs)
+		return nil
+	}
+
+	if err := p.warmCache(); err != nil {
+		return err
+	}
+	if err := p.warmWAFCache(); err != nil {
+		return err
+	}
+	p.warmSecurityCache(ipRules, uaRules)
+	p.warmTrustedProxies(cidrs)
+	p.warmTLSCache()
+	p.warmConnections()
+	return nil
+}
+
 // WarmCache loads all registered domain→port+siteID mappings from the database
 // and atomically installs them. Called once on startup.
-func (p *Proxy) WarmCache() error {
+func (p *Proxy) warmCache() error {
 	entries, err := db.GetAllDomainEntries(p.database)
 	if err != nil {
 		logger.Error("proxy: failed to warm domain cache: %v", err)
@@ -308,9 +381,96 @@ func (p *Proxy) WarmCache() error {
 	return nil
 }
 
+// WarmTLSCache proactively loads certificates for all registered domains into
+// the autocert in-memory cache to prevent disk reads on the first TLS handshake
+// after a restart. Runs in a goroutine so it does not block proxy startup.
+func (p *Proxy) warmTLSCache() {
+	go func() {
+		ptr := p.cache.Load()
+		if ptr == nil {
+			return
+		}
+		for domain := range *ptr {
+			hello := &tls.ClientHelloInfo{ServerName: domain}
+			if _, err := p.manager.GetCertificate(hello); err != nil {
+				// not fatal — cert may not exist yet or may need renewal
+				logger.Debug("WarmTLSCache: could not pre-load cert for '%s': %v", domain, err)
+			}
+		}
+		logger.Debug("WarmTLSCache: completed pre-load for %d domains", len(*ptr))
+	}()
+}
+
+// WarmConnections proactively establishes TCP connections to all registered
+// site backends so the first real visitor request never pays the dial cost.
+// Container sites are warmed via p.transport; RP upstream URLs via p.rpTransport.
+// Runs in a goroutine — failures are non-fatal (pod may not be running yet).
+func (p *Proxy) warmConnections() {
+	go func() {
+		ptr := p.cache.Load()
+		if ptr == nil {
+			return
+		}
+
+		client := &http.Client{
+			Transport: p.transport,
+			// short timeout — we only want to establish the connection, not wait
+			// for a full response; failures are expected for stopped pods
+			Timeout: 5 * time.Second,
+		}
+
+		rpClient := &http.Client{
+			Transport: p.rpTransport,
+			Timeout:   5 * time.Second,
+		}
+
+		seenPorts := make(map[int]struct{})
+
+		for _, entry := range *ptr {
+
+			// warm RP upstream pool connections via rpTransport
+			if entry.pool != nil {
+				targets := entry.pool.Targets()
+				for _, target := range targets {
+					url := target.Scheme + "://" + target.Host + "/"
+					resp, err := rpClient.Head(url)
+					if err != nil {
+						logger.Debug("WarmConnections: RP upstream %s: %v", url, err)
+						continue
+					}
+					resp.Body.Close()
+					logger.Debug("WarmConnections: warmed RP upstream %s", url)
+				}
+			}
+
+			// skip zero-port entries with no pool, and skip the admin port
+			if entry.port == 0 || entry.port == p.adminPort {
+				continue
+			}
+
+			// deduplicate — multiple domains may share the same container port
+			if _, seen := seenPorts[entry.port]; seen {
+				continue
+			}
+			seenPorts[entry.port] = struct{}{}
+
+			url := fmt.Sprintf("http://%s:%d/", p.hostGateway, entry.port)
+			resp, err := client.Head(url)
+			if err != nil {
+				logger.Debug("WarmConnections: port %d: %v", entry.port, err)
+				continue
+			}
+			resp.Body.Close()
+			logger.Debug("WarmConnections: warmed port %d", entry.port)
+		}
+
+		logger.Debug("WarmConnections: completed warmup for %d unique ports", len(seenPorts))
+	}()
+}
+
 // WarmSecurityCache compiles all IP and UA rules from the database and
 // atomically installs the result. Called once on startup and after any rule change.
-func (p *Proxy) WarmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) {
+func (p *Proxy) warmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) {
 	cache := buildSecurityCache(ipRules, uaRules)
 	p.secCache.Store(&cache)
 	logger.Debug("proxy: security cache warmed — %d IP rules, %d UA rules", len(ipRules), len(uaRules))
@@ -319,7 +479,7 @@ func (p *Proxy) WarmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) {
 // WarmTrustedProxies loads trusted proxy CIDRs from the database, compiles them
 // into net.IPNet ranges, and atomically installs the result. Called on startup,
 // after a settings change, and by StartTrustedProxyRefresher after each fetch.
-func (p *Proxy) WarmTrustedProxies(cidrs []string) {
+func (p *Proxy) warmTrustedProxies(cidrs []string) {
 	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, cidr := range cidrs {
 		_, network, err := net.ParseCIDR(cidr)
@@ -337,7 +497,7 @@ func (p *Proxy) WarmTrustedProxies(cidrs []string) {
 // WarmWAFCache loads WAF settings and per-site overrides from the database,
 // compiles the Coraza engine(s), and installs them atomically.
 // Called once on startup and after any WAF settings change.
-func (p *Proxy) WarmWAFCache() error {
+func (p *Proxy) warmWAFCache() error {
 	settings, err := db.GetWAFSettings(p.database)
 	if err != nil {
 		logger.Error("proxy: failed to load WAF settings: %v", err)
@@ -477,6 +637,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
 
+	// convert clientIP to string once — net.IP.String() allocates a new string on
+	// every call; caching here avoids up to 6 redundant allocations per request
+	clientIPStr := "<unknown>"
+	if clientIP != nil {
+		clientIPStr = clientIP.String()
+	}
+
 	// extract the host without port for routing and admin domain checks; the port is not relevant since
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -503,7 +670,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// allow RP sites through even when port is 0; they route via pool, not port
 		if !ok || (entry.port == 0 && entry.pool == nil) {
 			http.Error(w, "domain not registered", http.StatusNotFound)
-			p.writeAccessLog(r, http.StatusNotFound, 0, time.Since(start), clientIP.String())
+			dur := time.Since(start)
+			p.writeAccessLog(r, http.StatusNotFound, 0, start, dur, clientIPStr)
 			return
 		}
 		port = entry.port
@@ -525,34 +693,48 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// enforce IP rules — blacklist always beats whitelist
 	if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		p.writeAccessLog(r, http.StatusForbidden, 0, time.Since(start), clientIP.String())
+		dur := time.Since(start)
+		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr)
 		return
 	}
 
 	// enforce UA rules — blacklist always beats whitelist
 	if !checkUA(r.UserAgent(), sec.global, siteRules) {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		p.writeAccessLog(r, http.StatusForbidden, 0, time.Since(start), clientIP.String())
+		dur := time.Since(start)
+		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr)
 		return
 	}
 
-	logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), p.resolveWAFEngine(siteID) != nil)
-	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
+	// resolve the WAF engine once — used for both the debug log and enforcement
+	// to avoid calling resolveWAFEngine twice on every WAF-enabled request
+	var wafEngine *WAFEngine
 	if siteID > 0 {
-		if engine := p.resolveWAFEngine(siteID); engine != nil {
-			if !engine.Inspect(w, r, clientIP.String(), p.wafLog) {
-				// WAF wrote the 403; record it in the access log for Fail2Ban
-				p.writeAccessLog(r, http.StatusForbidden, 0, time.Since(start), clientIP.String())
-				return
-			}
+		wafEngine = p.resolveWAFEngine(siteID)
+	}
+
+	// guard the debug log behind IsDebug() so resolveWAFEngine is not called
+	// purely for log formatting when debug logging is disabled
+	if logger.IsDebug() {
+		logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), wafEngine != nil)
+	}
+
+	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
+	if wafEngine != nil {
+		if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu) {
+			// WAF wrote the 403; record it in the access log for Fail2Ban
+			dur := time.Since(start)
+			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr)
+			return
 		}
 	}
 
-	// make sure browsers know we support QUIC
-	w.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
-
 	// wrap the writer to capture status + byte count for the access log
 	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+
+	// advertise HTTP/3 support — only on routed requests, not on proxy-level error
+	// responses (404 domain-not-found, 403 IP/UA/WAF blocks already returned above)
+	sw.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
 
 	// reverse proxy sites bypass container routing — proxy directly to the upstream pool;
 	// the proxy instance is cached per upstream URL to preserve connection pooling across
@@ -561,12 +743,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		upstream := rpPool.Next()
 		rp := p.getOrCreateRPProxy(upstream)
 		rp.ServeHTTP(sw, r)
-		p.writeAccessLog(r, sw.status, sw.bytes, time.Since(start), clientIP.String())
+		p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr)
 		return
 	}
 
 	p.siteProxy(sw, r, port)
-	p.writeAccessLog(r, sw.status, sw.bytes, time.Since(start), clientIP.String())
+	p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr)
 }
 
 // hostPolicy restricts certificate issuance to registered domains only.
@@ -641,6 +823,9 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", p.hostGateway, port))
 	rp := &httputil.ReverseProxy{
 		Transport: p.transport,
+		// FlushInterval of -1 enables immediate flush for streaming/chunked responses;
+		// without this the proxy buffers until upstream closes, adding perceived latency
+		FlushInterval: -1,
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
 			req.Out.Host = req.In.Host
@@ -652,12 +837,16 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 			req.Out.Body = req.In.Body
 			req.Out.ContentLength = req.In.ContentLength
 
-			// forward all inbound headers verbatim before setting X-Forwarded-* values
+			// clone the inbound header map before modification — with Rewrite, req.Out is a
+			// shallow copy of req.In so Out.Header aliases In.Header; SetXForwarded() would
+			// otherwise mutate the original inbound request headers
+			outHeader := make(http.Header, len(req.In.Header))
 			for key, vals := range req.In.Header {
-				req.Out.Header[key] = vals
+				outHeader[key] = vals
 			}
+			req.Out.Header = outHeader
 
-			// set X-Forwarded-* headers after copying to avoid duplication
+			// set X-Forwarded-* on the cloned map — In.Header is now unaffected
 			req.SetXForwarded()
 
 			// pass through WebSocket upgrade headers
@@ -693,20 +882,22 @@ func (p *Proxy) getOrCreateRPProxy(target *url.URL) *httputil.ReverseProxy {
 	if rp, ok := p.rpCache.Load(key); ok {
 		return rp.(*httputil.ReverseProxy)
 	}
-	rp := newReverseProxy(target)
+	rp := newReverseProxy(target, p.rpTransport)
 	actual, _ := p.rpCache.LoadOrStore(key, rp)
 	return actual.(*httputil.ReverseProxy)
 }
 
 // writeAccessLog writes a single structured line to the proxy access log.
-// Format: timestamp method host path status bytes duration remoteIP "ua"
-func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, dur time.Duration, clientIP string) {
+// start is the request arrival time — logged as the entry timestamp per standard
+// access log convention (request start, not response end).
+// Acquires accessLogMu to prevent interleaving under concurrent request goroutines.
+func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Time, dur time.Duration, clientIP string) {
 	if p.accessLog == nil {
 		return
 	}
 
 	line := fmt.Sprintf("%s %s %s %s %d %d %s %s %q\n",
-		time.Now().UTC().Format(time.RFC3339),
+		start.UTC().Format(time.RFC3339), // request arrival time, not completion time
 		r.Method,
 		r.Host,
 		r.URL.Path,
@@ -717,7 +908,11 @@ func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, dur time.Dura
 		r.UserAgent(),
 	)
 
-	if _, err := p.accessLog.WriteString(line); err != nil {
+	p.accessLogMu.Lock()
+	_, err := p.accessLog.WriteString(line)
+	p.accessLogMu.Unlock()
+
+	if err != nil {
 		logger.Error("proxy: access log write failed: %v", err)
 	}
 }

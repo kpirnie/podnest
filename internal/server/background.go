@@ -35,8 +35,8 @@ func (s *Server) crsUpdater() {
 			return
 		}
 		if s.proxy != nil {
-			if err := s.proxy.WarmWAFCache(); err != nil {
-				logger.Error("crs: WAF cache refresh after update failed: %v", err)
+			if err := s.proxy.WarmCaches(false); err != nil {
+				logger.Error("crs: cache refresh after update failed: %v", err)
 			}
 		}
 	}
@@ -204,6 +204,9 @@ func (s *Server) startupRestore() {
 			_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
 			continue
 		}
+
+		// warm the caches
+		go s.proxy.WarmCaches(false)
 
 		logger.Debug("startupRestore: pod for site %s restored successfully", site.Name)
 	}

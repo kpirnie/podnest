@@ -1,12 +1,10 @@
 package proxy
 
 import (
-	"crypto/tls"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync/atomic"
-	"time"
 
 	"podnest/internal/logger"
 )
@@ -37,21 +35,20 @@ func (p *UpstreamPool) Next() *url.URL {
 	return p.targets[int(n-1)%len(p.targets)]
 }
 
-// newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
-// All request headers — including method, body, and X-Forwarded-For — are forwarded.
-// WebSocket upgrades and all HTTP methods (PUT, DELETE, PATCH, etc.) are passed through.
-// SSL verification of the upstream is skipped for user-defined upstreams.
-func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
-	// shared transport per proxy instance — reuses connections across requests
-	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 20,
-		IdleConnTimeout:     90 * time.Second,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
-	}
+// Targets returns the upstream URL slice for connection warming.
+func (p *UpstreamPool) Targets() []*url.URL {
+	return p.targets
+}
 
+// newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
+// transport is the shared pool passed in from Proxy.rpTransport — not created here —
+// so idle connections are reused across all RP upstream sites rather than siloed per-URL.
+func newReverseProxy(target *url.URL, transport *http.Transport) *httputil.ReverseProxy {
+
+	// return the proxy
 	return &httputil.ReverseProxy{
-		Transport: transport,
+		Transport:     transport,
+		FlushInterval: -1, // flush immediately for streaming responses — see getOrCreateProxy
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
 			req.Out.Host = req.In.Host
@@ -63,12 +60,15 @@ func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			req.Out.Body = req.In.Body
 			req.Out.ContentLength = req.In.ContentLength
 
-			// forward all inbound headers verbatim before setting X-Forwarded-* values
+			// clone the inbound header map before modification — see getOrCreateProxy
+			// for full explanation of the aliasing issue with Rewrite + SetXForwarded
+			outHeader := make(http.Header, len(req.In.Header))
 			for key, vals := range req.In.Header {
-				req.Out.Header[key] = vals
+				outHeader[key] = vals
 			}
+			req.Out.Header = outHeader
 
-			// set X-Forwarded-* headers after copying to avoid duplication
+			// set X-Forwarded-* on the cloned map — In.Header is now unaffected
 			req.SetXForwarded()
 
 			// pass through WebSocket upgrade headers

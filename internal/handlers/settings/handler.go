@@ -18,7 +18,7 @@ import (
 type SettingsProxy interface {
 	SetAdminDomain(domain string)
 	ObtainCert(domain string)
-	WarmTrustedProxies(cidrs []string)
+	WarmCaches(justTrustedProxies bool) error
 }
 
 // BackupRescheduler is the subset of backup.Manager consumed by this handler.
@@ -291,11 +291,8 @@ func (h *Handler) applySettingLive(k, v string) {
 	case "backup_schedule":
 		h.Backup.Reschedule(v)
 	case "trusted_proxies_custom":
-		cidrs, err := db.GetTrustedProxies(h.DB)
-		if err != nil {
-			logger.Error("applySettingLive: failed to load trusted proxies: %v", err)
-			return
+		if err := h.Proxy.WarmCaches(false); err != nil {
+			logger.Error("settings: failed to rewarm caches after settings update: %v", err)
 		}
-		h.Proxy.WarmTrustedProxies(cidrs)
 	}
 }

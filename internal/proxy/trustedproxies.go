@@ -173,17 +173,27 @@ func RefreshTrustedProxyRanges(database *goDb.DB) error {
 }
 
 // StartTrustedProxyRefresher runs RefreshTrustedProxyRanges immediately then
-// repeats on the given interval for the lifetime of the process
-func StartTrustedProxyRefresher(database *goDb.DB, interval time.Duration) {
+// repeats on the given interval for the lifetime of the process.
+// px is used to reload the compiled ranges into the running proxy after each fetch.
+func StartTrustedProxyRefresher(px *Proxy, interval time.Duration) {
 	go func() {
-		if err := RefreshTrustedProxyRanges(database); err != nil {
+		if err := RefreshTrustedProxyRanges(px.database); err != nil {
 			logger.Warn("trusted proxy initial refresh: %v", err)
+		} else {
+			// reload the freshly fetched ranges into the running proxy
+			if err := px.WarmCaches(true); err != nil {
+				logger.Warn("trusted proxy initial warm failed: %v", err)
+			}
 		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
-			if err := RefreshTrustedProxyRanges(database); err != nil {
+			if err := RefreshTrustedProxyRanges(px.database); err != nil {
 				logger.Warn("trusted proxy refresh: %v", err)
+			} else {
+				if err := px.WarmCaches(true); err != nil {
+					logger.Warn("trusted proxy warm failed: %v", err)
+				}
 			}
 		}
 	}()

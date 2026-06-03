@@ -48,6 +48,7 @@ type SitesProxy interface {
 	ObtainCert(domain string)
 	RemoveDomains(domains []string)
 	RemoveSiteProxy(port int)
+	WarmCaches(justTrustedProxies bool) error
 }
 
 // SFTPManager is the subset of sftp.Manager consumed by this handler.
@@ -578,6 +579,9 @@ func (h *Handler) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// rewarm connections so this pod's port is pre-dialed for the first visitor
+	go h.Proxy.WarmCaches(false)
+
 	// run mariadb-upgrade if the DB version has changed
 	go h.maybeUpgradeMariaDB(r.Context(), site)
 
@@ -615,6 +619,10 @@ func (h *Handler) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	// rewarm connections so this pod's port is pre-dialed for the first visitor
+	go h.Proxy.WarmCaches(false)
+
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
 }

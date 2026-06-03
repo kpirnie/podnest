@@ -128,7 +128,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(waf.Module{
 		DB:      database,
 		AppPath: appPath,
-		WarmWAF: srv.WarmWAFCache,
+		WarmWAF: srv.WarmCaches,
 	})
 
 	// register the backups
