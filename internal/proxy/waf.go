@@ -54,7 +54,9 @@ type overlayFS struct {
 
 // Open implements fs.FS. It first tries to open the file from the local FS, and if that fails it falls back to the embedded FS.
 func (o overlayFS) Open(name string) (fs.File, error) {
-	logger.Debug("overlayFS.Open: name=%q", name)
+	if logger.IsDebug() {
+		logger.Debug("overlayFS.Open: name=%q", name)
+	}
 
 	// strip the leading @ that Coraza preserves in directive paths
 	localName := strings.TrimPrefix(name, "@")

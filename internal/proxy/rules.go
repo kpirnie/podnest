@@ -64,12 +64,6 @@ func (r *compiledIPRule) matchesIP(ip net.IP) bool {
 	return r.host.Equal(ip)
 }
 
-// matchesUA returns true if the given user-agent contains this rule's pattern
-// using case-insensitive substring matching.
-func (r *compiledUARule) matchesUA(ua string) bool {
-	return strings.Contains(strings.ToLower(ua), r.pattern)
-}
-
 // buildSecurityCache compiles all IP and UA rules from the database into
 // an in-memory securityCache ready for zero-allocation hot-path lookups.
 func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) securityCache {

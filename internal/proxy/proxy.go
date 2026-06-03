@@ -90,7 +90,8 @@ type Proxy struct {
 	wafSiteEngines sync.Map                                     // int64(siteID) → *WAFEngine
 	wafOverrides   atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
 	trustedProxies atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
-	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy; write-rarely, read-heavy
+	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
+	rpProxyCache   sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
 	rpTransport    *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
@@ -273,12 +274,16 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 
 	// flush and close the access log file
 	if p.accessLog != nil {
+		p.accessLogMu.Lock()
 		p.accessLog.Close()
+		p.accessLogMu.Unlock()
 	}
 
 	// flush and close the waf log file
 	if p.wafLog != nil {
+		p.wafLogMu.Lock()
 		p.wafLog.Close()
+		p.wafLogMu.Unlock()
 	}
 }
 
@@ -879,11 +884,11 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 // reused across requests rather than allocated per-request.
 func (p *Proxy) getOrCreateRPProxy(target *url.URL) *httputil.ReverseProxy {
 	key := target.String()
-	if rp, ok := p.rpCache.Load(key); ok {
+	if rp, ok := p.rpProxyCache.Load(key); ok {
 		return rp.(*httputil.ReverseProxy)
 	}
 	rp := newReverseProxy(target, p.rpTransport)
-	actual, _ := p.rpCache.LoadOrStore(key, rp)
+	actual, _ := p.rpProxyCache.LoadOrStore(key, rp)
 	return actual.(*httputil.ReverseProxy)
 }
 

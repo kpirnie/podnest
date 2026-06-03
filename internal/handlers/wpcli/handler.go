@@ -14,7 +14,6 @@ import (
 	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/podman"
-	"podnest/internal/sftp"
 
 	"github.com/gorilla/websocket"
 )
@@ -94,16 +93,15 @@ func (h *Handler) apiWPCLI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	containerName := podman.ContainerName(site.Name, "php")
-	siteUID := sftp.UIDForSite(site.ID)
 
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Detach":       false,
-		"User":         fmt.Sprintf("%d", siteUID),
+		"User":         "0",
 		"Cmd": []string{
 			"sh", "-c",
-			fmt.Sprintf("%s --path=/var/www/html --no-color %s", wpcliContainerPath, cmd),
+			fmt.Sprintf("%s --path=/var/www/html --no-color --allow-root %s", wpcliContainerPath, cmd),
 		},
 	}
 	var execResp struct {

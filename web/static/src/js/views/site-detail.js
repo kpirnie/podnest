@@ -483,7 +483,7 @@ export async function viewSiteDetail(root, { id }) {
     });
 
     // wire toolbar action buttons (start, stop, restart, flush, update)
-    root.querySelectorAll("[data-action]").forEach((btn) => {
+    root.querySelectorAll("[data-action]:not([data-action='wpcli-quick'])").forEach((btn) => {
         btn.addEventListener("click", async () => {
             const action = btn.dataset.action;
 

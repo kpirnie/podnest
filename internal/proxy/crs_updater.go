@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"podnest/internal/logger"
@@ -54,6 +55,11 @@ var crsPluginRepos = []string{
 	"coreruleset/traffic-observation-plugin",
 	"coreruleset/incubator-plugin",
 }
+
+// crsHTTPClient is a shared HTTP client for all CRS update requests — reuses
+// connections across the 25+ plugin repo fetches rather than allocating
+// a fresh client per call
+var crsHTTPClient = &http.Client{Timeout: 120 * time.Second}
 
 // CRSDir returns the path where downloaded CRS rule files are stored
 func CRSDir(appPath string) string {
@@ -269,31 +275,43 @@ func crsCopyDir(srcDir, dstDir, suffix string) error {
 	return nil
 }
 
-// crsHTTPGet performs a GET with a 120 s timeout and the PodNest user-agent
+// crsHTTPGet performs a GET with the PodNest user-agent using the shared client
 func crsHTTPGet(url string) (*http.Response, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", crsUserAgent)
 	req.Header.Set("Accept", "application/vnd.github+json")
-	return client.Do(req)
+	return crsHTTPClient.Do(req)
 }
 
 // downloadCRSPlugins fetches all .conf files from the plugins/ directory of
-// each official CRS plugin repository and writes them into pluginsDir
+// each official CRS plugin repository concurrently, with a semaphore to cap
+// parallelism and avoid hammering the GitHub API
 func downloadCRSPlugins(pluginsDir string) error {
 	if err := os.MkdirAll(pluginsDir, 0750); err != nil {
 		return fmt.Errorf("crs: plugins dir: %w", err)
 	}
 
+	// semaphore limits concurrent GitHub API requests to avoid rate limiting
+	const maxConcurrent = 5
+	sem := make(chan struct{}, maxConcurrent)
+
+	var wg sync.WaitGroup
 	for _, repo := range crsPluginRepos {
-		if err := downloadPluginRepo(repo, pluginsDir); err != nil {
-			// non-fatal — log and continue so one bad repo doesn't block the rest
-			logger.Warn("crs: plugin repo %s: %v — skipping", repo, err)
-		}
+		wg.Add(1)
+		go func(repo string) {
+			defer wg.Done()
+			sem <- struct{}{}        // acquire
+			defer func() { <-sem }() // release
+			if err := downloadPluginRepo(repo, pluginsDir); err != nil {
+				// non-fatal — log and continue so one bad repo doesn't block the rest
+				logger.Warn("crs: plugin repo %s: %v — skipping", repo, err)
+			}
+		}(repo)
 	}
+	wg.Wait()
 	return nil
 }
 
