@@ -5,6 +5,7 @@ import { confirm, hideProgressModal, showCloneModal, showProgressModal } from '.
 import { showEditSiteModal } from './modals/edit-site.js';
 import { parseHash, router } from './router.js';
 import { toast } from './toast.js';
+import { viewAdminLogs } from './views/admin-logs.js';
 import { viewDashboard } from './views/dashboard.js';
 import { viewSecurity } from './views/security.js';
 import { viewSettings } from './views/settings.js';
@@ -19,6 +20,7 @@ router.register("site-detail", (root, params) => viewSiteDetail(root, params));
 router.register("users",       (root)         => viewUsers(root));
 router.register("settings",    (root)         => viewSettings(root));
 router.register("security",    (root)         => viewSecurity(root));
+router.register("admin-logs", (root) => viewAdminLogs(root));
 
 /* -- nav wiring ------------------------------------------------------------ */
 document.addEventListener("click", (e) => {

@@ -42,23 +42,27 @@
                 Sites
             </a>
             {{if eq .User.Role 99}}
-            <a href="#" class="kp-bn-item" data-view="users">
-                <span class="kp-bn-icon" uk-icon="icon: users; ratio: 1.1"></span>
-                Users
-            </a>
-            <a href="#" class="kp-bn-item" data-view="settings">
-                <span class="kp-bn-icon" uk-icon="icon: cog; ratio: 1.1"></span>
-                Settings
-            </a>
-            <a href="#" class="kp-bn-item" data-view="security">
-                <span class="kp-bn-icon" uk-icon="icon: server; ratio: 1.1"></span>
-                Security
-            </a>
+                <a href="#" class="kp-bn-item" data-view="users">
+                    <span class="kp-bn-icon" uk-icon="icon: users; ratio: 1.1"></span>
+                    Users
+                </a>
+                <a href="#" class="kp-bn-item" data-view="settings">
+                    <span class="kp-bn-icon" uk-icon="icon: cog; ratio: 1.1"></span>
+                    Settings
+                </a>
+                <a href="#" class="kp-bn-item" data-view="security">
+                    <span class="kp-bn-icon" uk-icon="icon: server; ratio: 1.1"></span>
+                    Security
+                </a>
+                <a href="#" class="kp-bn-item" data-view="admin-logs">
+                    <span class="kp-bn-icon" uk-icon="icon: list; ratio: 1.1"></span>
+                    Logs
+                </a>
             {{else}}
-            <a href="/logout" class="kp-bn-item">
-                <span class="kp-bn-icon" uk-icon="icon: sign-out; ratio: 1.1"></span>
-                Sign Out
-            </a>
+                <a href="/logout" class="kp-bn-item">
+                    <span class="kp-bn-icon" uk-icon="icon: sign-out; ratio: 1.1"></span>
+                    Sign Out
+                </a>
             {{end}}
         </nav>
 
@@ -177,19 +181,23 @@
             Sites
         </a>
         {{if eq .User.Role 99}}
-        <div class="kp-nav-section">Administration</div>
-        <a href="#" data-view="users" class="kp-nav-link">
-            <span class="kp-nav-icon" uk-icon="icon: users; ratio: 0.9"></span>
-            Users
-        </a>
-        <a href="#" data-view="settings" class="kp-nav-link">
-            <span class="kp-nav-icon" uk-icon="icon: cog; ratio: 0.9"></span>
-            Settings
-        </a>
-        <a href="#" data-view="security" class="kp-nav-link">
-            <span class="kp-nav-icon" uk-icon="icon: server; ratio: 0.9"></span>
-            Security
-        </a>
+            <div class="kp-nav-section">Administration</div>
+            <a href="#" data-view="users" class="kp-nav-link">
+                <span class="kp-nav-icon" uk-icon="icon: users; ratio: 0.9"></span>
+                Users
+            </a>
+            <a href="#" data-view="settings" class="kp-nav-link">
+                <span class="kp-nav-icon" uk-icon="icon: cog; ratio: 0.9"></span>
+                Settings
+            </a>
+            <a href="#" data-view="security" class="kp-nav-link">
+                <span class="kp-nav-icon" uk-icon="icon: server; ratio: 0.9"></span>
+                Security
+            </a>
+            <a href="#" data-view="admin-logs" class="kp-nav-link">
+                <span class="kp-nav-icon" uk-icon="icon: list; ratio: 0.9"></span>
+                Logs
+            </a>
         {{end}}
     </nav>
 

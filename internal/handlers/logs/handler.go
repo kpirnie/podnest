@@ -66,6 +66,8 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/logs", h.apiSiteLogs)
 	api.HandleFunc("GET /sites/{id}/logs/waf", h.apiSiteWAFLog)
 	api.HandleFunc("GET /sites/{id}/logs/proxy", h.apiSiteProxyLog)
+	api.HandleFunc("GET /logs/proxy", h.apiGlobalProxyLog)
+	api.HandleFunc("GET /logs/waf", h.apiGlobalWAFLog)
 }
 
 func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
@@ -464,4 +466,212 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// apiGlobalProxyLog streams the global proxy-access.log via WebSocket — admin only.
+func (h *Handler) apiGlobalProxyLog(w http.ResponseWriter, r *http.Request) {
+	tail := 100
+	if t := r.URL.Query().Get("tail"); t != "" {
+		if n, err := strconv.Atoi(t); err == nil && n > 0 && n <= 5000 {
+			tail = n
+		}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Error("apiGlobalProxyLog: upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	logPath := h.AppPath + "/logs/proxy-access.log"
+	ctx := r.Context()
+
+	// send initial tail — no domain filter, global log contains all siteID-0 traffic
+	initial, err := tailLogLines(logPath, tail)
+	if err != nil {
+		conn.WriteMessage(websocket.TextMessage, []byte("[proxy] no log entries yet"))
+		logger.Debug("apiGlobalProxyLog: proxy-access.log not readable: %v", err)
+		return
+	}
+	for _, line := range initial {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+			return
+		}
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		logger.Error("apiGlobalProxyLog: open for live tail: %v", err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		logger.Error("apiGlobalProxyLog: seek: %v", err)
+		return
+	}
+
+	reader := bufio.NewReader(f)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	logger.Debug("apiGlobalProxyLog: live streaming proxy-access.log")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-pingTicker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-ticker.C:
+			for {
+				line, err := reader.ReadString('\n')
+				if len(line) > 0 {
+					line = strings.TrimRight(line, "\r\n")
+					if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+						return
+					}
+				}
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					logger.Error("apiGlobalProxyLog: read error: %v", err)
+					return
+				}
+			}
+		}
+	}
+}
+
+// apiGlobalWAFLog streams the global waf.log via WebSocket — admin only.
+func (h *Handler) apiGlobalWAFLog(w http.ResponseWriter, r *http.Request) {
+	tail := 100
+	if t := r.URL.Query().Get("tail"); t != "" {
+		if n, err := strconv.Atoi(t); err == nil && n > 0 && n <= 5000 {
+			tail = n
+		}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Error("apiGlobalWAFLog: upgrade: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	})
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	logPath := h.AppPath + "/logs/waf.log"
+	ctx := r.Context()
+
+	initial, err := tailLogLines(logPath, tail)
+	if err != nil {
+		conn.WriteMessage(websocket.TextMessage, []byte("[waf] no log entries yet"))
+		logger.Debug("apiGlobalWAFLog: waf.log not readable: %v", err)
+		return
+	}
+	for _, line := range initial {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+			return
+		}
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		logger.Error("apiGlobalWAFLog: open for live tail: %v", err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		logger.Error("apiGlobalWAFLog: seek: %v", err)
+		return
+	}
+
+	reader := bufio.NewReader(f)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	logger.Debug("apiGlobalWAFLog: live streaming waf.log")
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-pingTicker.C:
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		case <-ticker.C:
+			for {
+				line, err := reader.ReadString('\n')
+				if len(line) > 0 {
+					line = strings.TrimRight(line, "\r\n")
+					if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+						return
+					}
+				}
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					logger.Error("apiGlobalWAFLog: read error: %v", err)
+					return
+				}
+			}
+		}
+	}
+}
+
+// tailLogLines returns the last n lines from path with no domain filtering.
+func tailLogLines(path string, n int) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	buf := make([]string, n)
+	pos := 0
+	count := 0
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 128*1024), 128*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		buf[pos%n] = line
+		pos++
+		count++
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return []string{}, nil
+	}
+	if count <= n {
+		return buf[:count], nil
+	}
+	result := make([]string, n)
+	for i := 0; i < n; i++ {
+		result[i] = buf[(pos+i)%n]
+	}
+	return result, nil
 }
