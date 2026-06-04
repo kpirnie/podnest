@@ -63,18 +63,20 @@ func (m *Manager) RunNow(ctx context.Context, jobID int64) error {
 		return fmt.Errorf("cron job %d not found", jobID)
 	}
 
+	// get the site
 	site, err := db.GetSiteByID(m.database, job.SiteID)
 	if err != nil || site == nil {
 		return fmt.Errorf("site %d not found for cron job %d", job.SiteID, jobID)
 	}
 
+	// execute the job for the site
 	return m.execute(ctx, job, site)
 }
 
-// -- scheduler ---------------------------------------------------------------
-
 // run is the main scheduler loop; a single goroutine manages all jobs
 func (m *Manager) run(ctx context.Context) {
+
+	// setup the timer and channel
 	var timer *time.Timer
 	var timerCh <-chan time.Time
 
@@ -109,6 +111,7 @@ func (m *Manager) run(ctx context.Context) {
 			}
 		}
 
+		// oops, nothing scheduled
 		if earliest.IsZero() {
 			logger.Debug("cron: no scheduled jobs")
 			return

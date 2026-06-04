@@ -406,8 +406,13 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	logPath := h.AppPath + "/logs/proxy-access.log"
 	ctx := r.Context()
 
-	// send initial tail of matching lines
-	initial, err := tailWAFLog(logPath, domains, tail)
+	// RP sites use a per-site log — no domain filtering needed
+	var initial []string
+	if site.SiteType == models.SiteTypeReverseProxy {
+		initial, err = tailLogLines(logPath, tail)
+	} else {
+		initial, err = tailWAFLog(logPath, domains, tail)
+	}
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("[proxy] no proxy log entries yet"))
 		logger.Debug("apiSiteProxyLog: proxy-access.log not readable for site %d: %v", site.ID, err)
@@ -451,12 +456,19 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 				line, err := reader.ReadString('\n')
 				if len(line) > 0 {
 					line = strings.TrimRight(line, "\r\n")
-					for _, d := range domains {
-						if strings.Contains(line, d) {
-							if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
-								return
+					// RP sites use a per-site log — no domain filtering needed
+					if site.SiteType == models.SiteTypeReverseProxy {
+						if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+							return
+						}
+					} else {
+						for _, d := range domains {
+							if strings.Contains(line, d) {
+								if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+									return
+								}
+								break
 							}
-							break
 						}
 					}
 				}
