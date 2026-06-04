@@ -149,10 +149,14 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	domains, err := h.siteDomainsFor(site)
-	if err != nil || len(domains) == 0 {
-		apiutil.ErrorMsg(w, http.StatusNotFound, "no domains found for site")
-		return
+	// RP sites write to a per-site log with no domain filtering needed;
+	// non-RP sites still require at least one domain to be registered
+	if site.SiteType != models.SiteTypeReverseProxy {
+		domains, err := h.siteDomainsFor(site)
+		if err != nil || len(domains) == 0 {
+			apiutil.ErrorMsg(w, http.StatusNotFound, "no domains found for site")
+			return
+		}
 	}
 
 	// per-site log is already filtered — no domain matching needed

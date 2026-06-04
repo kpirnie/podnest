@@ -37,6 +37,7 @@ import (
 //go:embed maintenance.html
 var maintenanceHTML []byte
 
+// constants for restic binary path and maintenance mode file names
 const (
 	resticBin     = "/usr/bin/restic"
 	maintConfName = "000-maint.conf"
@@ -64,6 +65,8 @@ type s3Config struct {
 
 // New returns a backup Manager
 func New(database *sql.DB, pc *podman.Client, podmanSock, appPath string) *Manager {
+
+	// return the backup manager
 	return &Manager{
 		db:          database,
 		podman:      pc,
@@ -262,6 +265,8 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		if err := m.backupDB(ctx, site, repo.LocalPath, localEnv, tag, siteDir); err != nil {
 			return 0, err
 		}
+
+		// apply retention policy and prune
 		if err := m.forgetPrune(ctx, repo.LocalPath, localEnv); err != nil {
 			logger.Warn("Backup: local forget/prune failed for site %d: %v", site.ID, err)
 		}
@@ -284,6 +289,8 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		if err := m.backupDB(ctx, site, s3Repo, s3Env, tag, siteDir); err != nil {
 			return 0, err
 		}
+
+		// apply retention policy and prune
 		if err := m.forgetPrune(ctx, s3Repo, s3Env); err != nil {
 			logger.Warn("Backup: S3 forget/prune failed for site %d: %v", site.ID, err)
 		}
@@ -322,15 +329,19 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 
 // backupFiles runs restic backup for the site's file tree and returns bytes added
 func (m *Manager) backupFiles(ctx context.Context, repoPath string, env, paths, excludes []string, tag string) (int64, error) {
+
+	// build the restic backup command with the given include and exclude paths
 	args := []string{"-r", repoPath, "backup", "--json", "--tag", tag}
 	for _, ex := range excludes {
 		args = append(args, "--exclude", ex)
 	}
 	args = append(args, paths...)
 
+	// run the restic backup command
 	cmd := exec.CommandContext(ctx, resticBin, args...)
 	cmd.Env = env
 
+	// capture restic stdout for parsing the summary of bytes added
 	out, err := cmd.Output()
 	if err != nil {
 		logger.Error("backupFiles: restic backup failed for %s: %v", repoPath, err)
@@ -408,14 +419,19 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 
 	logger.Debug("backupDB: starting DB stream to restic for site %s", site.Name)
 
+	// start the dump command first
 	if err := dumpCmd.Start(); err != nil {
 		return fmt.Errorf("backupDB: start mysqldump: %w", err)
 	}
+
+	// then start the restic command to read from the dump's stdout
 	if err := resticCmd.Run(); err != nil {
 		dumpCmd.Wait()
 		return fmt.Errorf("backupDB: restic: %w — restic_stderr: %s — dump_stderr: %s",
 			err, resticStderr.String(), dumpStderr.String())
 	}
+
+	// wait for the dump command to finish and check for errors
 	if err := dumpCmd.Wait(); err != nil {
 		return fmt.Errorf("backupDB: mysqldump wait: %w — dump_stderr: %s",
 			err, dumpStderr.String())
@@ -425,20 +441,21 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	return nil
 }
 
-// -- restore -----------------------------------------------------------------
-
 // Restore restores a site from the snapshot identified by the given Backup
 // record. Nginx serves the maintenance page for the duration.
 func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models.Backup) error {
 
+	// if a restore is already in progress for this site, prevent starting another
 	m.restoring.Store(site.ID, true)
 	defer m.restoring.Delete(site.ID)
 
+	// look up the repo for this site; we need the password and repo type to know
 	repo, err := db.GetBackupRepo(m.db, site.ID)
 	if err != nil || repo == nil {
 		return fmt.Errorf("restore: no repo configured for site %s", site.Name)
 	}
 
+	// load S3 config if needed for this backup type
 	s3, err := m.loadS3Config()
 	if err != nil {
 		return err
@@ -447,6 +464,8 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 	// resolve which repo to restore from based on the backup type
 	var repoPath string
 	var env []string
+
+	// find the actual backup type so we can set up the repo path and env correctly
 	switch backup.BackupType {
 	case models.BackupTypeLocal:
 		repoPath = repo.LocalPath
@@ -461,6 +480,7 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 		return fmt.Errorf("restore: unknown backup type %d", backup.BackupType)
 	}
 
+	// setup the site directory string
 	siteDir := filepath.Join(m.appPath, "sites", site.Name)
 
 	// enable maintenance mode before touching any site data
@@ -492,7 +512,7 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 	return nil
 }
 
-// add exported method
+// IsRestoring returns true if a restore operation is currently in progress for the given site ID
 func (m *Manager) IsRestoring(siteID int64) bool {
 	_, ok := m.restoring.Load(siteID)
 	return ok
@@ -500,11 +520,14 @@ func (m *Manager) IsRestoring(siteID int64) bool {
 
 // restoreFiles runs restic restore for the file tree snapshot matching the tag
 func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []string, tag, siteDir string) error {
+
+	// find the snapshot ID for the file tree snapshot with the given tag
 	snapID, err := m.findSnapshot(ctx, repoPath, env, tag, "files")
 	if err != nil {
 		return err
 	}
 
+	// setup the restore command
 	args := []string{
 		"-r", repoPath, "restore", snapID,
 		"--target", "/",
@@ -512,9 +535,12 @@ func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []strin
 		"--exclude", filepath.Join(siteDir, "nginx", "cache"),
 		"--exclude", filepath.Join(siteDir, "nginx", "conf.d", maintConfName),
 	}
+
+	// run the restic restore command
 	cmd := exec.CommandContext(ctx, resticBin, args...)
 	cmd.Env = env
 
+	// capture stderr for error reporting
 	if out, err := cmd.CombinedOutput(); err != nil {
 		logger.Error("restoreFiles: restic restore: %v — %s", err, string(out))
 		return fmt.Errorf("restic restore: %w — %s", err, string(out))
@@ -527,15 +553,19 @@ func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []strin
 // restoreDB streams the DB dump out of restic and pipes it into mysql inside
 // the MariaDB container via the podman exec CLI
 func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath string, env []string, tag, siteDir string) error {
-	if site.SiteType != models.SiteTypeWordPress && site.SiteType != models.SiteTypePHP {
+
+	// only sites with a MariaDB container need a DB restore
+	if !modules.TypeModule(site.SiteType).HasDatabase() {
 		return nil
 	}
 
+	// find the snapshot ID for the DB dump snapshot with the given tag
 	snapID, err := m.findSnapshot(ctx, repoPath, env, tag, "db")
 	if err != nil {
 		return err
 	}
 
+	// read DB credentials from the site's .env file
 	rootPass, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_ROOT_PASS")
 	if err != nil {
 		return fmt.Errorf("restoreDB: DB_ROOT_PASS: %w", err)
@@ -552,6 +582,7 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 	}
 	defer os.Remove(tmp.Name())
 
+	// run restic dump to write the SQL to the temp file
 	dumpCmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "dump", snapID, "db_dump.sql")
 	dumpCmd.Env = env
 	dumpCmd.Stdout = tmp
@@ -592,17 +623,20 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 // kind ("files" or "db"). The DB snapshot is identified by having a single
 // path entry of "db_dump.sql"; the file snapshot has directory paths.
 func (m *Manager) findSnapshot(ctx context.Context, repoPath string, env []string, tag, kind string) (string, error) {
+
 	// list ALL snapshots — tag filtering via restic CLI can miss stdin snapshots
 	cmd := exec.CommandContext(ctx, resticBin,
 		"-r", repoPath, "snapshots", "--json",
 	)
 	cmd.Env = env
 
+	// capture the output for parsing
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("findSnapshot: restic snapshots: %w", err)
 	}
 
+	// parse the JSON output to find the snapshot with the given tag and kind
 	var snaps []struct {
 		ID    string   `json:"id"`
 		Tags  []string `json:"tags"`
@@ -612,7 +646,9 @@ func (m *Manager) findSnapshot(ctx context.Context, repoPath string, env []strin
 		return "", fmt.Errorf("findSnapshot: parse: %w", err)
 	}
 
+	// loop over snapshots to find one that matches the tag and kind criteria
 	for _, s := range snaps {
+
 		// check tag matches manually
 		hasTag := false
 		for _, t := range s.Tags {
@@ -627,6 +663,7 @@ func (m *Manager) findSnapshot(ctx context.Context, repoPath string, env []strin
 
 		logger.Debug("findSnapshot: candidate %s tags=%v paths=%v", s.ID, s.Tags, s.Paths)
 
+		// DB snapshot has exactly one path of "db_dump.sql"; file snapshot has multiple paths that are not "db_dump.sql"
 		isDB := len(s.Paths) == 1 &&
 			(s.Paths[0] == "db_dump.sql" || s.Paths[0] == "/db_dump.sql")
 		if kind == "db" && isDB {
@@ -637,23 +674,25 @@ func (m *Manager) findSnapshot(ctx context.Context, repoPath string, env []strin
 		}
 	}
 
+	// if we get here, no matching snapshot was found
 	return "", fmt.Errorf("findSnapshot: no %s snapshot for tag %s", kind, tag)
 }
 
-// -- forget / prune ----------------------------------------------------------
-
 // forgetPrune applies the configured retention policy and prunes unreachable data
 func (m *Manager) forgetPrune(ctx context.Context, repoPath string, env []string) error {
+
 	// clear any stale locks before pruning
 	unlockCmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "unlock")
 	unlockCmd.Env = env
 	_ = unlockCmd.Run()
 
+	// get the retention policy from settings
 	retainDays, err := db.GetSetting(m.db, "backup_retain_days")
 	if err != nil || retainDays == "" {
 		retainDays = "30"
 	}
 
+	// set up the restic forget command with --keep-within to apply the retention policy, and --prune to remove unreachable data
 	cmd := exec.CommandContext(ctx, resticBin,
 		"-r", repoPath, "forget",
 		"--keep-within", retainDays+"d",
@@ -661,6 +700,7 @@ func (m *Manager) forgetPrune(ctx context.Context, repoPath string, env []string
 	)
 	cmd.Env = env
 
+	// capture stderr for error reporting
 	if out, err := cmd.CombinedOutput(); err != nil {
 		logger.Error("forgetPrune: %s: %v — %s", repoPath, err, string(out))
 		return fmt.Errorf("restic forget: %w", err)
@@ -670,11 +710,10 @@ func (m *Manager) forgetPrune(ctx context.Context, repoPath string, env []string
 	return nil
 }
 
-// -- maintenance mode --------------------------------------------------------
-
 // enableMaintenance writes the maintenance page and injects a catch-all nginx
 // config that returns 503 for all requests
 func (m *Manager) enableMaintenance(ctx context.Context, site *models.Site, siteDir string) error {
+
 	// write the maintenance page into the site's web root
 	htmlPath := filepath.Join(siteDir, "html", maintHTMLName)
 	if err := os.WriteFile(htmlPath, maintenanceHTML, 0644); err != nil {
@@ -690,11 +729,14 @@ func (m *Manager) enableMaintenance(ctx context.Context, site *models.Site, site
     location / { return 503; }
 }
 `
+
+	// write the maintenance nginx conf into the site's nginx conf.d directory
 	confPath := filepath.Join(siteDir, "nginx", "conf.d", maintConfName)
 	if err := os.WriteFile(confPath, []byte(maintConf), 0644); err != nil {
 		return fmt.Errorf("write maintenance nginx conf: %w", err)
 	}
 
+	// reload nginx to apply the maintenance page and config
 	if err := m.nginxReload(ctx, site.Name); err != nil {
 		return fmt.Errorf("nginx reload (maintenance on): %w", err)
 	}
@@ -705,16 +747,20 @@ func (m *Manager) enableMaintenance(ctx context.Context, site *models.Site, site
 
 // disableMaintenance removes the maintenance conf and page, then reloads nginx
 func (m *Manager) disableMaintenance(ctx context.Context, site *models.Site, siteDir string) error {
+
+	// set up paths to the maintenance conf and page
 	confPath := filepath.Join(siteDir, "nginx", "conf.d", maintConfName)
+
+	// remove the maintenance nginx conf; ignore if it doesn't exist, but log other errors
 	if err := os.Remove(confPath); err != nil && !os.IsNotExist(err) {
 		logger.Warn("disableMaintenance: remove conf: %v", err)
 	}
-
 	htmlPath := filepath.Join(siteDir, "html", maintHTMLName)
 	if err := os.Remove(htmlPath); err != nil && !os.IsNotExist(err) {
 		logger.Warn("disableMaintenance: remove html: %v", err)
 	}
 
+	// reload nginx to apply the config change
 	if err := m.nginxReload(ctx, site.Name); err != nil {
 		return fmt.Errorf("nginx reload (maintenance off): %w", err)
 	}
@@ -725,8 +771,11 @@ func (m *Manager) disableMaintenance(ctx context.Context, site *models.Site, sit
 
 // nginxReload sends nginx -s reload inside the site's nginx container
 func (m *Manager) nginxReload(ctx context.Context, siteName string) error {
+
+	// the nginx container name is deterministic based on the site name and module type
 	containerName := podman.ContainerName(siteName, "nginx")
 
+	// create an exec instance for the reload command; we can detach immediately since we don't need to wait for it to finish
 	var execResp struct {
 		ID string `json:"Id"`
 	}
@@ -736,12 +785,16 @@ func (m *Manager) nginxReload(ctx context.Context, siteName string) error {
 		"Detach":       true,
 		"Cmd":          []string{"nginx", "-s", "reload"},
 	}
+
+	// POST to the podman API
 	if err := m.podman.PostJSON(ctx,
 		"/v4.0.0/libpod/containers/"+containerName+"/exec",
 		spec, &execResp,
 	); err != nil {
 		return fmt.Errorf("nginxReload: create exec: %w", err)
 	}
+
+	// start the exec instance we just created
 	if err := m.podman.PostJSON(ctx,
 		"/v4.0.0/libpod/exec/"+execResp.ID+"/start",
 		map[string]any{"Detach": true}, nil,
@@ -753,8 +806,6 @@ func (m *Manager) nginxReload(ctx context.Context, siteName string) error {
 	return nil
 }
 
-// -- scheduler ---------------------------------------------------------------
-
 // StartScheduler launches the background cron scheduler goroutine.
 // It reads backup_schedule from settings on startup and whenever Reschedule
 // is called.
@@ -765,6 +816,7 @@ func (m *Manager) StartScheduler(ctx context.Context) {
 // Reschedule signals the scheduler to re-arm with a new cron expression.
 // Sending an empty string disables scheduled backups.
 func (m *Manager) Reschedule(expr string) {
+
 	// non-blocking send; if the channel is already full the pending value
 	// is the latest so the signal can be safely dropped
 	select {
@@ -775,6 +827,8 @@ func (m *Manager) Reschedule(expr string) {
 
 // runScheduler is the main scheduler loop
 func (m *Manager) runScheduler(ctx context.Context) {
+
+	// timer and channel for the next scheduled backup; nil if no backup is scheduled
 	var timer *time.Timer
 	var timerCh <-chan time.Time
 
@@ -789,11 +843,15 @@ func (m *Manager) runScheduler(ctx context.Context) {
 			logger.Debug("scheduler: disabled")
 			return
 		}
+
+		// compute the next scheduled time from the cron expression
 		next, err := nextCronTime(expr, time.Now())
 		if err != nil {
 			logger.Warn("scheduler: invalid cron expression '%s': %v", expr, err)
 			return
 		}
+
+		// set a timer to fire at the next scheduled time
 		d := time.Until(next)
 		logger.Debug("scheduler: next backup at %s (in %s)", next.Format(time.RFC3339), d.Round(time.Second))
 		timer = time.NewTimer(d)
@@ -804,6 +862,7 @@ func (m *Manager) runScheduler(ctx context.Context) {
 	expr, _ := db.GetSetting(m.db, "backup_schedule")
 	arm(expr)
 
+	// main loop: wait for context cancellation, new cron expressions, or timer firing
 	for {
 		select {
 		case <-ctx.Done():
@@ -813,10 +872,12 @@ func (m *Manager) runScheduler(ctx context.Context) {
 			logger.Debug("scheduler: stopped")
 			return
 
+		// new cron expression received — re-arm the timer with the new schedule
 		case newExpr := <-m.schedulerCh:
 			arm(newExpr)
 
 		case <-timerCh:
+
 			// run backups then re-arm for the next occurrence
 			m.runScheduledBackups(ctx)
 			expr, _ = db.GetSetting(m.db, "backup_schedule")
@@ -830,23 +891,35 @@ func (m *Manager) runScheduler(ctx context.Context) {
 func (m *Manager) runScheduledBackups(ctx context.Context) {
 	logger.Debug("scheduler: starting backup run")
 
+	// fetch all sites and their repos to find which ones need to be backed up
 	sites, err := db.GetAllSites(m.db)
 	if err != nil {
 		logger.Error("scheduler: list sites: %v", err)
 		return
 	}
 
+	// run a backup for each site that has a repo with at least one destination enabled
 	var wg sync.WaitGroup
+
+	// we run backups in parallel but with a shared context
 	for _, site := range sites {
 		site := site
+
+		// look up the repo for this site; if no repo or no destinations enabled, skip it
 		repo, err := db.GetBackupRepo(m.db, site.ID)
 		if err != nil || repo == nil {
 			continue
 		}
+
+		// if neither local nor S3 backup is enabled for this site, skip it
 		if !repo.LocalEnabled && !repo.S3Enabled {
 			continue
 		}
+
+		// add to the wait group
 		wg.Add(1)
+
+		// run the backup in a separate goroutine
 		go func() {
 			defer wg.Done()
 			bCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
@@ -861,37 +934,47 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 		}()
 	}
 
+	// wait for all backups to complete before returning
 	wg.Wait()
 	logger.Debug("scheduler: backup run complete")
 }
-
-// -- cron parser -------------------------------------------------------------
 
 // nextCronTime returns the next time after 'from' that satisfies the 5-field
 // cron expression (minute hour dom month dow).
 // Supported field syntax: * | N | */N | N-M | N,M,...
 func nextCronTime(expr string, from time.Time) (time.Time, error) {
+
+	// parse the cron expression into sets of matching integers for each field
 	fields := strings.Fields(expr)
 	if len(fields) != 5 {
 		return time.Time{}, fmt.Errorf("expected 5 fields, got %d", len(fields))
 	}
 
+	// match a minute
 	matchMinute, err := parseCronField(fields[0], 0, 59)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("minute: %w", err)
 	}
+
+	// match hour
 	matchHour, err := parseCronField(fields[1], 0, 23)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("hour: %w", err)
 	}
+
+	// match on day of month
 	matchDOM, err := parseCronField(fields[2], 1, 31)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("dom: %w", err)
 	}
+
+	// match on month
 	matchMonth, err := parseCronField(fields[3], 1, 12)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("month: %w", err)
 	}
+
+	// match on day of week (0=Sunday to 6=Saturday)
 	matchDOW, err := parseCronField(fields[4], 0, 6)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("dow: %w", err)
@@ -901,6 +984,7 @@ func nextCronTime(expr string, from time.Time) (time.Time, error) {
 	t := from.Truncate(time.Minute).Add(time.Minute)
 	limit := t.Add(366 * 24 * time.Hour)
 
+	// brute-force search for the next time matching all fields; since we have a limit of 366 days, this will always terminate
 	for t.Before(limit) {
 		if !matchMonth[int(t.Month())] {
 			t = time.Date(t.Year(), t.Month()+1, 1, 0, 0, 0, 0, t.Location())
@@ -921,6 +1005,7 @@ func nextCronTime(expr string, from time.Time) (time.Time, error) {
 		return t, nil
 	}
 
+	// if we get here, no matching time was found within the limit
 	return time.Time{}, fmt.Errorf("no matching time within 366 days")
 }
 
@@ -992,8 +1077,6 @@ func parseCronField(field string, min, max int) (map[int]bool, error) {
 	return result, nil
 }
 
-// -- .env reader -------------------------------------------------------------
-
 // readEnvValue reads a KEY=VALUE .env file and returns the value for the given key
 func readEnvValue(path, key string) (string, error) {
 	data, err := os.ReadFile(path)
@@ -1024,11 +1107,14 @@ func (m *Manager) ImportDirFor(siteName string) string {
 // DeleteSnapshot removes the restic snapshots for a backup from all configured
 // repos. The DB record deletion is handled by the calling handler.
 func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *models.Backup) error {
+
+	// look up the repo for this site
 	repo, err := db.GetBackupRepo(m.db, site.ID)
 	if err != nil || repo == nil {
 		return nil
 	}
 
+	// load S3 config if needed for S3 backups
 	s3, err := m.loadS3Config()
 	if err != nil {
 		return err
@@ -1037,6 +1123,7 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 	// forget by tag across both repos — restic forget --tag removes all
 	// snapshots carrying that tag, which covers both the file and DB snapshots
 	forget := func(repoPath string, env []string) error {
+
 		// clear any stale locks before attempting forget
 		unlockCmd := exec.CommandContext(ctx, resticBin, "-r", repoPath, "unlock")
 		unlockCmd.Env = env
@@ -1052,6 +1139,7 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 			return fmt.Errorf("restic snapshots: %w", err)
 		}
 
+		// parse the JSON output
 		var snaps []struct {
 			ID string `json:"id"`
 		}
@@ -1068,6 +1156,8 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 		args := append([]string{"-r", repoPath, "forget", "--prune"}, ids...)
 		cmd := exec.CommandContext(ctx, resticBin, args...)
 		cmd.Env = env
+
+		// capture stderr for error reporting
 		if out, err := cmd.CombinedOutput(); err != nil {
 			logger.Error("DeleteSnapshot: forget %s: %v — %s", repoPath, err, string(out))
 			return fmt.Errorf("restic forget: %w", err)
@@ -1075,11 +1165,14 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 		return nil
 	}
 
+	// forget snapshots for this backup's tag in local repo's
 	if repo.LocalEnabled {
 		if err := forget(repo.LocalPath, resticEnv(repo.RepoPassword, nil)); err != nil {
 			return err
 		}
 	}
+
+	// forget snapshots for this backup's tag in S3 repo if enabled and configured
 	if repo.S3Enabled && s3 != nil {
 		s3Repo := s3RepoURL(s3.endpoint, s3.bucket, site.Name)
 		if err := forget(s3Repo, resticEnv(repo.RepoPassword, s3)); err != nil {
@@ -1096,11 +1189,14 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 // database dump extracted from the DB snapshot, giving the caller a single
 // self-contained archive restorable without restic.
 func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.Backup, w io.Writer) error {
+
+	// look up the repo for this site
 	repo, err := db.GetBackupRepo(m.db, site.ID)
 	if err != nil || repo == nil {
 		return fmt.Errorf("export: no repo configured for site %s", site.Name)
 	}
 
+	// load S3 config if needed for S3 backups
 	s3, err := m.loadS3Config()
 	if err != nil {
 		return err
@@ -1139,6 +1235,7 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// setup the command to restore the file snapshot
 	restoreCmd := exec.CommandContext(ctx, resticBin,
 		"-r", repoPath, "restore", fileSnapID,
 		"--target", tmpDir,
@@ -1146,9 +1243,11 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	)
 	restoreCmd.Env = env
 
+	// capture stderr for error reporting
 	var restoreStderr bytes.Buffer
 	restoreCmd.Stderr = &restoreStderr
 
+	// run the restic restore command
 	if err := restoreCmd.Run(); err != nil {
 		return fmt.Errorf("export: restic restore: %w — %s", err, restoreStderr.String())
 	}
@@ -1180,6 +1279,7 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		}
 		hdr.Name = rel
 
+		// write the header for this file into the tar stream
 		if err := tw.WriteHeader(hdr); err != nil {
 			return fmt.Errorf("export: write header %s: %w", rel, err)
 		}
@@ -1202,8 +1302,6 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		return fmt.Errorf("export: walk restore dir: %w", err)
 	}
 
-	// -- database dump -------------------------------------------------------
-
 	// only sites with a MariaDB container have a DB snapshot
 	if modules.TypeModule(site.SiteType).HasDatabase() {
 		dbSnapID, err := m.findSnapshot(ctx, repoPath, env, backup.SnapshotID, "db")
@@ -1211,15 +1309,17 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 			return fmt.Errorf("export: find db snapshot: %w", err)
 		}
 
-		// buffer the SQL so we know the byte size before writing the tar header
+		// setup the command to dump the DB snapshot
 		dbCmd := exec.CommandContext(ctx, resticBin,
 			"-r", repoPath, "dump", dbSnapID, "db_dump.sql",
 		)
 		dbCmd.Env = env
 
+		// capture stderr for error reporting
 		var dbStderr bytes.Buffer
 		dbCmd.Stderr = &dbStderr
 
+		// run the restic dump command and capture the SQL data into memory
 		sqlData, err := dbCmd.Output()
 		if err != nil {
 			return fmt.Errorf("export: restic dump db: %w — %s", err, dbStderr.String())
@@ -1241,10 +1341,14 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 
 	// write manifest.json with the site's domains for use during import restore
 	if len(backup.Domains) > 0 {
+
+		// setup the manifest's data as JSON containing the backup's domains
 		manifestData, err := json.Marshal(map[string]any{
 			"domains": backup.Domains,
 		})
 		if err == nil {
+
+			// write manifest.json as a top-level entry in the archive
 			if err := tw.WriteHeader(&tar.Header{
 				Name:    "manifest.json",
 				Size:    int64(len(manifestData)),
@@ -1277,25 +1381,31 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 // Returns a human-readable destination label and the archive bytes when S3 is
 // not configured (nil bytes when uploaded to S3).
 func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (dest string, archive []byte, err error) {
+
+	// generate a filename with the site name and timestamp for either S3 key or browser download
 	now := time.Now().UTC()
 	filename := fmt.Sprintf("%s_final_%s.tar.gz", site.Name, now.Format("20060102-150405"))
 
+	// load S3 config to determine whether to upload or return bytes
 	s3, err := m.loadS3Config()
 	if err != nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: load s3 config: %w", err)
 	}
 
+	// make sure there's a repo
 	repo, err := m.ensureRepo(ctx, site)
 	if err != nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: ensure repo: %w", err)
 	}
 
+	// generate a unique tag
 	tagBytes := make([]byte, 8)
 	if _, err := rand.Read(tagBytes); err != nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: generate tag: %w", err)
 	}
 	tag := "podnest-final-" + hex.EncodeToString(tagBytes)
 
+	// setup the paths to include and exclude
 	siteDir := filepath.Join(m.appPath, "sites", site.Name)
 	includePaths := []string{
 		filepath.Join(siteDir, "html"),
@@ -1312,6 +1422,8 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 	// force S3 when globally configured, regardless of per-site repo settings
 	var repoPath string
 	var repoEnv []string
+
+	// if S3 is configured, use it as the primary repo for the backup; otherwise fall back to local
 	if s3 != nil {
 		repoPath = s3RepoURL(s3.endpoint, s3.bucket, site.Name)
 		repoEnv = resticEnv(repo.RepoPassword, s3)
@@ -1330,9 +1442,12 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 		}
 	}
 
+	// backup the files
 	if _, err := m.backupFiles(ctx, repoPath, repoEnv, includePaths, excludePaths, tag); err != nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: backup files: %w", err)
 	}
+
+	// backup the DB if the site has a database container
 	if err := m.backupDB(ctx, site, repoPath, repoEnv, tag, siteDir); err != nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: backup db: %w", err)
 	}
@@ -1365,6 +1480,7 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 		return "", nil, fmt.Errorf("CreateFinalBackup: record backup: %w", err)
 	}
 
+	// re-query the backup to get all fields populated
 	stored, err := db.GetBackup(m.db, bid)
 	if err != nil || stored == nil {
 		return "", nil, fmt.Errorf("CreateFinalBackup: get backup record: %w", err)
@@ -1375,6 +1491,7 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 		return "", nil, fmt.Errorf("CreateFinalBackup: export: %w", err)
 	}
 
+	// if S3 is configured, upload the archive there; otherwise return the bytes for browser download
 	if s3 != nil {
 		key := site.Name + "/" + filename
 		if err := s3PutObject(ctx, s3, key, buf.Bytes()); err != nil {
@@ -1391,9 +1508,12 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 // s3PutObject uploads data to an S3-compatible bucket using AWS Signature V4.
 // Uses only stdlib — no AWS SDK.
 func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) error {
+
+	// build the raw URL for the object
 	ep := strings.TrimRight(s3.endpoint, "/")
 	rawURL := fmt.Sprintf("%s/%s/%s", ep, s3.bucket, key)
 
+	// AWS Signature V4 signing process: https://docs.aws.amazon.com/general/latest/gr/sigv4-calculate-signature.html
 	now := time.Now().UTC()
 	dateStamp := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
@@ -1412,6 +1532,7 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	}
 	sort.Strings(headerKeys)
 
+	// build the canonical headers string and the signed headers string
 	var canonHeaderStr, signedHeaderStr strings.Builder
 	for _, k := range headerKeys {
 		canonHeaderStr.WriteString(k + ":" + canonHeaders[k] + "\n")
@@ -1421,11 +1542,13 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 		signedHeaderStr.WriteString(k)
 	}
 
+	// parse the URL to get the escaped path for the canonical request
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("s3PutObject: parse url: %w", err)
 	}
 
+	// build the canonical request string
 	canonRequest := strings.Join([]string{
 		"PUT",
 		parsedURL.EscapedPath(),
@@ -1435,6 +1558,7 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 		bodyHash,
 	}, "\n")
 
+	// build the string to sign
 	credScope := strings.Join([]string{dateStamp, s3.region, "s3", "aws4_request"}, "/")
 	strToSign := strings.Join([]string{
 		"AWS4-HMAC-SHA256",
@@ -1466,11 +1590,13 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	mac.Write([]byte(strToSign))
 	signature = hex.EncodeToString(mac.Sum(nil))
 
+	// build the Authorization header
 	authHeader := fmt.Sprintf(
 		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		s3.accessKey, credScope, signedHeaderStr.String(), signature,
 	)
 
+	// make the HTTP PUT request with the signed headers and the archive data as the body
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rawURL, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("s3PutObject: new request: %w", err)
@@ -1481,12 +1607,14 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	req.Header.Set("Content-Type", "application/gzip")
 	req.ContentLength = int64(len(data))
 
+	// perform the request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("s3PutObject: do: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// consider 200 OK, 201 Created, and 204 No Content as success responses
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("s3PutObject: unexpected status %d: %s", resp.StatusCode, string(body))
@@ -1497,6 +1625,8 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 // fixPostRestorePerms reapplies the correct ownership and permissions to the
 // site directory after a file restore, matching what scaffoldSiteDir sets up
 func (m *Manager) fixPostRestorePerms(siteDir string, siteID int64) {
+
+	// look up the SFTP credentials to get the site UID for ownership
 	cred, err := db.GetSFTPCredBySite(m.db, siteID)
 	if err != nil || cred == nil {
 		logger.Warn("fixPostRestorePerms: could not get sftp cred for site %d: %v", siteID, err)
@@ -1540,6 +1670,8 @@ func (m *Manager) importDir(siteName string) string {
 // ListImportFiles returns the filenames of any importable archives in the
 // site's SFTP import directory (.tar.gz, .tar.xz, .zip)
 func (m *Manager) ListImportFiles(siteName string) ([]string, error) {
+
+	// read the import directory and filter for supported archive formats
 	dir := m.importDir(siteName)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -1549,6 +1681,7 @@ func (m *Manager) ListImportFiles(siteName string) ([]string, error) {
 		return nil, fmt.Errorf("ListImportFiles: %w", err)
 	}
 
+	// filter for supported archive formats
 	var files []string
 	for _, e := range entries {
 		if e.IsDir() {
@@ -1569,9 +1702,12 @@ func (m *Manager) ListImportFiles(siteName string) ([]string, error) {
 // targetSite. On success the archive file is deleted. The site is placed in
 // maintenance mode for the duration of the restore.
 func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, archivePath string) error {
+
+	// guard against concurrent restores on the same site
 	m.restoring.Store(targetSite.ID, true)
 	defer m.restoring.Delete(targetSite.ID)
 
+	// setup the site path
 	siteDir := filepath.Join(m.appPath, "sites", targetSite.Name)
 
 	// enable maintenance mode before touching any site data
@@ -1590,7 +1726,6 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 		return fmt.Errorf("ImportRestore: create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	if err := extractArchive(archivePath, tmpDir); err != nil {
 		return fmt.Errorf("ImportRestore: extract: %w", err)
 	}
@@ -1618,11 +1753,14 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 
 	// run search-replace for WordPress sites if we have a source domain to replace
 	if targetSite.SiteType == models.SiteTypeWordPress && len(sourceDomains) > 0 {
+
 		// fetch the target site's primary domain
 		targetDomains, err := db.GetDomainsBySite(m.db, targetSite.ID)
 		if err != nil || len(targetDomains) == 0 {
 			logger.Warn("ImportRestore: could not fetch target domains for site %s: %v", targetSite.Name, err)
 		} else {
+
+			// only run search-replace if we have both a source and target domain to work with
 			fromDomain := sourceDomains[0]
 			toDomain := targetDomains[0].Domain
 			if fromDomain != toDomain {
@@ -1658,46 +1796,58 @@ func extractArchive(src, destDir string) error {
 
 // extractTarGz extracts a .tar.gz archive into destDir
 func extractTarGz(src, destDir string) error {
+
+	// open the file and wrap in a gzip reader
 	f, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
+	// try to create a gzip reader; if it fails, the file may be a plain tar without gzip compression
 	gr, err := gzip.NewReader(f)
 	if err != nil {
 		return fmt.Errorf("extractTarGz: gzip reader: %w", err)
 	}
 	defer gr.Close()
 
+	// pass the gzip reader into the tar extractor
 	return extractTar(tar.NewReader(gr), destDir)
 }
 
 // extractTarXz extracts a .tar.xz archive into destDir via the xz binary
 func extractTarXz(src, destDir string) error {
+
 	// decompress via xz CLI, pipe stdout into the tar reader
 	xzCmd := exec.Command("xz", "-d", "-c", src)
 	pr, err := xzCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("extractTarXz: stdout pipe: %w", err)
 	}
+
+	// start the xz command to begin streaming decompressed data
 	if err := xzCmd.Start(); err != nil {
 		return fmt.Errorf("extractTarXz: start xz: %w", err)
 	}
 
+	// pass the xz stdout into the tar extractor; wait for xz to finish and capture any errors
 	tarErr := extractTar(tar.NewReader(pr), destDir)
 	waitErr := xzCmd.Wait()
-
 	if tarErr != nil {
 		return tarErr
 	}
+
 	return waitErr
 }
 
 // extractTar reads all entries from a tar.Reader into destDir, guarding
 // against path traversal attacks
 func extractTar(tr *tar.Reader, destDir string) error {
+
+	// iterate through each entry in the tar archive and write it to the destination directory
 	for {
+
+		// read the next header from the tar stream
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
@@ -1713,6 +1863,7 @@ func extractTar(tr *tar.Reader, destDir string) error {
 			continue
 		}
 
+		// handle directories and regular files; skip other types like symlinks for safety
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
@@ -1738,23 +1889,25 @@ func extractTar(tr *tar.Reader, destDir string) error {
 
 // extractZip extracts a .zip archive into destDir, guarding against path traversal
 func extractZip(src, destDir string) error {
+
 	// stat the file to get its size for zip.OpenReader
 	fi, err := os.Stat(src)
 	if err != nil {
 		return fmt.Errorf("extractZip: stat: %w", err)
 	}
 
+	// open the file and create a zip reader
 	f, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("extractZip: open: %w", err)
 	}
 	defer f.Close()
-
 	zr, err := zip.NewReader(f, fi.Size())
 	if err != nil {
 		return fmt.Errorf("extractZip: reader: %w", err)
 	}
 
+	// iterate through each file in the zip archive and write it to the destination directory
 	for _, zf := range zr.File {
 		target := filepath.Join(destDir, filepath.Clean("/"+zf.Name))
 		if !strings.HasPrefix(target, destDir+string(os.PathSeparator)) && target != destDir {
@@ -1762,15 +1915,18 @@ func extractZip(src, destDir string) error {
 			continue
 		}
 
+		// skip unsupported file types like symlinks for safety; only handle directories and regular files
 		if zf.FileInfo().IsDir() {
 			os.MkdirAll(target, 0755)
 			continue
 		}
 
+		// ensure the parent directory exists before creating the file
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return fmt.Errorf("extractZip: mkdir %s: %w", zf.Name, err)
 		}
 
+		// open the zip file entry and copy its contents to the target file
 		rc, err := zf.Open()
 		if err != nil {
 			return fmt.Errorf("extractZip: open entry %s: %w", zf.Name, err)
@@ -1798,6 +1954,7 @@ func importFiles(srcDir, siteDir string) error {
 			return err
 		}
 
+		// get the path relative to the source directory for clean destination paths
 		rel, err := filepath.Rel(srcDir, path)
 		if err != nil {
 			return fmt.Errorf("importFiles: rel path: %w", err)
@@ -1816,25 +1973,29 @@ func importFiles(srcDir, siteDir string) error {
 
 		dest := filepath.Join(siteDir, rel)
 
+		// if it's a directory, create it and move on; we'll set permissions on the whole tree at the end
 		if info.IsDir() {
 			return os.MkdirAll(dest, 0755)
 		}
-
 		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 			return fmt.Errorf("importFiles: mkdir %s: %w", rel, err)
 		}
+
+		// copy regular file contents into the destination path
 		src, err := os.Open(path)
 		if err != nil {
 			return fmt.Errorf("importFiles: open %s: %w", rel, err)
 		}
 		defer src.Close()
 
+		// create the destination file with the same permissions as the source
 		dst, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
 		if err != nil {
 			return fmt.Errorf("importFiles: create %s: %w", rel, err)
 		}
 		defer dst.Close()
 
+		// copy the file contents
 		if _, err := io.Copy(dst, src); err != nil {
 			return fmt.Errorf("importFiles: copy %s: %w", rel, err)
 		}

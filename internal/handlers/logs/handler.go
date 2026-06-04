@@ -227,7 +227,11 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
+	// RP sites write WAF events to the per-site log; all others use the global waf.log
 	wafLogPath := h.AppPath + "/logs/waf.log"
+	if site.SiteType == models.SiteTypeReverseProxy {
+		wafLogPath = fmt.Sprintf("%s/sites/%s/logs/waf.log", h.AppPath, site.Name)
+	}
 	ctx := r.Context()
 
 	initial, err := tailWAFLog(wafLogPath, domains, tail)
@@ -431,7 +435,7 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	logger.Debug("apiSiteProxyLog: live streaming proxy-access.log for site %d domains=%v", site.ID, domains)
+	logger.Debug("apiSiteProxyLog: live streaming %s for site %d domains=%v", logPath, site.ID, domains)
 
 	for {
 		select {

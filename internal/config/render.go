@@ -27,8 +27,8 @@ func RenderNginxMain(configJSON string) (string, error) {
 	return fmt.Sprintf(`user nginx;
 worker_processes     %s;
 worker_rlimit_nofile %s;
-error_log /dev/stderr warn;
-pid       /var/run/nginx.pid;
+error_log 			 /dev/stderr warn;
+pid       			 /var/run/nginx.pid;
 
 events {
     worker_connections %s;
@@ -64,7 +64,6 @@ http {
     gzip_comp_level   %s;
     gzip_min_length   %s;
     gzip_buffers      16 8k;
-    gzip_http_version 1.1;
     gzip_types
         application/atom+xml application/javascript application/json
         application/ld+json application/manifest+json application/rss+xml
@@ -112,10 +111,10 @@ http {
     log_format main '$remote_addr - $remote_user [$time_local] '
                     '"$request" $status $body_bytes_sent '
                     '"$http_referer" "$http_user_agent" '
-                    'cache=$upstream_cache_status rt=$request_time';
-    access_log /dev/stdout main;
+                    'rt=$request_time';
+    access_log 	/dev/stdout main;
 
-    include /etc/nginx/conf.d/*.conf;
+    include 	/etc/nginx/conf.d/*.conf;
 }
 `,
 		v("worker_processes"),
@@ -191,8 +190,8 @@ func RenderPHPFPM(configJSON string, siteUID int) (string, error) {
 user  = %d
 group = %d
 
-listen              = 127.0.0.1:9000
-listen.allowed_clients = 127.0.0.1
+listen              	= 127.0.0.1:9000
+listen.allowed_clients  = 127.0.0.1
 
 pm                      = %s
 pm.max_children         = %s

@@ -13,7 +13,7 @@ var DefaultNginx = map[string]string{
 	"worker_connections":          "1024",
 	"worker_rlimit_nofile":        "65535",
 	"multi_accept":                "on",
-	"keepalive_timeout":           "65",
+	"keepalive_timeout":           "30",
 	"keepalive_requests":          "1000",
 	"client_max_body_size":        "64m",
 	"client_body_buffer_size":     "16k",
@@ -71,7 +71,7 @@ var DefaultPHP = map[string]string{
 
 // setup and hold the default mariadb config for new sites
 var DefaultMariaDB = map[string]string{
-	"innodb_buffer_pool_size":        "1G",
+	"innodb_buffer_pool_size":        "512M",
 	"innodb_buffer_pool_instances":   "2",
 	"innodb_log_file_size":           "256M",
 	"innodb_log_buffer_size":         "64M",
