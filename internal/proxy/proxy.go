@@ -1060,3 +1060,43 @@ func (p *Proxy) resolveWAFEngine(siteID int64) *WAFEngine {
 		return p.wafEngine.Load()
 	}
 }
+
+// PanelSecurityMiddleware returns an http.Handler middleware that applies the
+// global WAF engine, IP rules, and UA rules to admin panel requests.
+func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// resolve client IP using the same trusted proxy logic as proxied sites
+		clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
+
+		clientIPStr := "<unknown>"
+		if clientIP != nil {
+			clientIPStr = clientIP.String()
+		}
+
+		sec := p.secCache.Load()
+
+		// enforce global IP rules — no per-site rules apply to the panel
+		if clientIP != nil && !checkIP(clientIP, sec.global, ruleSet{}) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		// enforce global UA rules
+		if !checkUA(r.UserAgent(), sec.global, ruleSet{}) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+
+		// enforce global WAF — siteID 0, siteName "panel" for log attribution
+		if p.wafEnabled.Load() {
+			if engine := p.wafEngine.Load(); engine != nil {
+				if !engine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, 0, "PODNEST", p.appPath) {
+					return
+				}
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}

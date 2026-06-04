@@ -110,5 +110,5 @@ func (s *Server) routes() http.Handler {
 	))
 
 	logger.Debug("routes registered")
-	return securityHeaders(mux)
+	return securityHeaders(s.proxy.PanelSecurityMiddleware(mux))
 }

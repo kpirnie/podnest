@@ -386,14 +386,14 @@
                     </div>
                 </td>
             </tr>`}).join("")}</tbody>
-        </table>`}function Xt(t,e,a,s){if(!t||t.length===0)return'<p class="kp-muted uk-text-small">No matching requests found.</p>';let n=[...t].sort((d,g)=>{let m,u;switch(a){case"time":m=d.time,u=g.time;break;case"method":m=d.method,u=g.method;break;case"ip":m=d.client_ip,u=g.client_ip;break;default:m=d.status,u=g.status;break}return m<u?s?1:-1:m>u?s?-1:1:0}),o=50,i=Math.ceil(n.length/o),l=n.slice(e*o,(e+1)*o).map(d=>{let g=d.ua.length>60?d.ua.slice(0,60)+"\u2026":d.ua,m=d.status>=500?"kp-badge-danger":"kp-badge-warning";return`
+        </table>`}function Xt(t,e,a,s){if(!t||t.length===0)return'<p class="kp-muted uk-text-small">No matching requests found.</p>';let n=[...t].sort((d,g)=>{let m,u;switch(a){case"time":m=d.time,u=g.time;break;case"method":m=d.method,u=g.method;break;case"ip":m=d.client_ip,u=g.client_ip;break;default:m=d.status,u=g.status;break}return m<u?s?1:-1:m>u?s?-1:1:0}),o=50,i=Math.ceil(n.length/o),l=n.slice(e*o,(e+1)*o).map(d=>{let g=d.ua,m=d.status>=500?"kp-badge-danger":"kp-badge-warning";return`
             <tr>
                 <td class="kp-stats-table-cell-mono" style="white-space:nowrap">${d.time.slice(11,19)}</td>
                 <td class="kp-stats-table-cell-mono">${d.method}</td>
                 <td style="word-break:break-all;font-size:0.8rem">${d.path}</td>
                 <td><span class="kp-badge ${m}">${d.status}</span></td>
                 <td class="kp-stats-table-cell-mono">${d.client_ip}</td>
-                <td style="font-size:0.75rem;color:var(--kp-text-dim)" uk-tooltip="title:${d.ua.replace(/"/g,"&quot;")};pos:top-left">${g}</td>
+                <td class="kp-dd-ua-cell" uk-tooltip="title:${d.ua.replace(/"/g,"&quot;")};pos:top-left">${g}</td>
             </tr>`}).join(""),p=i>1?`
         <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-top">
             <span class="kp-muted uk-text-small">Page ${e+1} of ${i} \u2014 ${t.length} total</span>
@@ -405,11 +405,11 @@
         <div class="kp-table-wrap">
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="time" style="padding:0;font-size:0.75rem">Time ${a==="time"?s?"\u2193":"\u2191":""}</button></th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="method" style="padding:0;font-size:0.75rem">Method ${a==="method"?s?"\u2193":"\u2191":""}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="time" style="padding:0;font-size:0.75rem">Time ${a==="time"?s?"\u2193":"\u2191":""}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="method" style="padding:0;font-size:0.75rem">Method ${a==="method"?s?"\u2193":"\u2191":""}</button></th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="status" style="padding:0;font-size:0.75rem">Status ${a==="status"?s?"\u2193":"\u2191":""}</button></th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="ip" style="padding:0;font-size:0.75rem">IP ${a==="ip"?s?"\u2193":"\u2191":""}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="status" style="padding:0;font-size:0.75rem">Status ${a==="status"?s?"\u2193":"\u2191":""}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="ip" style="padding:0;font-size:0.75rem">IP ${a==="ip"?s?"\u2193":"\u2191":""}</button></th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>
                 </tr></thead>
                 <tbody>${l}</tbody>

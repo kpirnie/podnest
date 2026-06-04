@@ -117,6 +117,7 @@ func (m *Manager) run(ctx context.Context) {
 			return
 		}
 
+		// arm the timer to fire at the earliest time
 		d := time.Until(earliest)
 		logger.Debug("cron: next fire at %s (in %s)", earliest.Format(time.RFC3339), d.Round(time.Second))
 		timer = time.NewTimer(d)
@@ -133,41 +134,54 @@ func (m *Manager) run(ctx context.Context) {
 		return jobs
 	}
 
+	// initial
 	arm(load())
 
+	// main loop
 	for {
 		select {
+		// stop on context cancellation
 		case <-ctx.Done():
 			if timer != nil {
 				timer.Stop()
 			}
 			logger.Debug("cron: scheduler stopped")
 			return
-
+		// reload signal to re-arm the timer with any schedule changes
 		case <-m.reloadCh:
 			logger.Debug("cron: reloading jobs")
 			arm(load())
-
+			// timer fired, execute any jobs that are due
 		case <-timerCh:
-			// collect all jobs due now and run them concurrently
+
+			// get the current time and all jobs
 			now := time.Now()
 			jobs := load()
 
+			// setup a wait group to run all due jobs in parallel
 			var wg sync.WaitGroup
+
+			// iterate over all jobs
 			for _, job := range jobs {
+
+				// check whether this job is due to run
 				next, ok := nextTimes[job.ID]
 				if !ok || now.Before(next) {
 					continue
 				}
 				job := job
 
+				// get the site for this job
 				site, err := db.GetSiteByID(m.database, job.SiteID)
 				if err != nil || site == nil {
 					logger.Warn("cron: job %d skipped — site %d not found", job.ID, job.SiteID)
 					continue
 				}
 
+				// add to the wait group
 				wg.Add(1)
+
+				// execute the job in a new goroutine; use a child context with timeout to prevent runaway jobs
 				go func() {
 					defer wg.Done()
 					jCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
@@ -178,6 +192,7 @@ func (m *Manager) run(ctx context.Context) {
 				}()
 			}
 
+			// wait for all jobs to complete before re-arming the timer
 			wg.Wait()
 
 			// re-arm for the next occurrence
@@ -185,8 +200,6 @@ func (m *Manager) run(ctx context.Context) {
 		}
 	}
 }
-
-// -- execution ---------------------------------------------------------------
 
 // runtimeContainer returns the container role to exec into for a given site type;
 // returns "" for site types with no execable runtime

@@ -431,7 +431,8 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
     const slice      = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
     const rows = slice.map((e) => {
-        const uaShort    = e.ua.length > 60 ? e.ua.slice(0, 60) + '…' : e.ua;
+        // show full UA — CSS handles wrapping in the cell
+        const uaShort = e.ua;
         const statusClass = e.status >= 500 ? 'kp-badge-danger' : 'kp-badge-warning';
         return `
             <tr>
@@ -440,7 +441,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
                 <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
                 <td><span class="kp-badge ${statusClass}">${e.status}</span></td>
                 <td class="kp-stats-table-cell-mono">${e.client_ip}</td>
-                <td style="font-size:0.75rem;color:var(--kp-text-dim)" uk-tooltip="title:${e.ua.replace(/"/g, '&quot;')};pos:top-left">${uaShort}</td>
+                <td class="kp-dd-ua-cell" uk-tooltip="title:${e.ua.replace(/"/g, '&quot;')};pos:top-left">${uaShort}</td>
             </tr>`;
     }).join('');
 
@@ -457,11 +458,11 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
         <div class="kp-table-wrap">
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="time" style="padding:0;font-size:0.75rem">Time ${sortCol==='time' ? (sortDesc?'↓':'↑') : ''}</button></th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="method" style="padding:0;font-size:0.75rem">Method ${sortCol==='method' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="time" style="padding:0;font-size:0.75rem">Time ${sortCol==='time' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="method" style="padding:0;font-size:0.75rem">Method ${sortCol==='method' ? (sortDesc?'↓':'↑') : ''}</button></th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="status" style="padding:0;font-size:0.75rem">Status ${sortCol==='status' ? (sortDesc?'↓':'↑') : ''}</button></th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="ip" style="padding:0;font-size:0.75rem">IP ${sortCol==='ip' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="status" style="padding:0;font-size:0.75rem">Status ${sortCol==='status' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="ip" style="padding:0;font-size:0.75rem">IP ${sortCol==='ip' ? (sortDesc?'↓':'↑') : ''}</button></th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>

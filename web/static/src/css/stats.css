@@ -97,3 +97,24 @@
 .kp-stats-disk-val {
     font-size: 1.4rem;
 }
+
+/* -- drilldown modal ------------------------------------------------------- */
+
+/* override UIkit's default tooltip max-width for full UA display */
+.uk-tooltip { max-width: 600px; }
+
+/* drilldown UA cell — show full string, wrap if needed */
+.kp-dd-ua-cell {
+    font-size: 0.75rem;
+    color: var(--kp-text-dim);
+    word-break: break-all;
+    max-width: 300px;
+}
+
+/* drilldown sort headers */
+.kp-dd-sort {
+    cursor: pointer;
+    user-select: none;
+}
+
+.kp-dd-sort:hover { color: var(--kp-blue); }

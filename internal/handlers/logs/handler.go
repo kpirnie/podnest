@@ -227,17 +227,14 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
-	// RP sites write WAF events to the per-site log; all others use the global waf.log
-	wafLogPath := h.AppPath + "/logs/waf.log"
-	if site.SiteType == models.SiteTypeReverseProxy {
-		wafLogPath = fmt.Sprintf("%s/sites/%s/logs/waf.log", h.AppPath, site.Name)
-	}
+	// all sites write WAF events to their per-site log regardless of type
+	wafLogPath := fmt.Sprintf("%s/sites/%s/logs/waf.log", h.AppPath, site.Name)
 	ctx := r.Context()
 
-	initial, err := tailWAFLog(wafLogPath, domains, tail)
-	if err != nil {
-		conn.WriteMessage(websocket.TextMessage, []byte("[waf] no WAF log entries yet"))
-		logger.Debug("apiSiteWAFLog: waf.log not readable for site %d: %v", site.ID, err)
+	// if the per-site waf.log doesn't exist yet, start live tail with no initial lines
+	initial, err := tailLogLines(wafLogPath, tail)
+	if err != nil && !os.IsNotExist(err) {
+		logger.Error("apiSiteWAFLog: tail failed for site %d: %v", site.ID, err)
 		return
 	}
 	for _, line := range initial {
@@ -246,7 +243,8 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	f, err := os.Open(wafLogPath)
+	// create the per-site waf.log if it doesn't exist yet so the live tail has a file to watch
+	f, err := os.OpenFile(wafLogPath, os.O_CREATE|os.O_APPEND|os.O_RDONLY, 0640)
 	if err != nil {
 		logger.Error("apiSiteWAFLog: open for live tail: %v", err)
 		return
@@ -278,13 +276,10 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 				line, err := reader.ReadString('\n')
 				if len(line) > 0 {
 					line = strings.TrimRight(line, "\r\n")
-					for _, d := range domains {
-						if strings.Contains(line, d) {
-							if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
-								return
-							}
-							break
-						}
+
+					// per-site log is already scoped — no domain filtering needed
+					if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+						return
 					}
 				}
 				if err == io.EOF {
@@ -355,29 +350,7 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// RP sites use route domains; all others use assigned domains
-	var domains []string
-	if site.SiteType == models.SiteTypeReverseProxy {
-		routes, err := db.GetRPRoutesBySite(h.DB, site.ID)
-		if err != nil || len(routes) == 0 {
-			logger.Error("apiSiteProxyLog: no RP routes for site %d: %v", site.ID, err)
-			http.Error(w, "no routes configured for this site", http.StatusNotFound)
-			return
-		}
-		for _, rt := range routes {
-			domains = append(domains, rt.Domain)
-		}
-	} else {
-		siteDomains, err := db.GetDomainsBySite(h.DB, site.ID)
-		if err != nil || len(siteDomains) == 0 {
-			logger.Error("apiSiteProxyLog: no domains for site %d: %v", site.ID, err)
-			http.Error(w, "no domains found for site", http.StatusNotFound)
-			return
-		}
-		for _, d := range siteDomains {
-			domains = append(domains, d.Domain)
-		}
-	}
+	// all sites write access events to their per-site log — no domain filtering needed
 
 	tail := 100
 	if t := r.URL.Query().Get("tail"); t != "" {
@@ -403,19 +376,14 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(30 * time.Second)
 	defer pingTicker.Stop()
 
-	logPath := h.AppPath + "/logs/proxy-access.log"
+	// all sites write to per-site access.log — no domain filtering needed
+	logPath := fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)
 	ctx := r.Context()
 
-	// RP sites use a per-site log — no domain filtering needed
-	var initial []string
-	if site.SiteType == models.SiteTypeReverseProxy {
-		initial, err = tailLogLines(logPath, tail)
-	} else {
-		initial, err = tailWAFLog(logPath, domains, tail)
-	}
-	if err != nil {
-		conn.WriteMessage(websocket.TextMessage, []byte("[proxy] no proxy log entries yet"))
-		logger.Debug("apiSiteProxyLog: proxy-access.log not readable for site %d: %v", site.ID, err)
+	// send initial tail; if the file doesn't exist yet return no entries
+	initial, err := tailLogLines(logPath, tail)
+	if err != nil && !os.IsNotExist(err) {
+		logger.Error("apiSiteProxyLog: tail failed for site %d: %v", site.ID, err)
 		return
 	}
 	for _, line := range initial {
@@ -424,7 +392,8 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	f, err := os.Open(logPath)
+	// create the per-site access.log if it doesn't exist yet so the live tail has a file to watch
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_RDONLY, 0640)
 	if err != nil {
 		logger.Error("apiSiteProxyLog: open for live tail: %v", err)
 		return
@@ -440,7 +409,7 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	logger.Debug("apiSiteProxyLog: live streaming %s for site %d domains=%v", logPath, site.ID, domains)
+	logger.Debug("apiSiteProxyLog: live streaming %s for site %d", logPath, site.ID)
 
 	for {
 		select {
@@ -456,20 +425,9 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 				line, err := reader.ReadString('\n')
 				if len(line) > 0 {
 					line = strings.TrimRight(line, "\r\n")
-					// RP sites use a per-site log — no domain filtering needed
-					if site.SiteType == models.SiteTypeReverseProxy {
-						if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
-							return
-						}
-					} else {
-						for _, d := range domains {
-							if strings.Contains(line, d) {
-								if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
-									return
-								}
-								break
-							}
-						}
+					// per-site log is already scoped — write every line
+					if err := conn.WriteMessage(websocket.TextMessage, []byte(line)); err != nil {
+						return
 					}
 				}
 				if err == io.EOF {
@@ -509,7 +467,6 @@ func (h *Handler) apiGlobalProxyLog(w http.ResponseWriter, r *http.Request) {
 	logPath := h.AppPath + "/logs/proxy-access.log"
 	ctx := r.Context()
 
-	// send initial tail — no domain filter, global log contains all siteID-0 traffic
 	initial, err := tailLogLines(logPath, tail)
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("[proxy] no log entries yet"))
@@ -546,6 +503,7 @@ func (h *Handler) apiGlobalProxyLog(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-pingTicker.C:
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				// client gone — exit cleanly
 				return
 			}
 		case <-ticker.C:
