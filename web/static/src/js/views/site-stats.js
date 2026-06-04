@@ -406,13 +406,25 @@ function renderPodTable(containers) {
 // -- drilldown ---------------------------------------------------------------
 
 // renderDrilldownTable builds the paginated, sortable drilldown table HTML
-function renderDrilldownTable(entries, page, sortDesc) {
+// sortCol: 'time' | 'method' | 'status' | 'ip' — sortDesc: boolean
+function renderDrilldownTable(entries, page, sortCol, sortDesc) {
     if (!entries || entries.length === 0) {
         return `<p class="kp-muted uk-text-small">No matching requests found.</p>`;
     }
 
-    // sort by status — descending puts 5xx above 4xx
-    const sorted = [...entries].sort((a, b) => sortDesc ? b.status - a.status : a.status - b.status);
+    // sort by the active column
+    const sorted = [...entries].sort((a, b) => {
+        let av, bv;
+        switch (sortCol) {
+            case 'time':   av = a.time;      bv = b.time;      break;
+            case 'method': av = a.method;    bv = b.method;    break;
+            case 'ip':     av = a.client_ip; bv = b.client_ip; break;
+            default:       av = a.status;    bv = b.status;    break;
+        }
+        if (av < bv) return sortDesc ? 1 : -1;
+        if (av > bv) return sortDesc ? -1 : 1;
+        return 0;
+    });
 
     const pageSize   = 50;
     const totalPages = Math.ceil(sorted.length / pageSize);
@@ -428,7 +440,7 @@ function renderDrilldownTable(entries, page, sortDesc) {
                 <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
                 <td><span class="kp-badge ${statusClass}">${e.status}</span></td>
                 <td class="kp-stats-table-cell-mono">${e.client_ip}</td>
-                <td style="font-size:0.75rem;color:var(--kp-text-dim)" uk-tooltip="title:${e.ua.replace(/"/g, '&quot;')}">${uaShort}</td>
+                <td style="font-size:0.75rem;color:var(--kp-text-dim)" uk-tooltip="title:${e.ua.replace(/"/g, '&quot;')};pos:top-left">${uaShort}</td>
             </tr>`;
     }).join('');
 
@@ -445,15 +457,11 @@ function renderDrilldownTable(entries, page, sortDesc) {
         <div class="kp-table-wrap">
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem">Time</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem">Method</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="time" style="padding:0;font-size:0.75rem">Time ${sortCol==='time' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="method" style="padding:0;font-size:0.75rem">Method ${sortCol==='method' ? (sortDesc?'↓':'↑') : ''}</button></th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem">
-                        <a class="" id="stats-dd-sort" style="padding:0;font-size:0.75rem">
-                            Status ${sortDesc ? '↓' : '↑'}
-                        </a>
-                    </th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem">IP</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="status" style="padding:0;font-size:0.75rem">Status ${sortCol==='status' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="uk-button kp-btn-ghost kp-btn-sm kp-dd-sort" data-dd-col="ip" style="padding:0;font-size:0.75rem">IP ${sortCol==='ip' ? (sortDesc?'↓':'↑') : ''}</button></th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
@@ -477,16 +485,25 @@ async function openDrilldown(siteId, hour, statusClass) {
 
     let entries  = [];
     let page     = 0;
+    let sortCol  = 'time';
     let sortDesc = true;
 
     function redraw() {
-        body.innerHTML = renderDrilldownTable(entries, page, sortDesc);
+        body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc);
 
-        // sort toggle
-        body.querySelector('#stats-dd-sort')?.addEventListener('click', () => {
-            sortDesc = !sortDesc;
-            page = 0;
-            redraw();
+        // sort column buttons
+        body.querySelectorAll('.kp-dd-sort').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const col = btn.dataset.ddCol;
+                if (sortCol === col) {
+                    sortDesc = !sortDesc;
+                } else {
+                    sortCol  = col;
+                    sortDesc = true;
+                }
+                page = 0;
+                redraw();
+            });
         });
 
         // pagination buttons
