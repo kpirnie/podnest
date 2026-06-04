@@ -449,9 +449,9 @@ function renderDrilldownTable(entries, page, sortDesc) {
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Method</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">
-                        <button class="uk-button kp-btn-ghost kp-btn-sm" id="stats-dd-sort" style="padding:0;font-size:0.75rem">
+                        <a class="" id="stats-dd-sort" style="padding:0;font-size:0.75rem">
                             Status ${sortDesc ? '↓' : '↑'}
-                        </button>
+                        </a>
                     </th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">IP</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>

@@ -15,7 +15,8 @@ const cspPolicy = "" +
 	"style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; " +
 	"font-src 'self' https://fonts.gstatic.com; " +
 	"img-src 'self' https://cdn.kcp.im data: blob:; " +
-	"connect-src 'self' ws: wss:; " +
+	"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
+	"manifest-src 'self'; " +
 	"frame-src 'none'; " +
 	"object-src 'none'; " +
 	"base-uri 'self'; " +
