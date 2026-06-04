@@ -287,7 +287,11 @@ func buildDirectives(paranoiaLevel int, exclusions string) string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if isNumeric(line) {
+		// raw Sec* directives are passed through as-is — allows path-scoped
+		// exclusions like SecRuleRemoveByRequestURI to be entered in the UI field
+		if strings.HasPrefix(line, "Sec") {
+			fmt.Fprintf(&b, "%s\n", line)
+		} else if isNumeric(line) {
 			fmt.Fprintf(&b, "SecRuleRemoveById %s\n", line)
 		} else {
 			fmt.Fprintf(&b, "SecRuleRemoveByTag %s\n", line)
