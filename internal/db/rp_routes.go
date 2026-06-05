@@ -13,12 +13,13 @@ type RPRoute struct {
 	Domain   string `json:"Domain"`
 	Upstream string `json:"Upstream"`
 	Position int    `json:"Position"`
+	PassHost bool   `json:"PassHost"`
 }
 
 // GetRPRoutesBySite returns all routes for a given site ordered by position
 func GetRPRoutesBySite(db *sql.DB, siteID int64) ([]RPRoute, error) {
 	rows, err := db.Query(`
-		SELECT id, site_id, domain, upstream, position
+		SELECT id, site_id, domain, upstream, position, pass_host
 		FROM kppn_rp_routes WHERE site_id = ? ORDER BY position ASC`, siteID,
 	)
 	if err != nil {
@@ -30,7 +31,7 @@ func GetRPRoutesBySite(db *sql.DB, siteID int64) ([]RPRoute, error) {
 	var routes []RPRoute
 	for rows.Next() {
 		var r RPRoute
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Domain, &r.Upstream, &r.Position); err != nil {
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Domain, &r.Upstream, &r.Position, &r.PassHost); err != nil {
 			logger.Error("GetRPRoutesBySite: failed to scan row: %v", err)
 			return nil, err
 		}
@@ -84,8 +85,8 @@ func ReplaceRPRoutes(db *sql.DB, siteID int64, routes []RPRoute) error {
 
 	// insert each new route with its assigned position
 	stmt, err := tx.Prepare(`
-		INSERT INTO kppn_rp_routes (site_id, domain, upstream, position)
-		VALUES (?, ?, ?, ?)`)
+		INSERT INTO kppn_rp_routes (site_id, domain, upstream, position, pass_host)
+		VALUES (?, ?, ?, ?, ?)`)
 	if err != nil {
 		tx.Rollback()
 		logger.Error("ReplaceRPRoutes: failed to prepare insert: %v", err)
@@ -94,7 +95,7 @@ func ReplaceRPRoutes(db *sql.DB, siteID int64, routes []RPRoute) error {
 	defer stmt.Close()
 
 	for i, r := range routes {
-		if _, err := stmt.Exec(siteID, r.Domain, r.Upstream, i); err != nil {
+		if _, err := stmt.Exec(siteID, r.Domain, r.Upstream, i, r.PassHost); err != nil {
 			tx.Rollback()
 			logger.Error("ReplaceRPRoutes: failed to insert route: %v", err)
 			return err

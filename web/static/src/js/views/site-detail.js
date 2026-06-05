@@ -261,11 +261,14 @@ function renderRoutesTab() {
 }
 
 // renderRouteRow returns a single editable domain→upstream row
-function renderRouteRow(domain = "", upstream = "") {
+function renderRouteRow(domain = "", upstream = "", passHost = false) {
     return `
         <div class="rp-route-row uk-flex uk-flex-middle uk-margin-small-bottom" style="gap:8px">
             <input class="uk-input kp-input" style="flex:1" placeholder="example.com" value="${domain}" data-field="domain">
             <input class="uk-input kp-input" style="flex:2" placeholder="https://10.0.0.1:8080" value="${upstream}" data-field="upstream">
+            <label style="white-space:nowrap;font-size:0.75rem;color:var(--kp-text-dim)" title="Send incoming domain as Host header instead of upstream hostname">
+                <input type="checkbox" class="uk-checkbox" data-field="pass_host" ${passHost ? "checked" : ""}> Pass Host
+            </label>
             <button class="uk-button kp-btn-ghost kp-btn-sm rp-remove-row" uk-tooltip="Remove"><span uk-icon="trash"></span></button>
         </div>`;
 }
@@ -277,7 +280,7 @@ async function loadRoutesTab(id) {
     try {
         const routes = await api.get(`/sites/${id}/rp-routes`);
         list.innerHTML = routes.length
-            ? routes.map(r => renderRouteRow(r.Domain, r.Upstream)).join("")
+            ? routes.map(r => renderRouteRow(r.Domain, r.Upstream, r.PassHost)).join("")
             : renderRouteRow();
     } catch (e) {
         toast.error("Failed to load routes: " + e.message);
@@ -306,6 +309,7 @@ function wireRoutesTab(root, id) {
         const routes = [...document.querySelectorAll(".rp-route-row")].map(row => ({
             Domain:   row.querySelector('[data-field="domain"]').value.trim(),
             Upstream: row.querySelector('[data-field="upstream"]').value.trim(),
+            PassHost: row.querySelector('[data-field="pass_host"]').checked,
         })).filter(r => r.Domain && r.Upstream);
 
         try {

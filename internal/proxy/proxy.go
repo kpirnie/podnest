@@ -350,10 +350,13 @@ func (p *Proxy) warmCache() error {
 
 	// group upstreams by domain; track siteID separately for RP-only domains
 	// that have no kppn_domains entry and must be synthesised into the cache
-	poolMap := make(map[string][]string)
+	poolMap := make(map[string][]upstreamEntry)
 	siteIDs := make(map[string]int64)
 	for _, r := range routes {
-		poolMap[r.Domain] = append(poolMap[r.Domain], r.Upstream)
+		poolMap[r.Domain] = append(poolMap[r.Domain], upstreamEntry{
+			upstream: r.Upstream,
+			passHost: r.PassHost,
+		})
 		siteIDs[r.Domain] = r.SiteID
 	}
 
@@ -759,8 +762,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the proxy instance is cached per upstream URL to preserve connection pooling across
 	// all HTTP methods (GET, POST, PUT, DELETE, PATCH, etc.)
 	if rpPool != nil {
-		upstream := rpPool.Next()
-		rp := p.getOrCreateRPProxy(upstream)
+		target := rpPool.Next()
+		rp := p.getOrCreateRPProxy(target.URL, target.PassHost)
 		rp.ServeHTTP(sw, r)
 		p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 		return
@@ -896,12 +899,12 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 // getOrCreateRPProxy returns a cached *httputil.ReverseProxy for the given upstream URL,
 // creating one if needed. Keyed by the full upstream URL string so connection pools are
 // reused across requests rather than allocated per-request.
-func (p *Proxy) getOrCreateRPProxy(target *url.URL) *httputil.ReverseProxy {
-	key := target.String()
+func (p *Proxy) getOrCreateRPProxy(target *url.URL, passHost bool) *httputil.ReverseProxy {
+	key := target.String() + fmt.Sprintf("|ph=%v", passHost)
 	if rp, ok := p.rpProxyCache.Load(key); ok {
 		return rp.(*httputil.ReverseProxy)
 	}
-	rp := newReverseProxy(target, p.rpTransport)
+	rp := newReverseProxy(target, p.rpTransport, passHost)
 	actual, _ := p.rpProxyCache.LoadOrStore(key, rp)
 	return actual.(*httputil.ReverseProxy)
 }

@@ -9,41 +9,57 @@ import (
 	"podnest/internal/logger"
 )
 
-// UpstreamPool holds a slice of upstream URLs and an atomic round-robin counter
+// UpstreamTarget pairs a parsed URL with its PassHost flag.
+type UpstreamTarget struct {
+	URL      *url.URL
+	PassHost bool
+}
+
+// UpstreamPool holds a slice of upstream targets and an atomic round-robin counter.
 type UpstreamPool struct {
-	targets []*url.URL
+	targets []UpstreamTarget
 	counter atomic.Uint64
 }
 
-// newUpstreamPool parses a slice of raw upstream URL strings into an UpstreamPool
-func newUpstreamPool(upstreams []string) (*UpstreamPool, error) {
-	pool := &UpstreamPool{targets: make([]*url.URL, 0, len(upstreams))}
-	for _, u := range upstreams {
-		parsed, err := url.Parse(u)
+// upstreamEntry is used internally when building a pool from DB routes.
+type upstreamEntry struct {
+	upstream string
+	passHost bool
+}
+
+// newUpstreamPool parses a slice of RPRoute into an UpstreamPool.
+func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
+	pool := &UpstreamPool{targets: make([]UpstreamTarget, 0, len(routes))}
+	for _, r := range routes {
+		parsed, err := url.Parse(r.upstream)
 		if err != nil {
-			logger.Error("upstream: failed to parse upstream URL '%s': %v", u, err)
+			logger.Error("upstream: failed to parse upstream URL '%s': %v", r.upstream, err)
 			return nil, err
 		}
-		pool.targets = append(pool.targets, parsed)
+		pool.targets = append(pool.targets, UpstreamTarget{URL: parsed, PassHost: r.passHost})
 	}
 	return pool, nil
 }
 
-// Next returns the next upstream URL via atomic increment + modulo, providing round-robin balancing
-func (p *UpstreamPool) Next() *url.URL {
+// Next returns the next upstream target via atomic round-robin.
+func (p *UpstreamPool) Next() UpstreamTarget {
 	n := p.counter.Add(1)
 	return p.targets[int(n-1)%len(p.targets)]
 }
 
-// Targets returns the upstream URL slice for connection warming.
+// Targets returns all upstream URLs for connection warming.
 func (p *UpstreamPool) Targets() []*url.URL {
-	return p.targets
+	out := make([]*url.URL, len(p.targets))
+	for i, t := range p.targets {
+		out[i] = t.URL
+	}
+	return out
 }
 
 // newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
 // transport is the shared pool passed in from Proxy.rpTransport — not created here —
 // so idle connections are reused across all RP upstream sites rather than siloed per-URL.
-func newReverseProxy(target *url.URL, transport *http.Transport) *httputil.ReverseProxy {
+func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool) *httputil.ReverseProxy {
 
 	// return the proxy
 	return &httputil.ReverseProxy{
@@ -51,7 +67,13 @@ func newReverseProxy(target *url.URL, transport *http.Transport) *httputil.Rever
 		FlushInterval: -1, // flush immediately for streaming responses — see getOrCreateProxy
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
-			req.Out.Host = req.In.Host
+
+			// passHost forwards the incoming domain as Host; otherwise use the upstream's own hostname
+			if passHost {
+				req.Out.Host = req.In.Host
+			} else {
+				req.Out.Host = target.Host
+			}
 
 			// explicitly preserve the HTTP method — PUT, DELETE, PATCH, etc.
 			req.Out.Method = req.In.Method
