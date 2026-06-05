@@ -116,6 +116,12 @@ const (
 // each pod's isolated network namespace regardless of how many pods exist
 const VarnishNginxPort = 8080
 
+// backup destination types
+const (
+	BackupTypeLocal = 1
+	BackupTypeS3    = 2
+)
+
 // user data structure
 type User struct {
 	ID          int64
@@ -129,6 +135,8 @@ type User struct {
 	Role        int
 	TOTPSecret  string
 	TOTPEnabled bool
+	NotifyEmail bool
+	NotifySMS   bool
 	Created     time.Time
 	Updated     *time.Time
 }
@@ -163,6 +171,12 @@ type Site struct {
 	PMAPort        int
 	Created        time.Time
 	Updated        *time.Time
+}
+
+// ContainerHealth holds the last-known health state for a single container.
+type ContainerHealth struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // "healthy", "unhealthy", "starting", "none"
 }
 
 // SFTPCred holds the global SFTP credentials for a site
@@ -203,12 +217,6 @@ type Config struct {
 	Updated *time.Time
 }
 
-// backup destination types
-const (
-	BackupTypeLocal = 1
-	BackupTypeS3    = 2
-)
-
 // BackupRepo holds the restic repository configuration for a site
 type BackupRepo struct {
 	ID           int64
@@ -248,6 +256,17 @@ type SiteCron struct {
 	LastError  string
 	Created    time.Time
 	Updated    *time.Time
+}
+
+// ResourceWarning holds the current host resource threshold breach state.
+type ResourceWarning struct {
+	Active      bool      `json:"active"`
+	Resource    string    `json:"resource"`
+	CurrentMB   int64     `json:"current_mb"`
+	ThresholdMB int64     `json:"threshold_mb"`
+	Offender    string    `json:"offender"`
+	OffenderMB  int64     `json:"offender_mb"`
+	Since       time.Time `json:"since"`
 }
 
 // GenerateUHash produces a cryptographically random 64-char hex string

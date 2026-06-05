@@ -54,6 +54,8 @@ export const normalizeUser = (u) => ({
     phone:        u.phone        ?? u.Phone,
     role:         u.role         ?? u.Role,
     totp_enabled: u.totp_enabled ?? false,
+    notify_email: u.notify_email ?? false,
+    notify_sms:   u.notify_sms   ?? false,
     created:      u.created      ?? u.Created,
 });
 

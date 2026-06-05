@@ -29,7 +29,8 @@ func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg Container
 			Options:     m.Options,
 		}
 	}
-	_, err := a.Client.CreateContainer(ctx, podman.ContainerSpec{
+
+	spec := podman.ContainerSpec{
 		Name:       cfg.Name,
 		Image:      cfg.Image,
 		Pod:        cfg.PodName,
@@ -42,7 +43,20 @@ func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg Container
 		CapAdd:     cfg.CapAdd,
 		CapDrop:    cfg.CapDrop,
 		SecOpts:    cfg.SecOpts,
-	})
+	}
+
+	// map healthcheck if defined
+	if cfg.Healthcheck != nil {
+		spec.Healthcheck = &podman.HealthcheckConfig{
+			Test:        cfg.Healthcheck.Test,
+			Interval:    cfg.Healthcheck.Interval,
+			Timeout:     cfg.Healthcheck.Timeout,
+			Retries:     cfg.Healthcheck.Retries,
+			StartPeriod: cfg.Healthcheck.StartPeriod,
+		}
+	}
+
+	_, err := a.Client.CreateContainer(ctx, spec)
 	return err
 }
 

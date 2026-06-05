@@ -60,9 +60,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/db", Destination: "/var/lib/mysql", Options: []string{"z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/db/my.cnf", Destination: "/etc/mysql/conf.d/custom.cnf", Options: []string{"ro", "z"}},
 		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "IPC_LOCK"},
-		SecOpts: []string{secNoNewPriv},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "IPC_LOCK"},
+		SecOpts:     []string{secNoNewPriv},
+		Healthcheck: modules.HC(modules.HCRoleDB),
 	}); err != nil {
 		return fmt.Errorf("create db: %w", err)
 	}
@@ -87,9 +88,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/redis/redis.conf", Destination: "/usr/local/etc/redis/redis.conf", Options: []string{"z"}},
 			{Type: "tmpfs", Destination: "/tmp"},
 		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"SETUID", "SETGID"},
-		SecOpts: []string{secNoNewPriv},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"SETUID", "SETGID"},
+		SecOpts:     []string{secNoNewPriv},
+		Healthcheck: modules.HC(modules.HCRoleRedis),
 	}); err != nil {
 		return fmt.Errorf("create redis: %w", err)
 	}
@@ -116,9 +118,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/php-fpm/www.conf", Destination: "/usr/local/etc/php-fpm.d/www.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/php-fpm/php.ini", Destination: "/usr/local/etc/php/conf.d/99-custom.ini", Options: []string{"ro", "z"}},
 		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
-		SecOpts: []string{secNoNewPriv},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
+		SecOpts:     []string{secNoNewPriv},
+		Healthcheck: modules.HC(modules.HCRolePHP),
 	}); err != nil {
 		return fmt.Errorf("create php: %w", err)
 	}
@@ -138,9 +141,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/nginx.conf", Destination: "/etc/nginx/nginx.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/conf.d", Destination: "/etc/nginx/conf.d", Options: []string{"ro", "z"}},
 		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
-		SecOpts: []string{secNoNewPriv},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
+		SecOpts:     []string{secNoNewPriv},
+		Healthcheck: modules.HC(modules.HCRoleNginx),
 	}); err != nil {
 		return fmt.Errorf("create nginx: %w", err)
 	}
@@ -162,9 +166,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			Mounts: []modules.Mount{
 				{Type: "bind", Source: cfg.SiteDir + "/varnish/default.vcl", Destination: "/etc/varnish/default.vcl", Options: []string{"ro", "z"}},
 			},
-			CapDrop: []string{"ALL"},
-			CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
-			SecOpts: []string{secNoNewPriv},
+			CapDrop:     []string{"ALL"},
+			CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
+			SecOpts:     []string{secNoNewPriv},
+			Healthcheck: modules.HC(modules.HCRoleVarnish),
 		}); err != nil {
 			return fmt.Errorf("create varnish: %w", err)
 		}
@@ -194,9 +199,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			"PHP_POST_MAX_SIZE":       "256M",
 			"UPLOAD_LIMIT":            "256M",
 		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"},
-		SecOpts: []string{secNoNewPriv},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"},
+		SecOpts:     []string{secNoNewPriv},
+		Healthcheck: modules.HC(modules.HCRolePMA),
 	}); err != nil {
 		return fmt.Errorf("create pma: %w", err)
 	}

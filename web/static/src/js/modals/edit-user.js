@@ -43,7 +43,14 @@ export async function showEditUserModal(root, uid) {
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Phone</label>
-                            <input class="uk-input kp-input" name="phone" type="tel" value="${user.phone || ""}">
+                            <input class="uk-input kp-input" name="phone" type="tel" value="${user.phone || ""}" required>
+                        </div>
+                        <div class="uk-width-1-1">
+                            <label class="kp-label uk-margin-small-bottom">Notifications</label>
+                            <div class="uk-flex" style="gap:24px">
+                                <label><input class="uk-checkbox" type="checkbox" name="notify_email" ${user.notify_email ? "checked" : ""}> &nbsp;Email</label>
+                                <label><input class="uk-checkbox" type="checkbox" name="notify_sms" ${user.notify_sms ? "checked" : ""}> &nbsp;SMS</label>
+                            </div>
                         </div>
                         ${isAdmin ? `
                         <div class="uk-width-1-2@s">
@@ -109,10 +116,12 @@ export async function showEditUserModal(root, uid) {
 
         const fd   = new FormData(e.target);
         const body = {
-            fname: fd.get("fname").trim(),
-            lname: fd.get("lname").trim(),
-            email: fd.get("email").trim(),
-            phone: fd.get("phone").trim(),
+            fname:        fd.get("fname").trim(),
+            lname:        fd.get("lname").trim(),
+            email:        fd.get("email").trim(),
+            phone:        fd.get("phone").trim(),
+            notify_email: fd.get("notify_email") === "on",
+            notify_sms:   fd.get("notify_sms") === "on",
         };
         if (isAdmin) {
             body.role = parseInt(fd.get("role"));

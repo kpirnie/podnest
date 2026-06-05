@@ -78,3 +78,19 @@
     font-size: 0.85em;
 }
 .kp-text-sm { font-size: 0.8rem; }
+
+.kp-resource-warning-banner {
+    background: color-mix(in srgb, var(--kp-danger) 15%, transparent);
+    border: 1px solid var(--kp-danger);
+    border-radius: var(--kp-radius);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    color: var(--kp-text);
+}
+
+.kp-resource-warning-banner p {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}

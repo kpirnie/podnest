@@ -53,21 +53,22 @@ type NetworkNamespace struct {
 
 // ContainerSpec defines the configuration for creating a new container within a pod, including image, environment variables, mounts, capabilities, and command
 type ContainerSpec struct {
-	Name         string            `json:"name"`
-	Image        string            `json:"image"`
-	Pod          string            `json:"pod"`
-	Env          map[string]string `json:"env"`
-	Mounts       []Mount           `json:"mounts"`
-	PortMappings []PortMap         `json:"portmappings,omitempty"`
-	CapAdd       []string          `json:"cap_add"`
-	CapDrop      []string          `json:"cap_drop"`
-	SecOpts      []string          `json:"security_opt"`
-	Entrypoint   []string          `json:"entrypoint,omitempty"`
-	Command      []string          `json:"command,omitempty"`
-	ReadOnlyFS   bool              `json:"read_only_rootfs,omitempty"`
-	WorkingDir   string            `json:"work_dir,omitempty"`
-	User         string            `json:"user,omitempty"`
-	NetNS        NetworkNamespace  `json:"netns,omitempty"`
+	Name         string             `json:"name"`
+	Image        string             `json:"image"`
+	Pod          string             `json:"pod"`
+	Env          map[string]string  `json:"env"`
+	Mounts       []Mount            `json:"mounts"`
+	PortMappings []PortMap          `json:"portmappings,omitempty"`
+	CapAdd       []string           `json:"cap_add"`
+	CapDrop      []string           `json:"cap_drop"`
+	SecOpts      []string           `json:"security_opt"`
+	Entrypoint   []string           `json:"entrypoint,omitempty"`
+	Command      []string           `json:"command,omitempty"`
+	ReadOnlyFS   bool               `json:"read_only_rootfs,omitempty"`
+	WorkingDir   string             `json:"work_dir,omitempty"`
+	User         string             `json:"user,omitempty"`
+	NetNS        NetworkNamespace   `json:"netns,omitempty"`
+	Healthcheck  *HealthcheckConfig `json:"healthconfig,omitempty"`
 }
 
 // Mount represents a bind mount or volume mount for a container, specifying the source path on the host, the destination path in the container, the type of mount, and any additional options
@@ -78,9 +79,28 @@ type Mount struct {
 	Options     []string `json:"options,omitempty"`
 }
 
+// HealthcheckConfig defines the health check command and timing for a container.
+// Interval, Timeout, and StartPeriod are in nanoseconds (use time.Duration values).
+type HealthcheckConfig struct {
+	Test        []string      `json:"Test"`
+	Interval    time.Duration `json:"Interval"`
+	Timeout     time.Duration `json:"Timeout"`
+	Retries     int           `json:"Retries"`
+	StartPeriod time.Duration `json:"StartPeriod"`
+}
+
 // ContainerCreateResponse represents the response from the container creation endpoint, containing the new container's ID
 type ContainerCreateResponse struct {
 	ID string `json:"Id"`
+}
+
+// ContainerStat holds resource usage for a single container.
+type ContainerStat struct {
+	Name     string
+	CPUPerc  float64
+	MemUsage uint64
+	MemLimit uint64
+	MemPerc  float64
 }
 
 // CreatePod creates a new pod with the given name and host port mapping
@@ -530,5 +550,75 @@ func (c *Client) ReloadVarnish(ctx context.Context, name string) error {
 	}
 
 	logger.Debug("ReloadVarnish: hot-reloaded VCL in %s (label: %s)", name, label)
+	return nil
+}
+
+// ContainerHealthState returns the Podman health status string for a container:
+// "healthy", "unhealthy", "starting", or "none" (no healthcheck defined).
+func (c *Client) ContainerHealthState(ctx context.Context, name string) (string, error) {
+	var inspect struct {
+		State struct {
+			Health struct {
+				Status string `json:"Status"`
+			} `json:"Health"`
+		} `json:"State"`
+	}
+	if err := c.get(ctx, "/v4.0.0/libpod/containers/"+name+"/json", &inspect); err != nil {
+		return "none", err
+	}
+	if inspect.State.Health.Status == "" {
+		return "none", nil
+	}
+	return inspect.State.Health.Status, nil
+}
+
+// PodStats returns current resource usage for all containers in the named pod.
+func (c *Client) PodStats(ctx context.Context, podName string) ([]ContainerStat, error) {
+	var raw struct {
+		Stats []struct {
+			Name     string  `json:"Name"`
+			CPU      float64 `json:"CPU"`
+			MemUsage uint64  `json:"MemUsage"`
+			MemLimit uint64  `json:"MemLimit"`
+			MemPerc  float64 `json:"MemPerc"`
+		} `json:"Stats"`
+	}
+	if err := c.get(ctx, "/v4.0.0/libpod/containers/stats?stream=false", &raw); err != nil {
+		return nil, err
+	}
+
+	// filter by pod name prefix since Podman's pod filter is unreliable
+	prefix := podName + "-"
+	out := make([]ContainerStat, 0)
+	for _, r := range raw.Stats {
+		if !strings.HasPrefix(r.Name, prefix) {
+			continue
+		}
+		out = append(out, ContainerStat{
+			Name:     r.Name,
+			CPUPerc:  r.CPU,
+			MemUsage: r.MemUsage,
+			MemLimit: r.MemLimit,
+			MemPerc:  r.MemPerc,
+		})
+	}
+	return out, nil
+}
+
+// UpdateContainerResources applies or removes a memory limit on a running container
+// via the Docker-compat update endpoint. Set limitBytes=0 to remove the limit.
+func (c *Client) UpdateContainerResources(ctx context.Context, name string, limitBytes int64) error {
+	body := map[string]any{
+		"Memory":     limitBytes,
+		"MemorySwap": -1, // -1 = unlimited swap; prevents swap-based OOM circumvention
+	}
+	if limitBytes == 0 {
+		body["MemorySwap"] = 0
+	}
+	if err := c.post(ctx, "/v1.41/containers/"+name+"/update", body, nil); err != nil {
+		logger.Error("UpdateContainerResources: failed for %s: %v", name, err)
+		return err
+	}
+	logger.Debug("UpdateContainerResources: set limit=%d on %s", limitBytes, name)
 	return nil
 }

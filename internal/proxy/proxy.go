@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 
@@ -1063,8 +1064,19 @@ func (p *Proxy) resolveWAFEngine(siteID int64) *WAFEngine {
 
 // PanelSecurityMiddleware returns an http.Handler middleware that applies the
 // global WAF engine, IP rules, and UA rules to admin panel requests.
+// Requests carrying a valid session cookie bypass all security checks —
+// authenticated users are trusted by definition.
 func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// authenticated sessions bypass WAF, IP, and UA checks entirely —
+		// the user has already passed login; blocking their API calls is wrong
+		if sessionID := auth.SessionFromRequest(r); sessionID != "" {
+			if user, err := auth.SessionUser(p.database, sessionID); err == nil && user != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
 
 		// resolve client IP using the same trusted proxy logic as proxied sites
 		clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())

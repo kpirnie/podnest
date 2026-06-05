@@ -17,6 +17,9 @@ import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
 // aborts accumulated root-level listeners when a new RP site detail view is wired
 let _rpWireAbort = null;
 
+// holds the active health badge WebSocket; closed on next navigation
+let _healthWS = null;
+
 // renderWAFOverride returns the static HTML shell for the WAF override tab
 function renderWAFOverride() {
     return `
@@ -317,6 +320,94 @@ function wireRoutesTab(root, id) {
     }, { signal: _rpWireAbort.signal });
 }
 
+// containerIcon maps a container role suffix to a UIkit icon name
+function containerIcon(name) {
+    if (name.endsWith("-nginx"))   return "world";
+    if (name.endsWith("-php"))     return "code";
+    if (name.endsWith("-db"))      return "database";
+    if (name.endsWith("-redis"))   return "server";
+    if (name.endsWith("-varnish")) return "layers";
+    if (name.endsWith("-pma"))     return "table";
+    if (name.endsWith("-app"))     return "laptop";
+    return "bolt";
+}
+
+function containerLabel(name) {
+    const role = name.split("-").pop();
+    const labels = {
+        nginx: "Nginx", php: "PHP-FPM", db: "MariaDB",
+        redis: "Redis", varnish: "Varnish", pma: "phpMyAdmin",
+        app: "App",
+    };
+    return labels[role] ?? role;
+}
+
+// healthColor maps a Podman health status to a CSS color variable
+function healthColor(status) {
+    switch (status) {
+        case "healthy":   return "var(--kp-success)";
+        case "unhealthy": return "var(--kp-danger)";
+        case "starting":  return "var(--kp-warning)";
+        default:          return "var(--kp-text-dim)";
+    }
+}
+
+// renderHealthBadges builds the badge HTML from a container health array
+function renderHealthBadges(containers) {
+    if (!containers || !containers.length) return "";
+    return containers
+        .filter(c => !c.name.endsWith("-infra"))
+        .map(c => `
+            <span class="kp-health-badge"
+                data-container="${c.name}"
+                title="Restart the Container"
+                style="cursor:pointer;color:${healthColor(c.status)}">
+                <span uk-icon="icon: ${containerIcon(c.name)}; ratio: 1.1"></span>
+                <span class="kp-health-badge-label">${containerLabel(c.name)}</span>
+            </span>
+        `).join("");
+}
+
+// wireHealthBadges opens the health WebSocket for the site and drives the badge row.
+// Closes any previous connection first.
+function wireHealthBadges(root, id) {
+    if (_healthWS) { _healthWS.close(); _healthWS = null; }
+
+    const container = document.getElementById("sd-health-badges");
+    if (!container) return;
+
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    _healthWS = new WebSocket(`${proto}://${location.host}/api/sites/${id}/health/stream`);
+
+    _healthWS.onmessage = (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            container.innerHTML = renderHealthBadges(data);
+            // wire click-to-restart on freshly rendered badges
+            container.querySelectorAll(".kp-health-badge").forEach(badge => {
+                badge.addEventListener("click", async () => {
+                    // immediately signal restarting so users don't double-click
+                    badge.style.color = healthColor("starting");
+
+                    const cname = badge.dataset.container;
+                    const role = cname.split("-").pop();
+                    try {
+                        await api.post(`/sites/${id}/containers/${role}/restart`);
+                        toast.success(`${containerLabel(cname)} restarted`);
+                    } catch (err) {
+                        // revert color on failure so the badge reflects true state
+                        badge.style.color = healthColor("none");
+                        toast.error(err.message);
+                    }
+                });
+            });
+        } catch (_) { /* ignore malformed frames */ }
+    };
+
+    _healthWS.onerror = () => {};
+    _healthWS.onclose = () => { _healthWS = null; };
+}
+
 export async function viewSiteDetail(root, { id }) {
     // fetch site detail and full site list in parallel for the nav selector
     const [{ site, domains, sftp }, rawSites, configs] = await Promise.all([
@@ -518,6 +609,7 @@ export async function viewSiteDetail(root, { id }) {
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
+    wireHealthBadges(root, id);
     initPillTabs(root);
     // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);

@@ -104,6 +104,35 @@ func GetTrustedProxies(db *sql.DB) ([]string, error) {
 	return cidrs, nil
 }
 
+// GetSMTPConfig loads SMTP settings from the database into an SMTPConfig-shaped map.
+// Returns the raw string values; the caller converts to the typed struct.
+func GetSMTPConfig(db *sql.DB) (map[string]string, error) {
+	keys := []string{"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "smtp_tls"}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		val, err := GetSetting(db, k)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = val
+	}
+	return out, nil
+}
+
+// GetSNSConfig loads AWS SNS settings from the database into a raw string map.
+func GetSNSConfig(db *sql.DB) (map[string]string, error) {
+	keys := []string{"aws_access_key", "aws_secret_key", "aws_region", "aws_sns_sender_id"}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		val, err := GetSetting(db, k)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = val
+	}
+	return out, nil
+}
+
 // GetTrustedProxiesCustom returns only the admin-defined custom CIDR entries
 func GetTrustedProxiesCustom(db *sql.DB) (string, error) {
 	return GetSetting(db, "trusted_proxies_custom")

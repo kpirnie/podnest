@@ -33,7 +33,14 @@ export function showCreateUserModal(root) {
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Phone</label>
-                            <input class="uk-input kp-input" name="phone" type="tel">
+                            <input class="uk-input kp-input" name="phone" type="tel" required>
+                        </div>
+                        <div class="uk-width-1-1">
+                            <label class="kp-label uk-margin-small-bottom">Notifications</label>
+                            <div class="uk-flex" style="gap:24px">
+                                <label><input class="uk-checkbox" type="checkbox" name="notify_email"> &nbsp;Email</label>
+                                <label><input class="uk-checkbox" type="checkbox" name="notify_sms"> &nbsp;SMS</label>
+                            </div>
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Password</label>
@@ -93,13 +100,15 @@ export function showCreateUserModal(root) {
 
         const fd   = new FormData(e.target);
         const body = {
-            fname:    fd.get("fname").trim(),
-            lname:    fd.get("lname").trim(),
-            uname:    fd.get("uname").trim(),
-            email:    fd.get("email").trim(),
-            phone:    fd.get("phone").trim(),
-            password: fd.get("password"),
-            role:     parseInt(fd.get("role")),
+            fname:        fd.get("fname").trim(),
+            lname:        fd.get("lname").trim(),
+            uname:        fd.get("uname").trim(),
+            email:        fd.get("email").trim(),
+            phone:        fd.get("phone").trim(),
+            password:     fd.get("password"),
+            role:         parseInt(fd.get("role")),
+            notify_email: fd.get("notify_email") === "on",
+            notify_sms:   fd.get("notify_sms") === "on",
         };
         try {
             const u = normalizeUser(await api.post("/users", body));

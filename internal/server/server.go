@@ -13,6 +13,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/modules/platform/fail2ban"
+	"podnest/internal/notifications"
 	"podnest/internal/podman"
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
@@ -44,6 +45,8 @@ type Server struct {
 	proxy    *proxy.Proxy
 	backup   *backup.Manager
 	cron     *cron.Manager
+	stats    *statsCache
+	resource *resourceState
 }
 
 // New initialises the server and registers all routes
@@ -55,6 +58,8 @@ func New(cfg Config) *Server {
 		fail2ban: cfg.Fail2BanManager,
 		backup:   cfg.BackupManager,
 		cron:     cfg.CronManager,
+		stats:    newStatsCache(),
+		resource: newResourceState(),
 	}
 
 	s.http = &http.Server{
@@ -114,6 +119,12 @@ func (s *Server) Start() error {
 
 	// background permission fixer
 	go s.permissionReaper()
+
+	// poll container health and resource stats every 10 seconds
+	go s.pollStats()
+
+	// monitor host resource usage and throttle offending pods when threshold is breached
+	go s.resourceWatcher()
 
 	// fire up the status checker
 	go s.syncPodStatuses()
@@ -215,6 +226,34 @@ func (s *Server) ensureGlobalContainers() {
 			return
 		}
 	}
+}
+
+// notify loads all users and notification configs from the database and dispatches
+// email and SMS alerts to every user with the corresponding notification flag enabled.
+// subject/body are used for email; message is the SMS payload (keep under 160 chars).
+func (s *Server) notify(subject, body, message string) {
+	users, err := db.GetAllUsers(s.cfg.DB)
+	if err != nil {
+		logger.Error("notify: failed to load users: %v", err)
+		return
+	}
+
+	smtpMap, err := db.GetSMTPConfig(s.cfg.DB)
+	if err != nil {
+		logger.Error("notify: failed to load SMTP config: %v", err)
+		return
+	}
+
+	snsMap, err := db.GetSNSConfig(s.cfg.DB)
+	if err != nil {
+		logger.Error("notify: failed to load SNS config: %v", err)
+		return
+	}
+
+	smtpCfg := notifications.SMTPConfigFromMap(smtpMap)
+	snsCfg := notifications.SNSConfigFromMap(snsMap)
+
+	notifications.Dispatch(users, smtpCfg, snsCfg, subject, body, message)
 }
 
 // shutdown gracefully drains connections

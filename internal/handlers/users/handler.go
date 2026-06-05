@@ -49,6 +49,8 @@ func (h *Handler) apiListUsers(w http.ResponseWriter, r *http.Request) {
 		Phone       string `json:"phone"`
 		Role        int    `json:"role"`
 		TOTPEnabled bool   `json:"totp_enabled"`
+		NotifyEmail bool   `json:"notify_email"`
+		NotifySMS   bool   `json:"notify_sms"`
 		Created     string `json:"created"`
 	}
 
@@ -64,6 +66,8 @@ func (h *Handler) apiListUsers(w http.ResponseWriter, r *http.Request) {
 			Phone:       u.Phone,
 			Role:        u.Role,
 			TOTPEnabled: u.TOTPEnabled,
+			NotifyEmail: u.NotifyEmail,
+			NotifySMS:   u.NotifySMS,
 			Created:     u.Created.Format("2006-01-02 15:04:05"),
 		})
 	}
@@ -88,19 +92,23 @@ func (h *Handler) apiGetUser(w http.ResponseWriter, r *http.Request) {
 		"phone":        user.Phone,
 		"role":         user.Role,
 		"totp_enabled": user.TOTPEnabled,
+		"notify_email": user.NotifyEmail,
+		"notify_sms":   user.NotifySMS,
 		"created":      user.Created.Format("2006-01-02 15:04:05"),
 	})
 }
 
 func (h *Handler) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		UName    string `json:"uname"`
-		Password string `json:"password"`
-		FName    string `json:"fname"`
-		LName    string `json:"lname"`
-		Email    string `json:"email"`
-		Phone    string `json:"phone"`
-		Role     int    `json:"role"`
+		UName       string `json:"uname"`
+		Password    string `json:"password"`
+		FName       string `json:"fname"`
+		LName       string `json:"lname"`
+		Email       string `json:"email"`
+		Phone       string `json:"phone"`
+		Role        int    `json:"role"`
+		NotifyEmail bool   `json:"notify_email"`
+		NotifySMS   bool   `json:"notify_sms"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Error("failed to decode request body for user creation: %v", err)
@@ -108,9 +116,9 @@ func (h *Handler) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.UName == "" || req.Password == "" || req.Email == "" {
-		logger.Error("missing required fields for user creation: uname=%s email=%s", req.UName, req.Email)
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "uname, password, and email are required")
+	if req.UName == "" || req.Password == "" || req.Email == "" || req.Phone == "" {
+		logger.Error("missing required fields for user creation: uname=%s email=%s phone=%s", req.UName, req.Email, req.Phone)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "uname, password, email, and phone are required")
 		return
 	}
 
@@ -146,14 +154,16 @@ func (h *Handler) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := &models.User{
-		UName: req.UName,
-		PWord: hash,
-		UHash: uhash,
-		FName: req.FName,
-		LName: req.LName,
-		Email: req.Email,
-		Phone: req.Phone,
-		Role:  req.Role,
+		UName:       req.UName,
+		PWord:       hash,
+		UHash:       uhash,
+		FName:       req.FName,
+		LName:       req.LName,
+		Email:       req.Email,
+		Phone:       req.Phone,
+		Role:        req.Role,
+		NotifyEmail: req.NotifyEmail,
+		NotifySMS:   req.NotifySMS,
 	}
 	if err := db.CreateUser(h.DB, user); err != nil {
 		logger.Error("failed to create user '%s': %v", req.UName, err)
@@ -174,13 +184,15 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 	caller := auth.UserFromContext(r.Context())
 
 	var req struct {
-		UName    string `json:"uname"`
-		FName    string `json:"fname"`
-		LName    string `json:"lname"`
-		Email    string `json:"email"`
-		Phone    string `json:"phone"`
-		Role     int    `json:"role"`
-		Password string `json:"password"`
+		UName       string `json:"uname"`
+		FName       string `json:"fname"`
+		LName       string `json:"lname"`
+		Email       string `json:"email"`
+		Phone       string `json:"phone"`
+		Role        int    `json:"role"`
+		Password    string `json:"password"`
+		NotifyEmail *bool  `json:"notify_email"`
+		NotifySMS   *bool  `json:"notify_sms"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Error("failed to decode request body for user update on user %d: %v", target.ID, err)
@@ -215,6 +227,12 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Phone != "" {
 		target.Phone = req.Phone
+	}
+	if req.NotifyEmail != nil {
+		target.NotifyEmail = *req.NotifyEmail
+	}
+	if req.NotifySMS != nil {
+		target.NotifySMS = *req.NotifySMS
 	}
 
 	if caller.Role == models.RoleAdmin && req.Role != 0 {

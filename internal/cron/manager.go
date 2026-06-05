@@ -147,11 +147,13 @@ func (m *Manager) run(ctx context.Context) {
 			}
 			logger.Debug("cron: scheduler stopped")
 			return
+
 		// reload signal to re-arm the timer with any schedule changes
 		case <-m.reloadCh:
 			logger.Debug("cron: reloading jobs")
 			arm(load())
-			// timer fired, execute any jobs that are due
+
+		// timer fired, execute any jobs that are due
 		case <-timerCh:
 
 			// get the current time and all jobs
@@ -219,6 +221,7 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 		return nil
 	}
 
+	// grab the container name and userID for the site
 	containerName := podman.ContainerName(site.Name, role)
 	siteUID := sftp.UIDForSite(site.ID)
 
@@ -227,6 +230,8 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 	// for WordPress sites, auto-install WP-CLI if the command starts with "wp "
 	// and rewrite it to use the absolute path with required flags
 	command := job.Command
+
+	// if the job is a wp-cli job and the container is a wordpress site
 	if site.SiteType == models.SiteTypeWordPress &&
 		(command == "wp" || strings.HasPrefix(command, "wp ")) {
 		if err := m.ensureWPCLI(ctx, containerName); err != nil {

@@ -386,3 +386,63 @@ func compressLogFile(src, dst string) error {
 	_, err = io.Copy(tw, in)
 	return err
 }
+
+// pollStats periodically samples container health states and resource usage for
+// all running sites and writes results into the shared statsCache.
+// Fires immediately on startup then every 10 seconds.
+func (s *Server) pollStats() {
+	poll := func() {
+		ctx := context.Background()
+
+		sites, err := db.GetAllSites(s.cfg.DB)
+		if err != nil {
+			logger.Error("pollStats: failed to load sites: %v", err)
+			return
+		}
+
+		for _, site := range sites {
+			// skip site types that have no pod
+			if !modules.TypeModule(site.SiteType).HasPod() {
+				continue
+			}
+			if site.SiteStatus != models.StatusRunning {
+				continue
+			}
+
+			podName := podman.PodName(site.Name)
+
+			// --- health states ---
+			inspect, err := s.podman.InspectPod(ctx, podName)
+			if err != nil {
+				continue
+			}
+			var healthEntries []models.ContainerHealth
+			for _, c := range inspect.Containers {
+				status, err := s.podman.ContainerHealthState(ctx, c.Name)
+				if err != nil {
+					status = "none"
+				}
+				healthEntries = append(healthEntries, models.ContainerHealth{
+					Name:   c.Name,
+					Status: status,
+				})
+			}
+			s.stats.setHealth(podName, healthEntries)
+
+			// --- resource stats ---
+			cstats, err := s.podman.PodStats(ctx, podName)
+			if err != nil {
+				logger.Debug("pollStats: stats unavailable for pod %s: %v", podName, err)
+				continue
+			}
+			s.stats.setStats(podName, cstats)
+		}
+	}
+
+	poll()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		poll()
+	}
+}

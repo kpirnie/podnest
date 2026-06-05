@@ -44,9 +44,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/nginx.conf", Destination: "/etc/nginx/nginx.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/conf.d", Destination: "/etc/nginx/conf.d", Options: []string{"ro", "z"}},
 		},
-		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
-		SecOpts: []string{secNoNewPriv},
+		CapDrop:     []string{"ALL"},
+		CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
+		SecOpts:     []string{secNoNewPriv},
+		Healthcheck: modules.HC(modules.HCRoleNginx),
 	}); err != nil {
 		return fmt.Errorf("create nginx: %w", err)
 	}
@@ -70,9 +71,10 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			Mounts: []modules.Mount{
 				{Type: "bind", Source: cfg.SiteDir + "/varnish/default.vcl", Destination: "/etc/varnish/default.vcl", Options: []string{"ro", "z"}},
 			},
-			CapDrop: []string{"ALL"},
-			CapAdd:  []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
-			SecOpts: []string{secNoNewPriv},
+			CapDrop:     []string{"ALL"},
+			CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "DAC_OVERRIDE", "SETUID", "SETGID", "IPC_LOCK"},
+			SecOpts:     []string{secNoNewPriv},
+			Healthcheck: modules.HC(modules.HCRoleVarnish),
 		}); err != nil {
 			return fmt.Errorf("create varnish: %w", err)
 		}

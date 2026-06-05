@@ -70,3 +70,4 @@
 }
 .kp-sortable:hover { color: var(--kp-cyan); }
 .kp-sort-icon { color: var(--kp-cyan); font-size: 0.75rem; }
+th {white-space: nowrap !important;}

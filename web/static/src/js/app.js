@@ -180,6 +180,28 @@ async function deleteSite(id) {
     else toast.error("Delete failed - site still exists after 20s");
 }
 
+/* -- resource warning banner ----------------------------------------------- */
+// only poll for admin users; non-admins never see the banner
+if (window.KP?.user?.role === 99) {
+    const warningEl = document.getElementById("kp-resource-warning");
+    const msgEl     = document.getElementById("kp-resource-warning-msg");
+
+    const pollWarning = async () => {
+        try {
+            const data = await api.get("/settings/resource-warning");
+            if (data?.active && warningEl && msgEl) {
+                msgEl.textContent = `${data.current_mb}MB used, threshold ${data.threshold_mb}MB — throttling ${data.offender}.`;
+                warningEl.style.display = "";
+            } else if (warningEl) {
+                warningEl.style.display = "none";
+            }
+        } catch (_) { /* non-fatal — banner stays in last state */ }
+    };
+
+    pollWarning();
+    setInterval(pollWarning, 30_000);
+}
+
 /* -- hash routing ---------------------------------------------------------- */
 // guard against re-entry when router.go() itself changed the hash
 window.addEventListener("hashchange", () => {

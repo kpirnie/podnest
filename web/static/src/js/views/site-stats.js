@@ -1,6 +1,7 @@
 "use strict";
 
 import { api } from '../api.js';
+import { toast } from '../toast.js';
 
 // holds the active Chart instance so it can be destroyed before recreating
 let _siteChart = null;
@@ -371,7 +372,10 @@ function renderPodTable(containers) {
         const role  = c.name.split('-').pop();
         return `
             <tr>
-                <td class="kp-stats-pod-role">${role}</td>
+                <td class="kp-stats-pod-role kp-stats-pod-role-btn"
+                    data-container="${c.name}"
+                    title="Restart ${role}"
+                    style="cursor:pointer">${role}</td>
                 <td class="kp-stats-pod-cpu${c.cpu_percent > 80 ? ' is-hot' : ''}">
                     ${fmtPercent(c.cpu_percent)}
                 </td>
@@ -441,7 +445,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
                 <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
                 <td><span class="kp-badge ${statusClass}">${e.status}</span></td>
                 <td class="kp-stats-table-cell-mono">${e.client_ip}</td>
-                <td class="kp-dd-ua-cell" uk-tooltip="title:${e.ua.replace(/"/g, '&quot;')};pos:top-left">${uaShort}</td>
+                <td class="kp-dd-ua-cell">${uaShort}</td>
             </tr>`;
     }).join('');
 
@@ -458,11 +462,11 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
         <div class="kp-table-wrap">
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="time" style="padding:0;font-size:0.75rem">Time ${sortCol==='time' ? (sortDesc?'↓':'↑') : ''}</button></th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="method" style="padding:0;font-size:0.75rem">Method ${sortCol==='method' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="time">Time ${sortCol==='time' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="method">Method ${sortCol==='method' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="status" style="padding:0;font-size:0.75rem">Status ${sortCol==='status' ? (sortDesc?'↓':'↑') : ''}</button></th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem"><button class="kp-dd-sort" data-dd-col="ip" style="padding:0;font-size:0.75rem">IP ${sortCol==='ip' ? (sortDesc?'↓':'↑') : ''}</button></th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="status">Status ${sortCol==='status' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="ip">IP ${sortCol==='ip' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
@@ -493,9 +497,9 @@ async function openDrilldown(siteId, hour, statusClass) {
         body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc);
 
         // sort column buttons
-        body.querySelectorAll('.kp-dd-sort').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                const col = btn.dataset.ddCol;
+        body.querySelectorAll('th[data-dd-col]').forEach((th) => {
+            th.addEventListener('click', () => {
+                const col = th.dataset.ddCol;
                 if (sortCol === col) {
                     sortDesc = !sortDesc;
                 } else {
@@ -555,6 +559,21 @@ export function wireStatsTab(root, siteId, siteType) {
             try {
                 const data = JSON.parse(e.data);
                 tableWrap.innerHTML = renderPodTable(data.containers ?? []);
+                // wire click-to-restart on each container name cell
+                tableWrap.querySelectorAll('.kp-stats-pod-role-btn').forEach(td => {
+                    td.addEventListener('click', async () => {
+                        const orig = td.style.color;
+                        td.style.color = 'var(--kp-warning)';
+                        const role = td.dataset.container.split('-').pop();
+                        try {
+                            await api.post(`/sites/${siteId}/containers/${role}/restart`);
+                            toast.success(`${role} restarted`);
+                        } catch (err) {
+                            td.style.color = orig;
+                            toast.error(err.message);
+                        }
+                    });
+                });
             } catch (_) { /* ignore malformed frames */ }
         };
 

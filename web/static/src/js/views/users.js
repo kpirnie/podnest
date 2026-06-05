@@ -27,6 +27,7 @@ export async function viewUsers(root) {
                         <th>Email</th>
                         <th>Role</th>
                         <th class="uk-text-center">2FA</th>
+                        <th class="uk-text-center">Notify</th>
                         <th>Created</th>
                         <th></th>
                     </tr>
@@ -46,6 +47,10 @@ export function userRow(u) {
     const roleTag = u.role === 99
         ? `<span class="kp-badge kp-badge-admin">Admin</span>`
         : `<span class="kp-badge kp-badge-manager">Manager</span>`;
+    const notifyIcons = [
+        u.notify_email ? `<span uk-icon="icon: mail; ratio: 0.85" uk-tooltip="Email notifications on" style="color:var(--kp-success)"></span>` : `<span uk-icon="icon: mail; ratio: 0.85" style="color:var(--kp-text-dim)" uk-tooltip="Email notifications off"></span>`,
+        u.notify_sms   ? `<span uk-icon="icon: receiver; ratio: 0.85" uk-tooltip="SMS notifications on" style="color:var(--kp-success)"></span>` : `<span uk-icon="icon: receiver; ratio: 0.85" style="color:var(--kp-text-dim)" uk-tooltip="SMS notifications off"></span>`,
+    ].join(" ");
     return `<tr data-user-id="${u.id}">
         <td><strong>${u.fname} ${u.lname}</strong></td>
         <td><span style="font-family:monospace">${u.uname}</span></td>
@@ -55,6 +60,7 @@ export function userRow(u) {
             ? `<span uk-icon="icon: check; ratio: 0.9" style="color:var(--kp-success)"></span>`
             : `<span uk-icon="icon: close; ratio: 0.9" style="color:var(--kp-text-dim)"></span>`
         }</td>
+        <td class="uk-text-center">${notifyIcons}</td>
         <td><span class="kp-muted">${u.created}</span></td>
         <td>
             <div class="uk-flex" style="gap:6px;justify-content:flex-end">

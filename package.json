@@ -19,5 +19,8 @@
   },
   "allowScripts": {
     "esbuild@0.28.0": true
+  },
+  "dependencies": {
+    "npm": "^11.16.0"
   }
 }

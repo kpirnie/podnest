@@ -6,6 +6,7 @@ import (
 	"podnest/internal/auth"
 	"podnest/internal/handlers/configs"
 	"podnest/internal/handlers/domains"
+	"podnest/internal/handlers/health"
 	"podnest/internal/handlers/logs"
 	"podnest/internal/handlers/pma"
 	"podnest/internal/handlers/rproxy"
@@ -74,6 +75,10 @@ func (s *Server) routes() http.Handler {
 	logsHandler := &logs.Handler{DB: s.cfg.DB, AppPath: s.cfg.AppPath, Podman: s.podman, Resolve: sitesHandler.ResolveSite}
 	logsHandler.RegisterRoutes(api)
 
+	// container health streaming + per-container restart
+	healthHandler := &health.Handler{Cache: s.stats, Podman: s.podman, Resolve: sitesHandler.ResolveSite}
+	healthHandler.RegisterRoutes(api)
+
 	// wpcli
 	wpcliHandler := &wpcli.Handler{Podman: s.podman, Resolve: sitesHandler.ResolveSite}
 	wpcliHandler.RegisterRoutes(api)
@@ -88,7 +93,7 @@ func (s *Server) routes() http.Handler {
 	usersHandler.RegisterRoutes(api)
 
 	// settings + trusted proxies
-	settingsHandler := &settings.Handler{DB: s.cfg.DB, Proxy: s.proxy, Backup: s.backup}
+	settingsHandler := &settings.Handler{DB: s.cfg.DB, Proxy: s.proxy, Backup: s.backup, Warning: s.resource}
 	settingsHandler.RegisterRoutes(api)
 
 	// security rules

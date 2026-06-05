@@ -12,6 +12,7 @@ import (
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/models"
 )
 
 // SettingsProxy is the subset of proxy.Proxy consumed by this handler.
@@ -26,11 +27,17 @@ type BackupRescheduler interface {
 	Reschedule(expr string)
 }
 
+// WarningProvider is the subset of the server resource state consumed by this handler.
+type WarningProvider interface {
+	GetWarning() *models.ResourceWarning
+}
+
 // Handler handles settings and trusted proxy management API routes.
 type Handler struct {
-	DB     *sql.DB
-	Proxy  SettingsProxy
-	Backup BackupRescheduler
+	DB      *sql.DB
+	Proxy   SettingsProxy
+	Backup  BackupRescheduler
+	Warning WarningProvider
 }
 
 // RegisterRoutes mounts settings and trusted proxy routes onto api.
@@ -49,6 +56,11 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.Handle("PUT /settings/trusted-proxies", admin(h.apiUpdateTrustedProxies))
 	api.Handle("GET /settings/trusted-proxies/export", admin(h.apiExportTrustedProxies))
 	api.Handle("POST /settings/trusted-proxies/import", admin(h.apiImportTrustedProxies))
+	api.Handle("GET /settings/notifications", admin(h.apiGetNotificationSettings))
+	api.Handle("PUT /settings/notifications", admin(h.apiUpdateNotificationSettings))
+	api.Handle("GET /settings/resource-warning", admin(h.apiGetResourceWarning))
+	api.Handle("GET /settings/resources", admin(h.apiGetResourceSettings))
+	api.Handle("PUT /settings/resources", admin(h.apiUpdateResourceSettings))
 }
 
 func (h *Handler) apiGetSettings(w http.ResponseWriter, r *http.Request) {
@@ -281,6 +293,69 @@ func (h *Handler) apiImportTrustedProxies(w http.ResponseWriter, r *http.Request
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+func (h *Handler) apiGetResourceWarning(w http.ResponseWriter, r *http.Request) {
+	if h.Warning == nil {
+		apiutil.JSON(w, http.StatusOK, map[string]any{"active": false})
+		return
+	}
+	warning := h.Warning.GetWarning()
+	if warning == nil {
+		apiutil.JSON(w, http.StatusOK, map[string]any{"active": false})
+		return
+	}
+	logger.Debug("apiGetResourceWarning: returning active warning for resource %s", warning.Resource)
+	apiutil.JSON(w, http.StatusOK, warning)
+}
+
+func (h *Handler) apiGetResourceSettings(w http.ResponseWriter, r *http.Request) {
+	keys := []string{
+		"resource_ram_reserve_gb", "resource_poll_interval",
+		"resource_throttle_pct", "resource_webhook_url",
+	}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		val, err := db.GetSetting(h.DB, k)
+		if err != nil {
+			logger.Error("apiGetResourceSettings: failed to retrieve '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		out[k] = val
+	}
+	logger.Debug("apiGetResourceSettings: retrieved resource watcher settings")
+	apiutil.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) apiUpdateResourceSettings(w http.ResponseWriter, r *http.Request) {
+	var incoming map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+		logger.Error("apiUpdateResourceSettings: decode: %v", err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	allowed := map[string]bool{
+		"resource_ram_reserve_gb": true,
+		"resource_poll_interval":  true,
+		"resource_throttle_pct":   true,
+		"resource_webhook_url":    true,
+	}
+	for k, v := range incoming {
+		if !allowed[k] {
+			logger.Warn("apiUpdateResourceSettings: rejected unknown key '%s'", k)
+			continue
+		}
+		if err := db.SetSetting(h.DB, k, v); err != nil {
+			logger.Error("apiUpdateResourceSettings: persist '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	logger.Debug("apiUpdateResourceSettings: updated resource watcher settings")
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (h *Handler) applySettingLive(k, v string) {
 	switch k {
 	case "admin_domain":
@@ -295,4 +370,66 @@ func (h *Handler) applySettingLive(k, v string) {
 			logger.Error("settings: failed to rewarm caches after settings update: %v", err)
 		}
 	}
+}
+
+func (h *Handler) apiGetNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	keys := []string{
+		"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "smtp_tls",
+		"aws_access_key", "aws_secret_key", "aws_region", "aws_sns_sender_id",
+	}
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		val, err := db.GetSetting(h.DB, k)
+		if err != nil {
+			logger.Error("apiGetNotificationSettings: failed to retrieve '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		out[k] = val
+	}
+
+	// mask secrets before returning to the client
+	if out["smtp_password"] != "" {
+		out["smtp_password"] = "••••••••"
+	}
+	if out["aws_secret_key"] != "" {
+		out["aws_secret_key"] = "••••••••"
+	}
+
+	logger.Debug("apiGetNotificationSettings: retrieved notification settings")
+	apiutil.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) apiUpdateNotificationSettings(w http.ResponseWriter, r *http.Request) {
+	var incoming map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
+		logger.Error("apiUpdateNotificationSettings: decode: %v", err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	allowed := map[string]bool{
+		"smtp_host": true, "smtp_port": true, "smtp_username": true,
+		"smtp_password": true, "smtp_from": true, "smtp_tls": true,
+		"aws_access_key": true, "aws_secret_key": true,
+		"aws_region": true, "aws_sns_sender_id": true,
+	}
+	for k, v := range incoming {
+		if !allowed[k] {
+			logger.Warn("apiUpdateNotificationSettings: rejected unknown key '%s'", k)
+			continue
+		}
+		// skip masked placeholder values — preserve the existing secret in DB
+		if (k == "smtp_password" || k == "aws_secret_key") && v == "••••••••" {
+			continue
+		}
+		if err := db.SetSetting(h.DB, k, v); err != nil {
+			logger.Error("apiUpdateNotificationSettings: persist '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	logger.Debug("apiUpdateNotificationSettings: updated notification settings")
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

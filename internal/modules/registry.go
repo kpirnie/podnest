@@ -119,20 +119,31 @@ type Mount struct {
 	Options     []string
 }
 
+// HealthcheckConfig defines the health check command and timing for a container.
+// Interval, Timeout, and StartPeriod are nanosecond durations (time.Duration).
+type HealthcheckConfig struct {
+	Test        []string
+	Interval    time.Duration
+	Timeout     time.Duration
+	Retries     int
+	StartPeriod time.Duration
+}
+
 // ContainerConfig holds all parameters needed to create a single container.
 type ContainerConfig struct {
-	Name       string
-	Image      string
-	PodName    string
-	Env        map[string]string
-	Mounts     []Mount
-	Command    []string
-	Entrypoint []string
-	User       string
-	WorkingDir string
-	CapAdd     []string
-	CapDrop    []string
-	SecOpts    []string
+	Name        string
+	Image       string
+	PodName     string
+	Env         map[string]string
+	Mounts      []Mount
+	Command     []string
+	Entrypoint  []string
+	User        string
+	WorkingDir  string
+	CapAdd      []string
+	CapDrop     []string
+	SecOpts     []string
+	Healthcheck *HealthcheckConfig
 }
 
 // PodConfig holds everything a type module needs to provision containers.
@@ -163,6 +174,30 @@ var (
 	typeModules    []SiteTypeModule
 	featureModules []FeatureModule
 )
+
+// container role constants used for healthcheck lookup
+const (
+	HCRoleNginx     = "nginx"
+	HCRolePHP       = "php"
+	HCRoleDB        = "db"
+	HCRoleRedis     = "redis"
+	HCRoleVarnish   = "varnish"
+	HCRolePMA       = "pma"
+	HCRoleAppNode   = "app-node"
+	HCRoleAppDotNet = "app-dotnet"
+)
+
+// hcTests maps each container role to its healthcheck test command.
+var hcTests = map[string][]string{
+	HCRoleNginx:     {"CMD-SHELL", "curl -sf http://localhost/ -o /dev/null || exit 1"},
+	HCRolePHP:       {"CMD-SHELL", "pgrep -f php-fpm > /dev/null || exit 1"},
+	HCRoleDB:        {"CMD-SHELL", "mariadb-admin --host=127.0.0.1 ping --silent 2>/dev/null || exit 1"},
+	HCRoleRedis:     {"CMD-SHELL", "redis-cli ping 2>&1 | grep -qiE 'PONG|NOAUTH|WRONGPASS' || exit 1"},
+	HCRoleVarnish:   {"CMD-SHELL", "curl -sf http://localhost/ -o /dev/null || exit 1"},
+	HCRolePMA:       {"CMD-SHELL", "curl -sf http://localhost:8082/ -o /dev/null || exit 1"},
+	HCRoleAppNode:   {"CMD-SHELL", "curl -sf http://localhost:3000/ -o /dev/null || exit 1"},
+	HCRoleAppDotNet: {"CMD-SHELL", "curl -sf http://localhost:8080/ -o /dev/null || exit 1"},
+}
 
 // RegisterType registers a site type module; called once per module at startup.
 func RegisterType(m SiteTypeModule) {
@@ -214,3 +249,19 @@ func TabsFor(site *models.Site) []TabDescriptor {
 
 // AllFeatureModules returns all registered feature modules in registration order.
 func AllFeatureModules() []FeatureModule { return featureModules }
+
+// HC returns a standard healthcheck config for the given container role.
+// Returns nil if the role is not recognised.
+func HC(role string) *HealthcheckConfig {
+	test, ok := hcTests[role]
+	if !ok {
+		return nil
+	}
+	return &HealthcheckConfig{
+		Test:        test,
+		Interval:    10 * time.Second,
+		Timeout:     5 * time.Second,
+		Retries:     3,
+		StartPeriod: 30 * time.Second,
+	}
+}

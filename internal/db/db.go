@@ -78,6 +78,9 @@ func migrateColumns(db *sql.DB) error {
 		// TOTP support
 		`ALTER TABLE kppn_users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE kppn_users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+		// Notifiy support
+		`ALTER TABLE kppn_users ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE kppn_users ADD COLUMN notify_sms INTEGER NOT NULL DEFAULT 0`,
 		// Backup support
 		`ALTER TABLE kppn_settings ADD COLUMN key TEXT`, // no-op guard; settings added via upsert
 		`ALTER TABLE kppn_backup_repos ADD COLUMN local_enabled INTEGER NOT NULL DEFAULT 1`,

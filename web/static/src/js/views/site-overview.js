@@ -43,6 +43,7 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                             <tr><td class="kp-muted">Type</td><td>${siteTypeLabel(site.SiteType)}</td></tr>
                             <tr><td class="kp-muted">Version</td><td>${versionLabel(site)}</td></tr>
                             <tr><td class="kp-muted">Status</td><td>${statusBadge(site.SiteStatus)}</td></tr>
+                            <tr><td class="kp-muted">Containers</td><td><div id="sd-health-badges" class="kp-health-badges"></div></td></tr>
                             <tr><td class="kp-muted">Created</td><td>${new Date(site.Created).toLocaleString()}</td></tr>
                         </tbody>
                     </table>

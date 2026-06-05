@@ -27,11 +27,13 @@ export async function viewSettings(root) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     // fetch panel settings and backup/S3 settings in parallel
-    const [settings, backupSettings, wafSettings, trustedProxies] = await Promise.all([
+    const [settings, backupSettings, wafSettings, trustedProxies, notificationSettings, resourceSettings] = await Promise.all([
         api.get("/settings"),
         api.get("/settings/backup"),
         api.get("/settings/waf"),
         api.get("/settings/trusted-proxies"),
+        api.get("/settings/notifications"),
+        api.get("/settings/resources"),
     ]);
 
     root.innerHTML = `
@@ -190,6 +192,140 @@ export async function viewSettings(root) {
                 </form>
             </div>
         </div>
+        <div class="uk-width-1-2@m">
+            <!-- smtp / email notifications -->
+            <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+                <h3 class="kp-view-title uk-margin-bottom">Email Notifications (SMTP)</h3>
+                <form id="smtp-form" class="uk-form-stacked">
+                    <div class="uk-margin">
+                        <label class="kp-label" for="smtp-host">SMTP Host</label>
+                        <input class="uk-input kp-input kp-mono" id="smtp-host" name="smtp_host" type="text"
+                            placeholder="smtp.example.com" value="${notificationSettings.smtp_host ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="smtp-port">Port</label>
+                        <input class="uk-input kp-input kp-mono" id="smtp-port" name="smtp_port" type="text"
+                            placeholder="587" value="${notificationSettings.smtp_port ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="smtp-username">Username</label>
+                        <input class="uk-input kp-input kp-mono" id="smtp-username" name="smtp_username" type="text"
+                            placeholder="user@example.com" value="${notificationSettings.smtp_username ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="smtp-password">Password</label>
+                        <input class="uk-input kp-input kp-mono" id="smtp-password" name="smtp_password" type="password"
+                            placeholder="${notificationSettings.smtp_password ? 'saved — enter new value to change' : 'enter password'}"
+                            value="">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">Leave blank to keep the existing password.</p>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="smtp-from">From Address</label>
+                        <input class="uk-input kp-input kp-mono" id="smtp-from" name="smtp_from" type="email"
+                            placeholder="podnest@example.com" value="${notificationSettings.smtp_from ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label">
+                            <input class="uk-checkbox" type="checkbox" id="smtp-tls" name="smtp_tls"
+                                ${notificationSettings.smtp_tls === 'true' || notificationSettings.smtp_tls === '1' ? 'checked' : ''}>
+                            &nbsp;Use implicit TLS (port 465)
+                        </label>
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Unchecked uses STARTTLS (port 587). Check only for port 465 / SSL-only servers.
+                        </p>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="uk-width-1-2@m">
+            <!-- aws sns / sms notifications -->
+            <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+                <h3 class="kp-view-title uk-margin-bottom">SMS Notifications (AWS SNS)</h3>
+                <form id="sns-form" class="uk-form-stacked">
+                    <div class="uk-margin">
+                        <label class="kp-label" for="aws-access-key">Access Key ID</label>
+                        <input class="uk-input kp-input kp-mono" id="aws-access-key" name="aws_access_key" type="text"
+                            placeholder="AKIAIOSFODNN7EXAMPLE" value="${notificationSettings.aws_access_key ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="aws-secret-key">Secret Access Key</label>
+                        <input class="uk-input kp-input kp-mono" id="aws-secret-key" name="aws_secret_key" type="password"
+                            placeholder="${notificationSettings.aws_secret_key ? 'saved — enter new value to change' : 'enter secret key'}"
+                            value="">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">Leave blank to keep the existing key.</p>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="aws-region">AWS Region</label>
+                        <input class="uk-input kp-input kp-mono" id="aws-region" name="aws_region" type="text"
+                            placeholder="us-east-1" value="${notificationSettings.aws_region ?? ''}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="aws-sns-sender-id">Sender ID <span class="kp-muted">(optional)</span></label>
+                        <input class="uk-input kp-input kp-mono" id="aws-sns-sender-id" name="aws_sns_sender_id" type="text"
+                            placeholder="PodNest" value="${notificationSettings.aws_sns_sender_id ?? ''}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Alphanumeric sender name shown on the recipient's phone. Supported in select AWS regions only.
+                        </p>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="uk-width-1-2@m">
+            <!-- host resource reservation watcher -->
+            <div class="kp-card uk-padding kp-settings-wrap uk-margin-top">
+                <h3 class="kp-view-title uk-margin-bottom">Host Resource Watcher</h3>
+                <form id="resource-form" class="uk-form-stacked">
+                    <div class="uk-margin">
+                        <label class="kp-label" for="resource-ram-reserve">RAM Reserve (GB)</label>
+                        <input class="uk-input kp-input" id="resource-ram-reserve" name="resource_ram_reserve_gb" type="number"
+                            min="0.5" max="64" step="0.5" placeholder="2"
+                            value="${resourceSettings.resource_ram_reserve_gb ?? '2'}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Amount of RAM to keep free for the host OS. Throttling fires when aggregate pod usage exceeds total RAM minus this value.
+                        </p>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="resource-poll-interval">Poll Interval (seconds)</label>
+                        <input class="uk-input kp-input" id="resource-poll-interval" name="resource_poll_interval" type="number"
+                            min="5" max="300" step="5" placeholder="30"
+                            value="${resourceSettings.resource_poll_interval ?? '30'}">
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="resource-throttle-pct">Throttle Aggressiveness (%)</label>
+                        <input class="uk-input kp-input" id="resource-throttle-pct" name="resource_throttle_pct" type="number"
+                            min="10" max="90" step="5" placeholder="50"
+                            value="${resourceSettings.resource_throttle_pct ?? '50'}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            Percentage to reduce the offending pod's current memory usage by when throttling.
+                        </p>
+                    </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="resource-webhook-url">Webhook URL <span class="kp-muted">(optional)</span></label>
+                        <input class="uk-input kp-input kp-mono" id="resource-webhook-url" name="resource_webhook_url" type="url"
+                            placeholder="https://hooks.example.com/notify"
+                            value="${resourceSettings.resource_webhook_url ?? ''}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            HTTP POST with JSON payload on threshold breach and resolution. Compatible with Uptime Kuma, PagerDuty, Slack, etc.
+                        </p>
+                    </div>
+                    <div class="uk-flex uk-flex-right uk-margin-top">
+                        <button type="submit" class="uk-button kp-btn-primary">
+                            <span uk-icon="check"></span> Save
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
         <div class="uk-width-1-1">
             <!-- leaving this here for future settings sections -->
         </div>
@@ -294,6 +430,95 @@ export async function viewSettings(root) {
         try {
             await api.put("/settings/backup", body);
             toast.success("S3 settings saved");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // -- smtp notification settings form -------------------------------------
+    document.getElementById("smtp-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn  = e.target.querySelector('[type="submit"]');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
+
+        const fd   = new FormData(e.target);
+        const body = {
+            smtp_host:     fd.get("smtp_host").trim(),
+            smtp_port:     fd.get("smtp_port").trim(),
+            smtp_username: fd.get("smtp_username").trim(),
+            smtp_from:     fd.get("smtp_from").trim(),
+            smtp_tls:      fd.get("smtp_tls") ? "true" : "false",
+        };
+
+        // only include password if a new value was entered
+        const pass = fd.get("smtp_password").trim();
+        if (pass) body.smtp_password = pass;
+
+        try {
+            await api.put("/settings/notifications", body);
+            toast.success("Email notification settings saved");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // -- aws sns notification settings form ----------------------------------
+    document.getElementById("sns-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn  = e.target.querySelector('[type="submit"]');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
+
+        const fd   = new FormData(e.target);
+        const body = {
+            aws_access_key:    fd.get("aws_access_key").trim(),
+            aws_region:        fd.get("aws_region").trim(),
+            aws_sns_sender_id: fd.get("aws_sns_sender_id").trim(),
+        };
+
+        // only include secret key if a new value was entered
+        const secret = fd.get("aws_secret_key").trim();
+        if (secret) body.aws_secret_key = secret;
+
+        try {
+            await api.put("/settings/notifications", body);
+            toast.success("SMS notification settings saved");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // -- host resource watcher settings form ---------------------------------
+    document.getElementById("resource-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const btn  = e.target.querySelector('[type="submit"]');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
+
+        const fd   = new FormData(e.target);
+        const body = {
+            resource_ram_reserve_gb: fd.get("resource_ram_reserve_gb").trim(),
+            resource_poll_interval:  fd.get("resource_poll_interval").trim(),
+            resource_throttle_pct:   fd.get("resource_throttle_pct").trim(),
+            resource_webhook_url:    fd.get("resource_webhook_url").trim(),
+        };
+
+        try {
+            await api.put("/settings/resources", body);
+            toast.success("Resource watcher settings saved");
         } catch (err) {
             toast.error(err.message);
         } finally {
