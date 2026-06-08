@@ -11,8 +11,9 @@ import (
 
 // DomainEntry holds the routing fields needed by the proxy cache
 type DomainEntry struct {
-	Port   int
-	SiteID int64
+	Port     int
+	SiteID   int64
+	SiteName string
 }
 
 // CreateDomain inserts a new domain record for a site
@@ -196,7 +197,7 @@ func GetSitePortByDomain(database *sql.DB, domain string) (int, error) {
 // Used to warm the proxy domain cache on startup.
 func GetAllDomainEntries(database *sql.DB) (map[string]DomainEntry, error) {
 	rows, err := database.Query(`
-		SELECT d.domain, s.port, s.id
+		SELECT d.domain, s.port, s.id, s.name
 		FROM kppn_domains d
 		JOIN kppn_sites s ON s.id = d.siteid`)
 	if err != nil {
@@ -209,7 +210,7 @@ func GetAllDomainEntries(database *sql.DB) (map[string]DomainEntry, error) {
 	for rows.Next() {
 		var domain string
 		var e DomainEntry
-		if err := rows.Scan(&domain, &e.Port, &e.SiteID); err != nil {
+		if err := rows.Scan(&domain, &e.Port, &e.SiteID, &e.SiteName); err != nil {
 			logger.Error("GetAllDomainEntries: failed to scan row: %v", err)
 			return nil, err
 		}

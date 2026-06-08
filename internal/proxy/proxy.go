@@ -34,9 +34,10 @@ import (
 
 // domainEntry holds the routing target for a registered domain
 type domainEntry struct {
-	port   int
-	siteID int64
-	pool   *UpstreamPool // non-nil for reverse_proxy sites; nil for container-based sites
+	port     int
+	siteID   int64
+	siteName string
+	pool     *UpstreamPool // non-nil for reverse_proxy sites; nil for container-based sites
 }
 
 // statusWriter wraps http.ResponseWriter to capture the status code and byte
@@ -335,7 +336,7 @@ func (p *Proxy) warmCache() error {
 	}
 	m := make(map[string]domainEntry, len(entries))
 	for domain, e := range entries {
-		m[domain] = domainEntry{port: e.Port, siteID: e.SiteID}
+		m[domain] = domainEntry{port: e.Port, siteID: e.SiteID, siteName: e.SiteName}
 	}
 
 	// cache the domain→port+siteID mappings first
@@ -378,8 +379,11 @@ func (p *Proxy) warmCache() error {
 				e.pool = pool
 				next[domain] = e
 			} else {
-				// RP-only domain — not in kppn_domains; synthesise a zero-port entry
-				next[domain] = domainEntry{port: 0, siteID: siteIDs[domain], pool: pool}
+				sn := ""
+				if s, err := db.GetSiteByID(p.database, siteIDs[domain]); err == nil && s != nil {
+					sn = s.Name
+				}
+				next[domain] = domainEntry{port: 0, siteID: siteIDs[domain], siteName: sn, pool: pool}
 			}
 		}
 
@@ -584,13 +588,13 @@ func (p *Proxy) warmWAFCache() error {
 }
 
 // AddDomain inserts a domain→port+siteID mapping into the cache atomically.
-func (p *Proxy) AddDomain(domain string, port int, siteID int64) {
+func (p *Proxy) AddDomain(domain string, port int, siteID int64, siteName string) {
 	p.swapCache(func(cur map[string]domainEntry) map[string]domainEntry {
 		next := make(map[string]domainEntry, len(cur)+1)
 		for k, v := range cur {
 			next[k] = v
 		}
-		next[domain] = domainEntry{port: port, siteID: siteID}
+		next[domain] = domainEntry{port: port, siteID: siteID, siteName: siteName}
 		return next
 	})
 	logger.Debug("proxy: cache added '%s' → port %d site %d", domain, port, siteID)
@@ -666,20 +670,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	adminDomain := p.adminDomain
 	p.adminMu.RUnlock()
 
-	// resolve the site port — admin domain routes to the management UI
 	var (
 		port   int
 		siteID int64
 		rpPool *UpstreamPool
+		entry  domainEntry
 	)
 
-	// admin domain bypasses the cache and routes directly to the admin port; all other domains require a cache lookup
 	if adminDomain != "" && host == adminDomain {
 		port = p.adminPort
 	} else {
-		entry, ok := p.lookupEntry(host)
+		var ok bool
+		entry, ok = p.lookupEntry(host)
 
-		// allow RP sites through even when port is 0; they route via pool, not port
 		if !ok || (entry.port == 0 && entry.pool == nil) {
 			http.Error(w, "domain not registered", http.StatusNotFound)
 			dur := time.Since(start)
@@ -695,9 +698,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// by writeAccessLog and WAF inspect; empty string for admin/unmatched traffic
 	siteName := ""
 	if siteID > 0 {
-		if site, err := db.GetSiteByID(p.database, siteID); err == nil && site != nil {
-			siteName = site.Name
-		}
+		siteName = entry.siteName
 		logger.Debug("proxy: siteID=%d siteName=%q", siteID, siteName)
 	}
 

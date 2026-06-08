@@ -16,7 +16,7 @@ import (
 // ProxyDomains is the subset of proxy.Proxy consumed by this handler.
 type ProxyDomains interface {
 	ObtainCert(domain string)
-	AddDomain(domain string, port int, siteID int64)
+	AddDomain(domain string, port int, siteID int64, siteName string)
 	RemoveDomain(domain string)
 }
 
@@ -98,7 +98,7 @@ func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.Proxy.ObtainCert(req.Domain)
-	h.Proxy.AddDomain(req.Domain, site.Port, site.ID)
+	h.Proxy.AddDomain(req.Domain, site.Port, site.ID, site.Name)
 
 	logger.Debug("added domain '%s' for site %d", req.Domain, site.ID)
 	apiutil.JSON(w, http.StatusCreated, domain)

@@ -44,7 +44,7 @@ type SitesPodman interface {
 
 // SitesProxy is the subset of proxy.Proxy consumed by this handler.
 type SitesProxy interface {
-	AddDomain(domain string, port int, siteID int64)
+	AddDomain(domain string, port int, siteID int64, siteName string)
 	ObtainCert(domain string)
 	RemoveDomains(domains []string)
 	RemoveSiteProxy(port int)
@@ -288,7 +288,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 			if err := db.CreateDomain(h.DB, &models.Domain{SiteID: site.ID, Domain: d}); err != nil {
 				logger.Error("saving domain %s for reverse proxy site %s: %v", d, site.Name, err)
 			}
-			h.Proxy.AddDomain(d, site.Port, site.ID)
+			h.Proxy.AddDomain(d, site.Port, site.ID, site.Name)
 			h.Proxy.ObtainCert(d)
 		}
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
@@ -340,7 +340,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		if err := db.CreateDomain(h.DB, &models.Domain{SiteID: site.ID, Domain: d}); err != nil {
 			logger.Error("saving domain %s for site %s: %v", d, site.Name, err)
 		}
-		h.Proxy.AddDomain(d, port, site.ID)
+		h.Proxy.AddDomain(d, port, site.ID, site.Name)
 	}
 	for _, d := range req.Domains {
 		d = strings.TrimSpace(d)
