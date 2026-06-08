@@ -93,6 +93,9 @@ func migrateColumns(db *sql.DB) error {
 		`ALTER TABLE kppn_backups ADD COLUMN domains TEXT NOT NULL DEFAULT ''`,
 		// reverse proxy support
 		`ALTER TABLE kppn_rp_routes ADD COLUMN pass_host INTEGER NOT NULL DEFAULT 0`,
+		// redirect module
+		`CREATE TABLE IF NOT EXISTS kppn_redirects (id INTEGER PRIMARY KEY AUTOINCREMENT, site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE, source TEXT NOT NULL, target TEXT NOT NULL, code INTEGER NOT NULL DEFAULT 301, position INTEGER NOT NULL DEFAULT 0, created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated DATETIME)`,
+		`CREATE INDEX IF NOT EXISTS idx_redirects_site ON kppn_redirects (site_id)`,
 	}
 
 	for _, m := range migrations {
@@ -520,4 +523,17 @@ CREATE TABLE IF NOT EXISTS kppn_site_crons (
 
 CREATE INDEX IF NOT EXISTS idx_site_crons_site    ON kppn_site_crons (site_id);
 CREATE INDEX IF NOT EXISTS idx_site_crons_enabled ON kppn_site_crons (enabled);
+
+CREATE TABLE IF NOT EXISTS kppn_redirects (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id    INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    source     TEXT    NOT NULL,
+    target     TEXT    NOT NULL,
+    code       INTEGER NOT NULL DEFAULT 301,
+    position   INTEGER NOT NULL DEFAULT 0,
+    created    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated    DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_redirects_site ON kppn_redirects (site_id);
 `

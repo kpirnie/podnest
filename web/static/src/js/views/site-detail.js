@@ -10,9 +10,11 @@ import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-config
 import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
+import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-redirects.js';
 import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
 import { loadStatsTab, renderStatsTab, wireStatsTab } from './site-stats.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
+
 
 // aborts accumulated root-level listeners when a new RP site detail view is wired
 let _rpWireAbort = null;
@@ -503,6 +505,7 @@ export async function viewSiteDetail(root, { id }) {
                     ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 10 : 9}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
                     <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 11 : 10) : (showPHP ? 10 : 9)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
                     ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
+                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -524,6 +527,7 @@ export async function viewSiteDetail(root, { id }) {
             ${site.SiteType === 1 ? `<li>${renderWPCLITab(id)}</li>` : ""}
             <li>${renderBackupsTab(id)}</li>
             ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
+            <li>${renderRedirectsTab()}</li>
         </ul>`}`;
 
     document.getElementById("sd-back").addEventListener("click", () => router.go("sites"));
@@ -611,6 +615,8 @@ export async function viewSiteDetail(root, { id }) {
     wireBackupsPanel(root, id);
     loadBackupsPanel(root, id);
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
+    wireRedirectsTab(root, id);
+    loadRedirectsTab(id);
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
     wireHealthBadges(root, id);

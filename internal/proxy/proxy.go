@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -94,6 +95,7 @@ type Proxy struct {
 	trustedProxies atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache   sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
+	redirectCache  sync.Map                                     // int64(siteID) → []db.Redirect
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
 	rpTransport    *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
@@ -316,6 +318,9 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	if err := p.warmCache(); err != nil {
 		return err
 	}
+	if err := p.warmRedirectCache(); err != nil {
+		return err
+	}
 	if err := p.warmWAFCache(); err != nil {
 		return err
 	}
@@ -323,6 +328,46 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
 	p.warmConnections()
+	return nil
+}
+
+// WarmRedirectCache atomically replaces the redirect rules for a single site.
+// Called immediately after a redirect save so the proxy reflects changes without
+// a full cache reload.
+func (p *Proxy) WarmRedirectCache(siteID int64, redirects []db.Redirect) {
+	if len(redirects) == 0 {
+		p.redirectCache.Delete(siteID)
+	} else {
+		p.redirectCache.Store(siteID, redirects)
+	}
+	logger.Debug("proxy: redirect cache updated for siteID=%d (%d rules)", siteID, len(redirects))
+}
+
+// warmRedirectCache loads all redirect rules from the database and populates
+// the in-memory cache. Called during full cache warm on startup and settings changes.
+func (p *Proxy) warmRedirectCache() error {
+	redirects, err := db.GetAllRedirects(p.database)
+	if err != nil {
+		logger.Error("proxy: failed to warm redirect cache: %v", err)
+		return err
+	}
+
+	// clear existing entries
+	p.redirectCache.Range(func(k, _ any) bool {
+		p.redirectCache.Delete(k)
+		return true
+	})
+
+	// group by site and store
+	grouped := make(map[int64][]db.Redirect)
+	for _, rd := range redirects {
+		grouped[rd.SiteID] = append(grouped[rd.SiteID], rd)
+	}
+	for siteID, rules := range grouped {
+		p.redirectCache.Store(siteID, rules)
+	}
+
+	logger.Debug("proxy: redirect cache warmed — %d total rules across %d sites", len(redirects), len(grouped))
 	return nil
 }
 
@@ -700,6 +745,27 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if siteID > 0 {
 		siteName = entry.siteName
 		logger.Debug("proxy: siteID=%d siteName=%q", siteID, siteName)
+	}
+
+	// check redirect rules before security enforcement — redirects are intentional
+	// routing decisions, not subject to IP/UA/WAF filtering
+	if siteID > 0 {
+		if rules, ok := p.redirectCache.Load(siteID); ok {
+			for _, rd := range rules.([]db.Redirect) {
+				matched := false
+				if re, err := regexp.Compile(rd.Source); err == nil {
+					matched = re.MatchString(r.URL.Path)
+				} else {
+					matched = r.URL.Path == rd.Source || (rd.Source != "/" && strings.HasPrefix(r.URL.Path, rd.Source))
+				}
+				if matched {
+					http.Redirect(w, r, rd.Target, rd.Code)
+					dur := time.Since(start)
+					p.writeAccessLog(r, rd.Code, 0, start, dur, clientIPStr, siteID, siteName)
+					return
+				}
+			}
+		}
 	}
 
 	// load the compiled security cache — single atomic load, no lock

@@ -9,6 +9,7 @@ import (
 	"podnest/internal/handlers/health"
 	"podnest/internal/handlers/logs"
 	"podnest/internal/handlers/pma"
+	"podnest/internal/handlers/redirects"
 	"podnest/internal/handlers/rproxy"
 	"podnest/internal/handlers/security"
 	"podnest/internal/handlers/settings"
@@ -66,6 +67,10 @@ func (s *Server) routes() http.Handler {
 	// reverse proxy routes
 	rproxyHandler := &rproxy.Handler{DB: s.cfg.DB, Proxy: s.proxy, Resolve: sitesHandler.ResolveSite}
 	rproxyHandler.RegisterRoutes(api)
+
+	// redirects
+	redirectsHandler := &redirects.Handler{DB: s.cfg.DB, Proxy: s.proxy, Resolve: sitesHandler.ResolveSite}
+	redirectsHandler.RegisterRoutes(api)
 
 	// configs
 	configsHandler := &configs.Handler{DB: s.cfg.DB, AppPath: s.cfg.AppPath, Podman: s.podman, Resolve: sitesHandler.ResolveSite}
