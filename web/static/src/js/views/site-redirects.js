@@ -46,6 +46,7 @@ function renderRedirectRow(source = '', target = '', code = 301) {
 export async function loadRedirectsTab(id) {
     const list = document.getElementById('redirects-list');
     if (!list) return;
+    list.innerHTML = '';
     const redirects = await api.get(`/sites/${id}/redirects`);
     list.innerHTML = redirects.map(rd => renderRedirectRow(rd.Source, rd.Target, rd.Code)).join('');
 }
