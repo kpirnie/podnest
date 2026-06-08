@@ -832,13 +832,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// responses (404 domain-not-found, 403 IP/UA/WAF blocks already returned above)
 	sw.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
 
-	// reverse proxy sites bypass container routing — proxy directly to the upstream pool;
-	// the proxy instance is cached per upstream URL to preserve connection pooling across
-	// all HTTP methods (GET, POST, PUT, DELETE, PATCH, etc.)
-	// reverse proxy sites — try upstreams in round-robin order with cascade failover
+	// reverse proxy sites — try first upstream directly for streaming compatibility,
+	// then cascade through remaining upstreams with buffered retry on failure
 	if rpPool != nil {
 		startIdx := rpPool.NextIndex()
-		for i := 0; i < rpPool.Len(); i++ {
+
+		// first attempt — direct passthrough, no buffering
+		first := rpPool.At(startIdx)
+		if tryUpstreamDirect(sw, r, first, p.rpTransport) {
+			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+			return
+		}
+
+		// first upstream failed — try remaining upstreams with buffered recorder
+		for i := 1; i < rpPool.Len(); i++ {
 			target := rpPool.At(startIdx + i)
 			if tryUpstream(sw, r, target, p.rpTransport) {
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
@@ -846,6 +853,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			logger.Debug("proxy: upstream %d failed, trying next", i)
 		}
+
 		http.Error(sw, "all upstreams unavailable", http.StatusBadGateway)
 		p.writeAccessLog(r, http.StatusBadGateway, 0, start, time.Since(start), clientIPStr, siteID, siteName)
 		return

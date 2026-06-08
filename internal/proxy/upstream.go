@@ -75,12 +75,23 @@ func (p *UpstreamPool) Targets() []*url.URL {
 	return out
 }
 
-// tryUpstream attempts to proxy the request to a single upstream target.
-// Returns true on success (2xx/3xx), false if the upstream was unreachable or
-// returned a 5xx. The response is written to w on success.
-func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
+// tryUpstreamDirect proxies directly to w without buffering — used for the first
+// upstream attempt so streaming/chunked responses pass through immediately.
+// Returns true if the upstream was reachable (no dial/transport error).
+func tryUpstreamDirect(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
+	failed := false
+	rp := newReverseProxy(target.URL, transport, target.PassHost)
+	rp.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		logger.Debug("upstream: target '%s' unavailable: %v", target.URL.Host, err)
+		failed = true
+	}
+	rp.ServeHTTP(w, r)
+	return !failed
+}
 
-	// buffer the request body so it can be re-read on retry
+// tryUpstream buffers the upstream response before committing to w — used for
+// retry attempts only so we can fall through to the next upstream on failure.
+func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
 	var bodyBytes []byte
 	if r.Body != nil {
 		var err error
@@ -93,29 +104,22 @@ func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, 
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 
-	// use a response recorder to capture the upstream response before writing to w
 	rec := &responseRecorder{header: make(http.Header), code: 200}
-
-	rp := newReverseProxy(target.URL, transport, target.PassHost)
-
-	// override the error handler to signal failure without writing to w
 	failed := false
+	rp := newReverseProxy(target.URL, transport, target.PassHost)
 	rp.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
 		logger.Debug("upstream: target '%s' unavailable: %v", target.URL.Host, err)
 		failed = true
 	}
-
 	rp.ServeHTTP(rec, r)
 
 	if failed || rec.code >= 500 {
-		// restore body for next attempt
 		if bodyBytes != nil {
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 		return false
 	}
 
-	// upstream succeeded — flush the recorded response to the real writer
 	for k, vals := range rec.header {
 		for _, v := range vals {
 			w.Header().Add(k, v)
@@ -133,8 +137,8 @@ type responseRecorder struct {
 	body   bytes.Buffer
 }
 
-func (r *responseRecorder) Header() http.Header        { return r.header }
-func (r *responseRecorder) WriteHeader(code int)       { r.code = code }
+func (r *responseRecorder) Header() http.Header         { return r.header }
+func (r *responseRecorder) WriteHeader(code int)        { r.code = code }
 func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
 
 // newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
