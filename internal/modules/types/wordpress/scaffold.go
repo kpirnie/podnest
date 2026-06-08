@@ -192,6 +192,12 @@ defined('FORCE_SSL_ADMIN') || define('FORCE_SSL_ADMIN',   true);
 defined('WP_AUTO_UPDATE_CORE') || define('WP_AUTO_UPDATE_CORE', 'minor');
 defined('FS_METHOD') || define('FS_METHOD',         'direct');
 defined('DISABLE_WP_CRON') || define('DISABLE_WP_CRON',   true);
+defined('COOKIEHASH') || define( 'COOKIEHASH', md5( AUTH_SALT ) );
+defined('WP_MEMORY_LIMIT') || define( 'WP_MEMORY_LIMIT', '256M' );
+defined('WP_MAX_MEMORY_LIMIT') || define( 'WP_MAX_MEMORY_LIMIT', '512M' );
+defined('AUTOSAVE_INTERVAL') || define( 'AUTOSAVE_INTERVAL', 600 );
+defined('WP_POST_REVISIONS') || define( 'WP_POST_REVISIONS', 3 );
+defined('EMPTY_TRASH_DAYS') || define( 'EMPTY_TRASH_DAYS', 1 );
 
 $table_prefix = 'wp_';
 defined('ABSPATH') || define( 'ABSPATH', __DIR__ . '/' );
