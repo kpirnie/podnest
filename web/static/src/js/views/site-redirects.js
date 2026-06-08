@@ -53,6 +53,9 @@ export async function loadRedirectsTab(id) {
 
 // wireRedirectsTab binds add-row, remove-row, and save actions
 export function wireRedirectsTab(root, id) {
+    const ac = new AbortController();
+    const opts = { signal: ac.signal };
+
     root.addEventListener('click', e => {
         if (e.target.closest('#redirect-add-btn')) {
             document.getElementById('redirects-list').insertAdjacentHTML('beforeend', renderRedirectRow());
@@ -60,7 +63,7 @@ export function wireRedirectsTab(root, id) {
         if (e.target.closest('.redirect-remove-btn')) {
             e.target.closest('.redirect-row').remove();
         }
-    });
+    }, opts);
 
     root.addEventListener('click', async e => {
         if (!e.target.closest('#redirect-save-btn')) return;
@@ -75,5 +78,9 @@ export function wireRedirectsTab(root, id) {
         } catch (err) {
             toast.error(err.message || 'Failed to save redirects');
         }
-    });
+    }, opts);
+
+    // abort all listeners when navigating away
+    root.__redirectsAbort?.abort();
+    root.__redirectsAbort = ac;
 }

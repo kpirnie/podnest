@@ -835,11 +835,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reverse proxy sites bypass container routing — proxy directly to the upstream pool;
 	// the proxy instance is cached per upstream URL to preserve connection pooling across
 	// all HTTP methods (GET, POST, PUT, DELETE, PATCH, etc.)
+	// reverse proxy sites — try upstreams in round-robin order with cascade failover
 	if rpPool != nil {
-		target := rpPool.Next()
-		rp := p.getOrCreateRPProxy(target.URL, target.PassHost)
-		rp.ServeHTTP(sw, r)
-		p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+		startIdx := rpPool.NextIndex()
+		for i := 0; i < rpPool.Len(); i++ {
+			target := rpPool.At(startIdx + i)
+			if tryUpstream(sw, r, target, p.rpTransport) {
+				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+				return
+			}
+			logger.Debug("proxy: upstream %d failed, trying next", i)
+		}
+		http.Error(sw, "all upstreams unavailable", http.StatusBadGateway)
+		p.writeAccessLog(r, http.StatusBadGateway, 0, start, time.Since(start), clientIPStr, siteID, siteName)
 		return
 	}
 
