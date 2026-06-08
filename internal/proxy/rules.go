@@ -265,15 +265,23 @@ func parseClientIP(remoteAddr, forwarded string, trustedProxies []*net.IPNet) ne
 	}
 	remote := net.ParseIP(host)
 
-	// only honour X-Forwarded-For when the connection arrives from a trusted proxy
+	// only honour X-Forwarded-For when the connection arrives from a trusted proxy;
+	// loopback addresses (127.0.0.1, ::1) are always treated as trusted so that
+	// requests forwarded internally by the proxy itself carry the real client IP
 	if forwarded != "" && remote != nil {
-		for _, network := range trustedProxies {
-			if network.Contains(remote) {
-				parts := strings.SplitN(forwarded, ",", 2)
-				if ip := net.ParseIP(strings.TrimSpace(parts[0])); ip != nil {
-					return ip
+		trusted := remote.IsLoopback()
+		if !trusted {
+			for _, network := range trustedProxies {
+				if network.Contains(remote) {
+					trusted = true
+					break
 				}
-				break
+			}
+		}
+		if trusted {
+			parts := strings.SplitN(forwarded, ",", 2)
+			if ip := net.ParseIP(strings.TrimSpace(parts[0])); ip != nil {
+				return ip
 			}
 		}
 	}
