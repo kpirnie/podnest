@@ -20,7 +20,8 @@ export function renderLogsTab(siteId, siteType) {
     // RP sites expose only the WAF log; all other types expose container streams
     const containerOptions = isRP
         ? `<option value="proxy">Proxy Log</option><option value="waf">WAF Log</option>`
-        : `<option value="nginx">Nginx</option>
+        : `<option value="access">Access</option>
+            <option value="nginx">Nginx</option>
                     ${runtimeOption()}
                     <option value="waf">WAF Log</option>`;
     return `
@@ -107,6 +108,8 @@ export function wireLogsTab(root, siteId) {
         const wsUrl = container === "waf"
             ? `${proto}://${location.host}/api/sites/${siteId}/logs/waf?tail=${tail}`
             : container === "proxy"
+            ? `${proto}://${location.host}/api/sites/${siteId}/logs/proxy?tail=${tail}`
+            : container === "access"
             ? `${proto}://${location.host}/api/sites/${siteId}/logs/proxy?tail=${tail}`
             : `${proto}://${location.host}/api/sites/${siteId}/logs?container=${container}&tail=${tail}`;
         ws = new WebSocket(wsUrl);
