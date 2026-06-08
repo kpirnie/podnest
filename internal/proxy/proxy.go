@@ -752,17 +752,24 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if siteID > 0 {
 		if rules, ok := p.redirectCache.Load(siteID); ok {
 			for _, rd := range rules.([]db.Redirect) {
-				matched := false
+				target := rd.Target
 				if re, err := regexp.Compile(rd.Source); err == nil {
-					matched = re.MatchString(r.URL.Path)
+					if matches := re.FindStringSubmatch(r.URL.Path); matches != nil {
+						for i, m := range matches[1:] {
+							target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
+						}
+						http.Redirect(w, r, target, rd.Code)
+						dur := time.Since(start)
+						p.writeAccessLog(r, rd.Code, 0, start, dur, clientIPStr, siteID, siteName)
+						return
+					}
 				} else {
-					matched = r.URL.Path == rd.Source || (rd.Source != "/" && strings.HasPrefix(r.URL.Path, rd.Source))
-				}
-				if matched {
-					http.Redirect(w, r, rd.Target, rd.Code)
-					dur := time.Since(start)
-					p.writeAccessLog(r, rd.Code, 0, start, dur, clientIPStr, siteID, siteName)
-					return
+					if r.URL.Path == rd.Source || (rd.Source != "/" && strings.HasPrefix(r.URL.Path, rd.Source)) {
+						http.Redirect(w, r, target, rd.Code)
+						dur := time.Since(start)
+						p.writeAccessLog(r, rd.Code, 0, start, dur, clientIPStr, siteID, siteName)
+						return
+					}
 				}
 			}
 		}
