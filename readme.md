@@ -1797,12 +1797,7 @@ The following features are actively planned or currently in development. Contrib
 | Feature | Description |
 |---|---|
 | **Version Switching** | Change a site's PHP, .NET, or Node version and recreate the pod without losing data |
-
-### Operations
-
-| Feature | Description |
-|---|---|
-| **Audit Log** | Per-user action tracking for all panel operations |
+| **Basic Authentication** | Lock down a site with basic authentication |
 
 ### Developer
 
