@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -266,31 +267,85 @@ func (h *Handler) apiSiteDisk(w http.ResponseWriter, r *http.Request) {
 
 // -- global routes -----------------------------------------------------------
 
-// apiGlobalTraffic returns cached traffic stats aggregated across all sites.
+// apiGlobalTraffic returns cached traffic stats aggregated across all sites for
+// admins, or scoped to the requesting user's own sites for managers.
 func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
-	const globalKey int64 = 0
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		apiutil.ErrorMsg(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 
-	if cached := globalCache.get(globalKey); cached != nil {
+	// admins aggregate every site (cache key 0); any non-admin is scoped to
+	// their own sites and cached under their uid so one role's data can never
+	// be served from another's cached entry
+	var (
+		cacheKey int64 = 0
+		domains  []string
+	)
+	if user.Role != models.RoleAdmin {
+		cacheKey = user.ID
+
+		// gather every domain across the manager's own sites
+		sites, err := db.GetSitesByUser(h.DB, user.ID)
+		if err != nil {
+			logger.Error("stats: global traffic — GetSitesByUser(%d): %v", user.ID, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		for _, s := range sites {
+			ds, err := h.siteDomainsFor(s)
+			if err != nil {
+				logger.Error("stats: global traffic — siteDomainsFor(%d): %v", s.ID, err)
+				continue
+			}
+			domains = append(domains, ds...)
+		}
+
+		// a manager with no domains must see zero traffic, not the full log —
+		// seed a sentinel host that matches nothing so the filter stays active
+		if len(domains) == 0 {
+			domains = []string{"\x00"}
+		}
+	}
+
+	if cached := globalCache.get(cacheKey); cached != nil {
 		apiutil.JSON(w, http.StatusOK, cached)
 		return
 	}
 
-	stats, err := parseTrafficLog(h.AppPath+"/logs/proxy-access.log", nil, true)
+	stats, err := parseTrafficLog(h.AppPath+"/logs/proxy-access.log", domains, true)
 	if err != nil {
 		logger.Error("stats: global traffic parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	globalCache.set(globalKey, stats)
+	globalCache.set(cacheKey, stats)
 	apiutil.JSON(w, http.StatusOK, stats)
 }
 
-// apiGlobalPod returns aggregate CPU and memory across all running containers.
+// apiGlobalPod returns aggregate CPU and memory across all running containers
+// for admins, or only the requesting user's own sites for managers.
 func (h *Handler) apiGlobalPod(w http.ResponseWriter, r *http.Request) {
-	sites, err := db.GetAllSites(h.DB)
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		apiutil.ErrorMsg(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// admins aggregate every site; any non-admin is scoped to their own sites
+	var (
+		sites []*models.Site
+		err   error
+	)
+	if user.Role == models.RoleAdmin {
+		sites, err = db.GetAllSites(h.DB)
+	} else {
+		sites, err = db.GetSitesByUser(h.DB, user.ID)
+	}
 	if err != nil {
-		logger.Error("stats: global pod — GetAllSites: %v", err)
+		logger.Error("stats: global pod — load sites: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -429,10 +484,11 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 		}
 
 		host := fields[2]
-		// per-site with a domain set: filter to matching domains only;
-		// when domainSet is empty and global is false the file is already
-		// site-specific so no filtering is needed
-		if !global && len(domainSet) > 0 {
+		// filter to matching domains whenever a domain set is provided —
+		// applies to per-site calls and to the manager-scoped global aggregate;
+		// when domainSet is empty the log is already the correct scope (a
+		// site-specific file, or the full merged log for an admin)
+		if len(domainSet) > 0 {
 			if _, ok := domainSet[host]; !ok {
 				continue
 			}

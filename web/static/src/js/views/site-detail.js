@@ -458,9 +458,10 @@ export async function viewSiteDetail(root, { id }) {
         <ul class="kp-tab-pills" id="kp-site-pills">
             <li data-pill="0"><a href="#">Routes</a></li>
             <li id="kp-manage-pill">
+                <a href="javascript:void(0);" class="kp-pill-dropdown-btn">
+                    Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
+                </a>
                 <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
-                    <a href="#" data-switcher="0"><span uk-icon="icon: server; ratio: 0.85"></span> Routes</a>
-                    <hr>
                     <div class="kp-pill-dropdown-section">Security</div>
                     <a href="#" data-switcher="3"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
                     <a href="#" data-switcher="4"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
@@ -483,9 +484,10 @@ export async function viewSiteDetail(root, { id }) {
         <ul class="kp-tab-pills" id="kp-site-pills">
             <li data-pill="0"><a href="#">Overview</a></li>
             <li id="kp-manage-pill">
+                <a href="javascript:void(0);" class="kp-pill-dropdown-btn">
+                    Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
+                </a>
                 <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
-                    <a href="#" data-switcher="0"><span uk-icon="icon: home; ratio: 0.85"></span> Overview</a>
-                    <hr>
                     <div class="kp-pill-dropdown-section">Config</div>
                     <a href="#" data-switcher="2"><span uk-icon="icon: settings; ratio: 0.85"></span> Nginx</a>
                     ${showPHP ? `<a href="#" data-switcher="3"><span uk-icon="icon: code; ratio: 0.85"></span> PHP</a>` : ""}
