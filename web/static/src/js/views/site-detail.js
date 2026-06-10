@@ -332,7 +332,7 @@ function containerIcon(name) {
     if (name.endsWith("-php"))     return "code";
     if (name.endsWith("-db"))      return "database";
     if (name.endsWith("-redis"))   return "server";
-    if (name.endsWith("-varnish")) return "layers";
+    if (name.endsWith("-varnish")) return "grid";
     if (name.endsWith("-pma"))     return "table";
     if (name.endsWith("-app"))     return "laptop";
     return "bolt";
@@ -456,10 +456,8 @@ export async function viewSiteDetail(root, { id }) {
         ${isRP ? `
         <!-- tab pills (reverse proxy) -->
         <ul class="kp-tab-pills" id="kp-site-pills">
+            <li data-pill="0"><a href="#">Routes</a></li>
             <li id="kp-manage-pill">
-                <a href="javascript:void(0);" class="kp-pill-dropdown-btn">
-                    Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
-                </a>
                 <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
                     <a href="#" data-switcher="0"><span uk-icon="icon: server; ratio: 0.85"></span> Routes</a>
                     <hr>
@@ -483,10 +481,8 @@ export async function viewSiteDetail(root, { id }) {
         ` : `
         <!-- tab pills -->
         <ul class="kp-tab-pills" id="kp-site-pills">
+            <li data-pill="0"><a href="#">Overview</a></li>
             <li id="kp-manage-pill">
-                <a href="javascript:void(0);" class="kp-pill-dropdown-btn">
-                    Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
-                </a>
                 <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
                     <a href="#" data-switcher="0"><span uk-icon="icon: home; ratio: 0.85"></span> Overview</a>
                     <hr>
