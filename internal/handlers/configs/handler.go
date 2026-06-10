@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/config"
 	"podnest/internal/db"
 	"podnest/internal/fileutil"
@@ -91,11 +92,17 @@ func (h *Handler) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// capture prior state before mutating
+	prior := db.SnapshotConfigs(h.DB, site.ID, configType)
+
 	if err := db.SetConfigs(h.DB, site.ID, configType, incoming); err != nil {
 		logger.Error("failed to set configs for site %d type %d: %v", site.ID, configType, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	// attach state snapshots for the audit middleware
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotConfigs(h.DB, site.ID, configType)))
 
 	blob, err := json.Marshal(incoming)
 	if err != nil {
@@ -133,11 +140,15 @@ func (h *Handler) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	prior := db.SnapshotConfigs(h.DB, site.ID, configType)
+
 	if err := db.SetConfigs(h.DB, site.ID, configType, defaults); err != nil {
 		logger.Error("failed to set default configs for site %d type %d: %v", site.ID, configType, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotConfigs(h.DB, site.ID, configType)))
 
 	blob, err := json.Marshal(defaults)
 	if err != nil {

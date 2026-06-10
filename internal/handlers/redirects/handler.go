@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
@@ -82,6 +83,8 @@ func (h *Handler) apiUpdateRedirects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	prior := db.SnapshotRedirects(h.DB, site.ID)
+
 	if err := db.ReplaceRedirects(h.DB, site.ID, redirects); err != nil {
 		logger.Error("apiUpdateRedirects: failed to replace redirects for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -92,5 +95,6 @@ func (h *Handler) apiUpdateRedirects(w http.ResponseWriter, r *http.Request) {
 	h.Proxy.WarmRedirectCache(site.ID, redirects)
 
 	logger.Debug("apiUpdateRedirects: updated %d redirects for site %d", len(redirects), site.ID)
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotRedirects(h.DB, site.ID)))
 	apiutil.JSON(w, http.StatusOK, redirects)
 }

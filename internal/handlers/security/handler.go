@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -202,6 +203,8 @@ func (h *Handler) saveIPRules(w http.ResponseWriter, r *http.Request, siteID *in
 	rules := parseIPRules(req.Whitelist, models.RuleWhitelist)
 	rules = append(rules, parseIPRules(req.Blacklist, models.RuleBlacklist)...)
 
+	prior := db.SnapshotIPRules(h.DB, siteID)
+
 	if err := db.ReplaceIPRules(h.DB, siteID, rules); err != nil {
 		logger.Error("saveIPRules: replace failed: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -213,6 +216,7 @@ func (h *Handler) saveIPRules(w http.ResponseWriter, r *http.Request, siteID *in
 	}
 
 	logger.Debug("saveIPRules: siteID=%v saved %d rules", siteID, len(rules))
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotIPRules(h.DB, siteID)))
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -251,6 +255,8 @@ func (h *Handler) saveUARules(w http.ResponseWriter, r *http.Request, siteID *in
 	rules := parseUARules(req.Whitelist, models.RuleWhitelist)
 	rules = append(rules, parseUARules(req.Blacklist, models.RuleBlacklist)...)
 
+	prior := db.SnapshotUARules(h.DB, siteID)
+
 	if err := db.ReplaceUARules(h.DB, siteID, rules); err != nil {
 		logger.Error("saveUARules: replace failed: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -262,6 +268,7 @@ func (h *Handler) saveUARules(w http.ResponseWriter, r *http.Request, siteID *in
 	}
 
 	logger.Debug("saveUARules: siteID=%v saved %d rules", siteID, len(rules))
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotUARules(h.DB, siteID)))
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

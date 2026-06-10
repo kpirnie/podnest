@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -87,6 +88,9 @@ func (h *Handler) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// capture all settings before mutating for the audit trail
+	prior := db.SnapshotAllSettings(h.DB)
+
 	allowed := map[string]bool{"admin_domain": true, "trusted_proxies_custom": true}
 	for k, v := range incoming {
 		if !allowed[k] {
@@ -102,6 +106,7 @@ func (h *Handler) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("updated settings")
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotAllSettings(h.DB)))
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

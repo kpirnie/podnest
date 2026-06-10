@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/auth"
 	"podnest/internal/backup"
 	"podnest/internal/config"
@@ -463,11 +464,17 @@ func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 		site.StartCommand = req.StartCommand
 	}
 
+	// capture prior state before mutating
+	prior := db.SnapshotSite(h.DB, site.ID)
+
 	if err := db.UpdateSite(h.DB, site); err != nil {
 		logger.Error("failed to update site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	// attach state snapshots for the audit middleware
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotSite(h.DB, site.ID)))
 
 	logger.Debug("updated site %d: %s", site.ID, site.Name)
 	apiutil.JSON(w, http.StatusOK, site)
@@ -521,6 +528,9 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 			logger.Warn("OnSiteDelete feature %s for site %s: %v", f.FeatureID(), site.Name, err)
 		}
 	}
+
+	// capture full site state before deletion for the audit trail
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotSite(h.DB, site.ID), ""))
 
 	if err := db.DeleteSite(h.DB, site.ID); err != nil {
 		logger.Error("failed to delete site %d: %v", site.ID, err)

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -124,6 +125,11 @@ func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
 		logger.Error("failed to fetch domain %d: %v", did, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	// capture domain state before deletion for the audit trail
+	if domainRecord != nil {
+		*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotAny(domainRecord), ""))
 	}
 
 	if err := db.DeleteDomain(h.DB, did); err != nil {

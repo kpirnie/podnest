@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"podnest/internal/auth"
+	"podnest/internal/handlers/auditlog"
 	"podnest/internal/handlers/configs"
 	"podnest/internal/handlers/domains"
 	"podnest/internal/handlers/health"
@@ -109,14 +110,19 @@ func (s *Server) routes() http.Handler {
 	sslHandler := &ssl.Handler{}
 	sslHandler.RegisterRoutes(api)
 
+	// audit log — admin-only read endpoint
+	auditHandler := &auditlog.Handler{DB: s.cfg.DB}
+	auditHandler.RegisterRoutes(api)
+
 	// feature module routes
 	for _, f := range modules.AllFeatureModules() {
 		f.RegisterRoutes(api, sitesHandler.ResolveSite)
 	}
 
-	// mount the API sub-mux under /api/ with auth middleware applied to all routes
+	// mount the API sub-mux under /api/ — audit wraps outermost (captures unauthed),
+	// auth middleware is inner so identity is resolved independently by each layer
 	mux.Handle("/api/", http.StripPrefix("/api",
-		auth.RequireAPIAuth(s.cfg.DB, api),
+		s.auditMiddleware(auth.RequireAPIAuth(s.cfg.DB, api)),
 	))
 
 	logger.Debug("routes registered")

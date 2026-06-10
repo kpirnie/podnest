@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -121,6 +122,8 @@ func (m Module) apiUpdateCron(w http.ResponseWriter, r *http.Request, site *mode
 	job.Schedule = req.Schedule
 	job.Enabled = req.Enabled
 
+	prior := db.SnapshotCron(m.DB, job.ID)
+
 	if err := db.UpdateCron(m.DB, job); err != nil {
 		logger.Error("apiUpdateCron: update cron %d: %v", cid, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -129,6 +132,7 @@ func (m Module) apiUpdateCron(w http.ResponseWriter, r *http.Request, site *mode
 
 	m.Manager.Reload()
 	logger.Debug("apiUpdateCron: updated cron %d for site %d", cid, site.ID)
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotCron(m.DB, job.ID)))
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -153,6 +157,9 @@ func (m Module) apiDeleteCron(w http.ResponseWriter, r *http.Request, site *mode
 		apiutil.ErrorMsg(w, http.StatusForbidden, "cron job does not belong to this site")
 		return
 	}
+
+	// capture cron state before deletion for the audit trail
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotCron(m.DB, cid), ""))
 
 	if err := db.DeleteCron(m.DB, cid); err != nil {
 		logger.Error("apiDeleteCron: cron %d: %v", cid, err)

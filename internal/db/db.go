@@ -536,4 +536,27 @@ CREATE TABLE IF NOT EXISTS kppn_redirects (
 );
 
 CREATE INDEX IF NOT EXISTS idx_redirects_site ON kppn_redirects (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          DATETIME NOT NULL DEFAULT (datetime('now')),
+    uid         INTEGER,
+    username    TEXT     NOT NULL DEFAULT '',
+    ip          TEXT     NOT NULL DEFAULT '',
+    ua          TEXT     NOT NULL DEFAULT '',
+    method      TEXT     NOT NULL DEFAULT '',
+    action      TEXT     NOT NULL DEFAULT '',
+    target_type TEXT     NOT NULL DEFAULT '',
+    target_id   TEXT     NOT NULL DEFAULT '',
+    status      INTEGER  NOT NULL DEFAULT 0,
+    details     TEXT     NOT NULL DEFAULT '',
+    prior_state TEXT     NOT NULL DEFAULT '',
+    new_state   TEXT     NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts     ON kppn_audit_log (ts);
+CREATE INDEX IF NOT EXISTS idx_audit_log_uid    ON kppn_audit_log (uid);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action ON kppn_audit_log (action);
+CREATE INDEX IF NOT EXISTS idx_audit_log_target ON kppn_audit_log (target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_status ON kppn_audit_log (status);
 `

@@ -2,12 +2,16 @@ package server
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"database/sql"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -347,6 +351,118 @@ func rotateLogDir(dir string) {
 			logger.Debug("rotateLogs: deleted old archive %s", p)
 		}
 	}
+}
+
+// auditMaintenance archives yesterday's audit rows to a daily csv.tar.gz and
+// prunes rows older than 30 days. Waits until just after midnight then ticks every 24h.
+func (s *Server) auditMaintenance() {
+	// wait until next midnight to start, then tick every 24h
+	now := time.Now()
+	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 1, 0, 0, now.Location())
+	time.Sleep(time.Until(next))
+
+	run := func() {
+		// archive yesterday's completed day
+		yesterday := time.Now().UTC().AddDate(0, 0, -1)
+		if err := archiveAuditDay(s.cfg.DB, s.cfg.AppPath, yesterday); err != nil {
+			logger.Error("auditMaintenance: archive failed: %v", err)
+		}
+		// prune rows older than 30 days
+		if err := db.PruneAuditLog(s.cfg.DB); err != nil {
+			logger.Error("auditMaintenance: prune failed: %v", err)
+		}
+	}
+
+	run()
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		run()
+	}
+}
+
+// archiveAuditDay exports all audit rows for the given UTC day to
+// {AppPath}/logs/audit/audit-YYYY-MM-DD.csv.tar.gz.
+func archiveAuditDay(database *sql.DB, appPath string, day time.Time) error {
+	rows, err := db.ExportAuditRowsForDate(database, day)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		logger.Debug("archiveAuditDay: no rows for %s, skipping", day.Format("2006-01-02"))
+		return nil
+	}
+
+	// ensure the audit log directory exists
+	dir := appPath + "/logs/audit"
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return fmt.Errorf("archiveAuditDay: mkdir %s: %w", dir, err)
+	}
+
+	archivePath := fmt.Sprintf("%s/audit-%s.csv.tar.gz", dir, day.Format("2006-01-02"))
+
+	// write the csv into a buffer so we have its size for the tar header
+	var csvBuf bytes.Buffer
+	w := csv.NewWriter(&csvBuf)
+	// header row
+	_ = w.Write([]string{
+		"id", "ts", "uid", "username", "ip", "ua", "method", "action",
+		"target_type", "target_id", "status", "details", "prior_state", "new_state",
+	})
+	for _, e := range rows {
+		uid := ""
+		if e.UID != nil {
+			uid = strconv.FormatInt(*e.UID, 10)
+		}
+		_ = w.Write([]string{
+			strconv.FormatInt(e.ID, 10),
+			e.TS.UTC().Format(time.RFC3339),
+			uid,
+			e.Username,
+			e.IP,
+			e.UA,
+			e.Method,
+			e.Action,
+			e.TargetType,
+			e.TargetID,
+			strconv.Itoa(e.Status),
+			e.Details,
+			e.PriorState,
+			e.NewState,
+		})
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return fmt.Errorf("archiveAuditDay: csv flush: %w", err)
+	}
+
+	// write the tar.gz archive
+	out, err := os.Create(archivePath)
+	if err != nil {
+		return fmt.Errorf("archiveAuditDay: create archive: %w", err)
+	}
+	defer out.Close()
+
+	gz := gzip.NewWriter(out)
+	defer gz.Close()
+	tw := tar.NewWriter(gz)
+	defer tw.Close()
+
+	csvName := fmt.Sprintf("audit-%s.csv", day.Format("2006-01-02"))
+	if err := tw.WriteHeader(&tar.Header{
+		Name:    csvName,
+		Size:    int64(csvBuf.Len()),
+		Mode:    0640,
+		ModTime: time.Now(),
+	}); err != nil {
+		return fmt.Errorf("archiveAuditDay: tar header: %w", err)
+	}
+	if _, err := io.Copy(tw, &csvBuf); err != nil {
+		return fmt.Errorf("archiveAuditDay: tar write: %w", err)
+	}
+
+	logger.Debug("archiveAuditDay: archived %d rows → %s", len(rows), archivePath)
+	return nil
 }
 
 // compressLogFile writes src into a .tar.gz archive at dst.

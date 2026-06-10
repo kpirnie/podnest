@@ -217,3 +217,13 @@ pre code {
     font-size: inherit;
     color: inherit;
 }
+
+/* audit log filter bar */
+.kp-filter-bar { gap: 8px; flex-wrap: wrap; }
+.kp-filter-bar .uk-input,
+.kp-filter-bar .uk-select { width: 100%; }
+@media (min-width: 960px) {
+    .kp-filter-bar input.uk-input  { width: 150px; }
+    .kp-filter-bar input[type="date"].uk-input { width: 155px; }
+    .kp-filter-bar .uk-select      { width: 155px; }
+}

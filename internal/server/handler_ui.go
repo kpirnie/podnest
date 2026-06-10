@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"podnest/internal/audit"
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -69,6 +70,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		// reject the request immediately if this IP is locked out
 		if !auth.LoginAllowed(r) {
+			// record the blocked attempt before returning
+			audit.Record(models.AuditEntry{
+				IP:      auditClientIP(r),
+				UA:      r.Header.Get("User-Agent"),
+				Method:  r.Method,
+				Action:  "POST /login",
+				Status:  http.StatusTooManyRequests,
+				Details: `{"event":"login_lockout"}`,
+			})
 			http.Error(w, "too many failed attempts, please try again later", http.StatusTooManyRequests)
 			return
 		}
@@ -93,8 +103,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				logger.Error("failed to execute login.html template after failed login: %v", err)
 				http.Error(w, "template error", http.StatusInternalServerError)
 			}
-			// log it for the ratelimiter
 			auth.RecordFailedLogin(r)
+			// record failed login attempt
+			audit.Record(models.AuditEntry{
+				IP:      auditClientIP(r),
+				UA:      r.Header.Get("User-Agent"),
+				Method:  r.Method,
+				Action:  "POST /login",
+				Status:  http.StatusUnauthorized,
+				Details: `{"event":"login_failed"}`,
+			})
 			return
 		}
 
@@ -119,6 +137,16 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// set the session cookie and redirect to the dashboard on success
 		logger.Debug("user '%s' logged in successfully", uname)
 		auth.RecordSuccessfulLogin(r)
+		// record successful login
+		audit.Record(models.AuditEntry{
+			Username: uname,
+			IP:       auditClientIP(r),
+			UA:       r.Header.Get("User-Agent"),
+			Method:   r.Method,
+			Action:   "POST /login",
+			Status:   http.StatusSeeOther,
+			Details:  `{"event":"login_success"}`,
+		})
 		auth.SetSessionCookie(w, r, result.SessionID)
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 
@@ -186,8 +214,20 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 				}); err != nil {
 					http.Error(w, "template error", http.StatusInternalServerError)
 				}
+				// record TOTP failure
+				audit.Record(models.AuditEntry{
+					UID:      &user.ID,
+					Username: user.UName,
+					IP:       auditClientIP(r),
+					UA:       r.Header.Get("User-Agent"),
+					Method:   r.Method,
+					Action:   "POST /login/totp",
+					Status:   http.StatusUnauthorized,
+					Details:  `{"event":"totp_failed"}`,
+				})
 				return
 			}
+
 			logger.Debug("user '%s' authenticated with backup code", user.UName)
 		}
 
@@ -203,6 +243,17 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		logger.Debug("user '%s' completed TOTP login", user.UName)
+		// record successful TOTP login
+		audit.Record(models.AuditEntry{
+			UID:      &user.ID,
+			Username: user.UName,
+			IP:       auditClientIP(r),
+			UA:       r.Header.Get("User-Agent"),
+			Method:   r.Method,
+			Action:   "POST /login/totp",
+			Status:   http.StatusSeeOther,
+			Details:  `{"event":"totp_success"}`,
+		})
 		auth.SetSessionCookie(w, r, sessionID)
 		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 
@@ -214,16 +265,34 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 // handleLogout clears the session and redirects to login
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
-	// retrieve and delete the session from the database if one exists
 	sessionID := auth.SessionFromRequest(r)
+
+	// resolve identity before the session is deleted
+	var uid *int64
+	username := ""
 	if sessionID != "" {
+		if user, err := auth.SessionUser(s.cfg.DB, sessionID); err == nil && user != nil {
+			uid = &user.ID
+			username = user.UName
+		}
 		if err := auth.Logout(s.cfg.DB, sessionID); err != nil {
 			logger.Error("failed to delete session on logout: %v", err)
 		}
 		logger.Debug("session %s logged out", sessionID)
 	}
 
-	// clear the session cookie and redirect to the login page
+	// record the logout event
+	audit.Record(models.AuditEntry{
+		UID:      uid,
+		Username: username,
+		IP:       auditClientIP(r),
+		UA:       r.Header.Get("User-Agent"),
+		Method:   r.Method,
+		Action:   "POST /logout",
+		Status:   http.StatusSeeOther,
+		Details:  `{"event":"logout"}`,
+	})
+
 	auth.ClearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

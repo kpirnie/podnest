@@ -269,6 +269,24 @@ type ResourceWarning struct {
 	Since       time.Time `json:"since"`
 }
 
+// AuditEntry represents a single row in kppn_audit_log.
+type AuditEntry struct {
+	ID         int64     `json:"id"`
+	TS         time.Time `json:"ts"`
+	UID        *int64    `json:"uid,omitempty"`
+	Username   string    `json:"username"`
+	IP         string    `json:"ip"`
+	UA         string    `json:"ua"`
+	Method     string    `json:"method"`
+	Action     string    `json:"action"`
+	TargetType string    `json:"target_type"`
+	TargetID   string    `json:"target_id"`
+	Status     int       `json:"status"`
+	Details    string    `json:"details"`
+	PriorState string    `json:"prior_state"`
+	NewState   string    `json:"new_state"`
+}
+
 // GenerateUHash produces a cryptographically random 64-char hex string
 func GenerateUHash() (string, error) {
 

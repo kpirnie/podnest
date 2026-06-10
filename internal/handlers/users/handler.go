@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
@@ -281,6 +282,9 @@ func (h *Handler) apiDeleteUser(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "cannot delete your own account")
 		return
 	}
+
+	// capture user state before deletion for the audit trail
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotAny(target), ""))
 
 	if err := db.DeleteUser(h.DB, target.ID); err != nil {
 		logger.Error("failed to delete user %d: %v", target.ID, err)

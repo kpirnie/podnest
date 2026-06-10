@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/audit"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
@@ -77,6 +78,8 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	prior := db.SnapshotRPRoutes(h.DB, site.ID)
+
 	if err := db.ReplaceRPRoutes(h.DB, site.ID, routes); err != nil {
 		logger.Error("apiUpdateRPRoutes: failed to replace routes for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -94,5 +97,6 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("apiUpdateRPRoutes: updated %d routes for site %d", len(routes), site.ID)
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotRPRoutes(h.DB, site.ID)))
 	apiutil.JSON(w, http.StatusOK, routes)
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"podnest/internal/audit"
 	"podnest/internal/backup"
 	"podnest/internal/cron"
 	"podnest/internal/db"
@@ -47,6 +48,7 @@ type Server struct {
 	cron     *cron.Manager
 	stats    *statsCache
 	resource *resourceState
+	audit    *audit.Recorder
 }
 
 // New initialises the server and registers all routes
@@ -60,6 +62,7 @@ func New(cfg Config) *Server {
 		cron:     cfg.CronManager,
 		stats:    newStatsCache(),
 		resource: newResourceState(),
+		audit:    audit.New(cfg.DB),
 	}
 
 	s.http = &http.Server{
@@ -116,6 +119,9 @@ func (s *Server) Start() error {
 
 	// rotate logs daily at midnight
 	go s.rotateLogs()
+
+	// archive yesterday's audit rows and prune the live table daily just after midnight
+	go s.auditMaintenance()
 
 	// background permission fixer
 	go s.permissionReaper()
