@@ -959,7 +959,7 @@ PodNest provides traffic analytics and live resource monitoring at both the glob
 
 ### Dashboard Stats
 
-The main dashboard displays aggregate statistics across all sites:
+The main dashboard displays aggregate statistics. For **Admin** users these span every site; for **Manager** users they are scoped to only the sites that user owns.
 
 **Traffic (last 24 hours):**
 - Stacked bar chart of requests per hour broken down by status code category (2xx/3xx/4xx/5xx)
@@ -968,8 +968,8 @@ The main dashboard displays aggregate statistics across all sites:
 - Top 10 sites by request count
 
 **Resource Usage:**
-- Total CPU % across all running containers
-- Total memory in use across all running containers
+- Total CPU % across the in-scope running containers
+- Total memory in use across the in-scope running containers
 
 All traffic stats exclude static asset requests (CSS, JS, images, fonts, SVG, XML) and only count page and API requests.
 
@@ -1305,6 +1305,8 @@ WebSocket connections (live logs, WP-CLI terminal, pod stats) validate the `Orig
 ### API Authorization
 
 All API endpoints require a valid session. Admin-only endpoints (`/api/users`, `/api/settings`, `/api/security/...`) enforce the Admin role at the router level as well as inside each handler. Manager-role users can only access their own sites — attempting to access another user's site returns `403 Forbidden`.
+
+The global dashboard stats endpoints (`/api/stats/traffic`, `/api/stats/pod`) return all-site aggregates for Admins and own-site aggregates for Managers.
 
 [▲ Back to Top](#PodNest)
 
