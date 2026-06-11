@@ -135,6 +135,9 @@ func (s *Server) Start() error {
 	// fire up the status checker
 	go s.syncPodStatuses()
 
+	// check for and auto-fix mariadb-upgrade requirement on all DB sites
+	go s.mariadbUpgradeChecker()
+
 	// start the backup scheduler
 	s.backup.StartScheduler(context.Background())
 

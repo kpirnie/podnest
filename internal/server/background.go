@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -560,5 +561,88 @@ func (s *Server) pollStats() {
 	defer ticker.Stop()
 	for range ticker.C {
 		poll()
+	}
+}
+
+// readEnvFile reads a KEY=VALUE .env file and returns the value for the given key.
+func readEnvFile(path, key string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	prefix := key + "="
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimPrefix(line, prefix), nil
+		}
+	}
+	return "", fmt.Errorf("key %q not found in %s", key, path)
+}
+
+// mariadbUpgradeChecker probes each running DB site for a mysql.proc column-count
+// mismatch (container upgraded without mariadb-upgrade) and fixes it automatically.
+// Fires once at startup then every 24 hours.
+func (s *Server) mariadbUpgradeChecker() {
+	run := func() {
+		ctx := context.Background()
+
+		sites, err := db.GetAllSites(s.cfg.DB)
+		if err != nil {
+			logger.Error("mariadbUpgradeChecker: load sites: %v", err)
+			return
+		}
+
+		for _, site := range sites {
+			if !modules.TypeModule(site.SiteType).HasDatabase() {
+				continue
+			}
+			if site.SiteStatus != models.StatusRunning {
+				continue
+			}
+
+			envPath := filepath.Join(s.cfg.AppPath, "sites", site.Name, ".env")
+			rootPass, err := readEnvFile(envPath, "DB_ROOT_PASS")
+			if err != nil || rootPass == "" {
+				logger.Warn("mariadbUpgradeChecker: site %s: DB_ROOT_PASS missing", site.Name)
+				continue
+			}
+
+			dbContainer := podman.ContainerName(site.Name, "db")
+
+			// probe for the mismatch — SHOW FUNCTION STATUS triggers the error
+			probeCmd := exec.CommandContext(ctx, "podman",
+				"exec", dbContainer,
+				"mariadb", "-uroot", "-p"+rootPass,
+				"-e", "SHOW FUNCTION STATUS LIMIT 1;",
+			)
+			probeCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+s.cfg.PodmanSock)
+			probeOut, probeErr := probeCmd.CombinedOutput()
+			if probeErr == nil {
+				continue // no mismatch
+			}
+			if !strings.Contains(string(probeOut), "Column count of mysql.proc is wrong") {
+				continue // different error, not ours to fix
+			}
+
+			logger.Warn("mariadbUpgradeChecker: mysql.proc mismatch on site %s — running mariadb-upgrade", site.Name)
+			upgradeCmd := exec.CommandContext(ctx, "podman",
+				"exec", dbContainer,
+				"mariadb-upgrade", "-uroot", "-p"+rootPass,
+			)
+			upgradeCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+s.cfg.PodmanSock)
+			if out, err := upgradeCmd.CombinedOutput(); err != nil {
+				logger.Error("mariadbUpgradeChecker: mariadb-upgrade failed for site %s: %v — %s", site.Name, err, string(out))
+			} else {
+				logger.Debug("mariadbUpgradeChecker: mariadb-upgrade complete for site %s", site.Name)
+			}
+		}
+	}
+
+	run()
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		run()
 	}
 }
