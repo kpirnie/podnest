@@ -1044,6 +1044,17 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 			logger.Error("proxy upstream error for port %d: %v", port, err)
 			http.Error(w, "upstream unavailable", http.StatusBadGateway)
 		},
+		// rewrite Location headers on upstream redirects — without this the internal
+		// container port (e.g. :8082) leaks through to the browser as thedomain:8082/path
+		ModifyResponse: func(resp *http.Response) error {
+			if loc := resp.Header.Get("Location"); loc != "" {
+				if parsed, err := url.Parse(loc); err == nil && parsed.Port() == fmt.Sprintf("%d", port) {
+					parsed.Host = parsed.Hostname() // strip the port
+					resp.Header.Set("Location", parsed.String())
+				}
+			}
+			return nil
+		},
 	}
 	actual, _ := p.rpCache.LoadOrStore(port, rp)
 	return actual.(*httputil.ReverseProxy)
