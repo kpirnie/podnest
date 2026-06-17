@@ -11,16 +11,16 @@
     "watch:js": "esbuild web/static/src/js/app.js --bundle --outfile=web/static/js/app.js --watch"
   },
   "devDependencies": {
-    "cssnano": "^7.0.0",
-    "esbuild": ">=0.25.0",
-    "postcss": "^8.4.0",
-    "postcss-cli": "^11.0.0",
-    "postcss-import": "^16.0.0"
-  },
-  "allowScripts": {
-    "esbuild@0.28.0": true
+    "cssnano": "*",
+    "esbuild": "*",
+    "postcss": "*",
+    "postcss-cli": "*",
+    "postcss-import": "*"
   },
   "dependencies": {
-    "npm": "^11.16.0"
+    "npm": "*"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }
