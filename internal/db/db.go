@@ -559,4 +559,27 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_uid    ON kppn_audit_log (uid);
 CREATE INDEX IF NOT EXISTS idx_audit_log_action ON kppn_audit_log (action);
 CREATE INDEX IF NOT EXISTS idx_audit_log_target ON kppn_audit_log (target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_status ON kppn_audit_log (status);
+
+CREATE TABLE IF NOT EXISTS kppn_basic_auth (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id  INTEGER NOT NULL UNIQUE REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    enabled  INTEGER NOT NULL DEFAULT 0,
+    realm    TEXT    NOT NULL DEFAULT 'Restricted',
+    created  DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated  DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_basic_auth_site ON kppn_basic_auth (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_basic_auth_users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id       INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    username      TEXT    NOT NULL,
+    password_hash TEXT    NOT NULL,
+    created       DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated       DATETIME,
+    UNIQUE (site_id, username)
+);
+
+CREATE INDEX IF NOT EXISTS idx_basic_auth_users_site ON kppn_basic_auth_users (site_id);
 `

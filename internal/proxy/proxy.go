@@ -31,6 +31,7 @@ import (
 
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // domainEntry holds the routing target for a registered domain
@@ -96,6 +97,7 @@ type Proxy struct {
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache   sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
 	redirectCache  sync.Map                                     // int64(siteID) → []db.Redirect
+	basicAuthCache sync.Map                                     // int64(siteID) → *basicAuthEntry; nil entry means disabled
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
 	rpTransport    *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
@@ -118,6 +120,12 @@ type Config struct {
 	AdminDomain string
 	AdminPort   int
 	AppPath     string
+}
+
+// basicAuthEntry holds the cached config and pre-hashed credentials for a site.
+type basicAuthEntry struct {
+	realm string
+	users map[string]string // username → bcrypt hash
 }
 
 // New creates and configures the proxy but does not start listeners
@@ -297,6 +305,7 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 // Pass justTrustedProxies=true to only refresh the trusted proxy ranges —
 // used by StartTrustedProxyRefresher to avoid unnecessary full rewarming.
 func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
+
 	// get the data we'll need for the others
 	cidrs, err := db.GetTrustedProxies(p.database)
 	if err != nil {
@@ -324,7 +333,9 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	if err := p.warmWAFCache(); err != nil {
 		return err
 	}
+
 	p.warmSecurityCache(ipRules, uaRules)
+	p.warmBasicAuthCache()
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
 	p.warmConnections()
@@ -341,6 +352,35 @@ func (p *Proxy) WarmRedirectCache(siteID int64, redirects []db.Redirect) {
 		p.redirectCache.Store(siteID, redirects)
 	}
 	logger.Debug("proxy: redirect cache updated for siteID=%d (%d rules)", siteID, len(redirects))
+}
+
+// WarmBasicAuthCache loads all enabled basic auth configs and credentials
+// from the database and atomically replaces the in-memory cache.
+// Called on startup and after any basic auth change.
+func (p *Proxy) warmBasicAuthCache() {
+	cfgs, users, err := db.GetAllBasicAuthData(p.database)
+	if err != nil {
+		logger.Error("proxy: WarmBasicAuthCache: %v", err)
+		return
+	}
+
+	// clear existing entries before repopulating
+	p.basicAuthCache.Range(func(k, _ any) bool {
+		p.basicAuthCache.Delete(k)
+		return true
+	})
+
+	for siteID, cfg := range cfgs {
+		entry := &basicAuthEntry{
+			realm: cfg.Realm,
+			users: make(map[string]string, len(users[siteID])),
+		}
+		for _, u := range users[siteID] {
+			entry.users[u.Username] = u.PasswordHash
+		}
+		p.basicAuthCache.Store(siteID, entry)
+	}
+	logger.Debug("proxy: basic auth cache warmed — %d sites", len(cfgs))
 }
 
 // warmRedirectCache loads all redirect rules from the database and populates
@@ -771,6 +811,29 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				}
+			}
+		}
+	}
+
+	// enforce per-site basic auth — checked before IP/UA/WAF so 401 is returned cleanly
+	if siteID > 0 {
+		if v, ok := p.basicAuthCache.Load(siteID); ok {
+			entry := v.(*basicAuthEntry)
+			user, pass, hasAuth := r.BasicAuth()
+			if !hasAuth {
+				w.Header().Set("WWW-Authenticate", `Basic realm="`+entry.realm+`"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				dur := time.Since(start)
+				p.writeAccessLog(r, http.StatusUnauthorized, 0, start, dur, clientIPStr, siteID, siteName)
+				return
+			}
+			hash, known := entry.users[user]
+			if !known || bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil {
+				w.Header().Set("WWW-Authenticate", `Basic realm="`+entry.realm+`"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				dur := time.Since(start)
+				p.writeAccessLog(r, http.StatusUnauthorized, 0, start, dur, clientIPStr, siteID, siteName)
+				return
 			}
 		}
 	}

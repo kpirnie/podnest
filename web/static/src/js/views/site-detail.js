@@ -6,6 +6,7 @@ import { showEditSiteModal } from '../modals/edit-site.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
 import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-backups.js';
+import { loadBasicAuthTab, renderBasicAuthTab, wireBasicAuthTab } from './site-basicauth.js';
 import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
 import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
@@ -14,7 +15,6 @@ import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-r
 import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
 import { loadStatsTab, renderStatsTab, wireStatsTab } from './site-stats.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
-
 
 // aborts accumulated root-level listeners when a new RP site detail view is wired
 let _rpWireAbort = null;
@@ -465,6 +465,7 @@ export async function viewSiteDetail(root, { id }) {
                     <div class="kp-pill-dropdown-section">Security</div>
                     <a href="#" data-switcher="3"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
                     <a href="#" data-switcher="4"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                    <a href="#" data-switcher="5"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -478,6 +479,7 @@ export async function viewSiteDetail(root, { id }) {
             <li>${renderLogsTab(id, site.SiteType)}</li>
             <li>${renderSecurityPanel(id)}</li>
             <li id="waf-tab-panel"></li>
+            <li>${renderBasicAuthTab()}</li>
         </ul>
         ` : `
         <!-- tab pills -->
@@ -498,12 +500,13 @@ export async function viewSiteDetail(root, { id }) {
                     <div class="kp-pill-dropdown-section">Security</div>
                     <a href="#" data-switcher="${showPHP ? 8 : 7}"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
                     <a href="#" data-switcher="${showPHP ? 9 : 8}"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                    <a href="#" data-switcher="${showPHP ? 10 : 9}"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
                     <hr>
                     <div class="kp-pill-dropdown-section">Tools</div>
-                    ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 10 : 9}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
-                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 11 : 10) : (showPHP ? 10 : 9)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
-                    ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
-                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
+                    ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 11 : 10}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
+                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
+                    ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
+                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>                
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -522,6 +525,7 @@ export async function viewSiteDetail(root, { id }) {
             <li>${renderLogsTab(id, site.SiteType)}</li>
             <li>${renderSecurityPanel(id)}</li>
             <li id="waf-tab-panel"></li>
+            <li>${renderBasicAuthTab()}</li>
             ${site.SiteType === 1 ? `<li>${renderWPCLITab(id)}</li>` : ""}
             <li>${renderBackupsTab(id)}</li>
             ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
@@ -619,6 +623,8 @@ export async function viewSiteDetail(root, { id }) {
     loadStatsTab(id, site.SiteType);
     wireHealthBadges(root, id);
     initPillTabs(root);
+    wireBasicAuthTab(root, id);
+    loadBasicAuthTab(id);
     // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);
 }
