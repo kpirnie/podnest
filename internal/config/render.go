@@ -582,6 +582,9 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
     listen %d;
     server_name _;
 
+	port_in_redirect off;
+	server_name_in_redirect off;
+
     root  /var/www/html;
     index index.php index.html;
 
@@ -605,15 +608,15 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
     }
 
     location ~ \.php$ {
-        try_files              $uri =404;
+        try_files $uri =404;
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
-        fastcgi_pass           127.0.0.1:9000;
-        fastcgi_index          index.php;
-        include                fastcgi_params;
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        fastcgi_param PATH_INFO       $fastcgi_path_info;
-		fastcgi_param HTTPS                    $http_x_forwarded_proto if_not_empty;
-		fastcgi_param HTTP_X_FORWARDED_PROTO   $http_x_forwarded_proto;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+		fastcgi_param HTTPS on;
+		fastcgi_param HTTP_X_FORWARDED_PROTO $http_x_forwarded_proto;
         fastcgi_read_timeout    300;
         fastcgi_connect_timeout 60;
         fastcgi_send_timeout    300;
@@ -678,6 +681,9 @@ func renderNginxProxy(configJSON string, upstreamPort int, listenPort int) (stri
 	return fmt.Sprintf(`server {
     listen %d;
     server_name _;
+
+	port_in_redirect off;
+	server_name_in_redirect off;
 
 	access_log /dev/stdout main;
     error_log  /dev/stderr warn;
@@ -746,6 +752,9 @@ func renderNginxStatic(configJSON string, listenPort int) (string, error) {
 	return fmt.Sprintf(`server {
     listen %d;
     server_name _;
+
+	port_in_redirect off;
+	server_name_in_redirect off;
 
     root  /var/www/html;
     index index.html index.htm;
