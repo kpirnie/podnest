@@ -113,3 +113,12 @@ func SnapshotAllSettings(database *sql.DB) string {
 func SnapshotAny(u interface{}) string {
 	return snapshotJSON(u)
 }
+
+// SnapshotBypassRules fetches the current bypass rules as a JSON string.
+func SnapshotBypassRules(database *sql.DB) string {
+	rules, err := GetAllBypassRules(database)
+	if err != nil {
+		return ""
+	}
+	return snapshotJSON(rules)
+}

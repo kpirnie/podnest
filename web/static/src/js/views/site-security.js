@@ -96,34 +96,60 @@ export function renderSecurityPanel(siteId = null) {
             </div>
 
             ${!siteId ? `
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Trusted Proxy Ranges</h3>
-                    <div class="uk-flex" style="gap:8px">
-                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/trusted-proxies/export" download="podnest-trusted-proxies.csv" uk-tooltip="Export trusted proxies">
-                            <span uk-icon="download"></span>
-                        </a>
-                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import trusted proxies from CSV">
-                            <span uk-icon="upload"></span>
-                            <input type="file" id="sec-tp-import" accept=".csv" style="display:none">
-                        </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-tp-save" uk-tooltip="Save Trusted Proxy Ranges">
-                            <span uk-icon="check"></span>
-                        </button>
+            <div class="uk-grid uk-grid-small uk-margin-bottom" uk-grid>
+                <div class="uk-width-1-2@m">
+                    <div class="kp-card uk-padding-small uk-height-1-1">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Trusted Proxy Ranges</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/trusted-proxies/export" download="podnest-trusted-proxies.csv" uk-tooltip="Export trusted proxies">
+                                    <span uk-icon="download"></span>
+                                </a>
+                                <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import trusted proxies from CSV">
+                                    <span uk-icon="upload"></span>
+                                    <input type="file" id="sec-tp-import" accept=".csv" style="display:none">
+                                </label>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-tp-save" uk-tooltip="Save Trusted Proxy Ranges">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            Custom IP ranges (one CIDR per line) to trust in addition to the
+                            auto-fetched Cloudflare, Fastly, and CloudFront ranges.
+                            <code>X-Forwarded-For</code> is only honoured when a request arrives
+                            from one of these addresses.
+                        </p>
+                        <textarea class="uk-textarea kp-textarea kp-mono" id="sec-tp-cidrs" rows="12"
+                            placeholder="192.168.1.0/24"></textarea>
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            One IPv4 or IPv6 CIDR per line. Auto-fetched provider ranges are
+                            managed automatically and do not need to be entered here.
+                        </p>
                     </div>
                 </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    Custom IP ranges (one CIDR per line) to trust in addition to the
-                    auto-fetched Cloudflare, Fastly, and CloudFront ranges.
-                    <code>X-Forwarded-For</code> is only honoured when a request arrives
-                    from one of these addresses.
-                </p>
-                <textarea class="uk-textarea kp-textarea kp-mono" id="sec-tp-cidrs" rows="15"
-                    placeholder="192.168.1.0/24"></textarea>
-                <p class="kp-muted uk-text-small uk-margin-small-top">
-                    One IPv4 or IPv6 CIDR per line. Auto-fetched provider ranges are
-                    managed automatically and do not need to be entered here.
-                </p>
+                <div class="uk-width-1-2@m">
+                    <div class="kp-card uk-padding-small uk-height-1-1">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Security Bypass</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-bypass-save" uk-tooltip="Save Bypass Rules">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            IPs or CIDRs that skip all security checks (IP rules, UA rules, WAF).
+                            Use for trusted services that must not be blocked. Supports inline
+                            notes with <code>#</code> e.g. <code>1.2.3.4/32 # WP Umbrella</code>
+                        </p>
+                        <textarea class="uk-textarea kp-textarea kp-mono" id="sec-bypass-cidrs" rows="12"
+                            placeholder="1.2.3.4/32 # WP Umbrella&#10;2001:db8::/32 # monitoring"></textarea>
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            One IPv4, IPv6, or CIDR per line. Bypassed IPs are still proxied normally — only enforcement is skipped.
+                        </p>
+                    </div>
+                </div>
             </div>
 
             <div class="kp-card uk-padding-small">
@@ -207,8 +233,8 @@ export async function loadSecurityPanel(root) {
 
     try {
         const fetches = [api.get(ipBase), api.get(uaBase)];
-        if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"));
-        const [ip, ua, waf, tp] = await Promise.all(fetches);
+        if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"), api.get("/security/bypass"));
+        const [ip, ua, waf, tp, bp] = await Promise.all(fetches);
 
         // bail if the user navigated away while the fetch was in flight
         if (!root.querySelector("#sec-ip-whitelist")) return;
@@ -234,6 +260,11 @@ export async function loadSecurityPanel(root) {
         if (tp) {
             const cidrs = root.querySelector("#sec-tp-cidrs");
             if (cidrs) cidrs.value = tp.trusted_proxies_custom ?? "";
+        }
+
+        if (bp) {
+            const bypassEl = root.querySelector("#sec-bypass-cidrs");
+            if (bypassEl) bypassEl.value = bp.bypass ?? "";
         }
 
     } catch (e) {
@@ -305,6 +336,23 @@ export function wireSecurityPanel(root) {
             toast.error(e.message);
         } finally {
             btn.disabled  = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // save bypassed IPs
+    root.querySelector("#sec-bypass-save")?.addEventListener("click", async () => {
+        const btn  = root.querySelector("#sec-bypass-save");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            await api.put("/security/bypass", { bypass: root.querySelector("#sec-bypass-cidrs").value.trim() });
+            toast.success("Bypass rules saved");
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            btn.disabled = false;
             btn.innerHTML = orig;
         }
     });

@@ -21,6 +21,7 @@ import (
 // SecurityProxy is the subset of proxy.Proxy consumed by this handler.
 type SecurityProxy interface {
 	WarmCaches(justTrustedProxies bool) error
+	WarmBypassCache(rules []*db.BypassRule)
 }
 
 // Handler handles IP and UA security rule management API routes.
@@ -35,6 +36,10 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	admin := func(fn http.HandlerFunc) http.Handler {
 		return auth.RequireAPIAdmin(http.HandlerFunc(fn))
 	}
+
+	// bypass rules
+	api.Handle("GET /security/bypass", admin(h.apiGetBypassRules))
+	api.Handle("PUT /security/bypass", admin(h.apiSaveBypassRules))
 
 	// global IP rules — admin only
 	api.Handle("GET /security/ip", admin(h.apiGetGlobalIPRules))
@@ -159,6 +164,67 @@ func (h *Handler) apiImportSiteUARules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.importUARules(w, r, &site.ID)
+}
+
+func (h *Handler) apiGetBypassRules(w http.ResponseWriter, r *http.Request) {
+	rules, err := db.GetAllBypassRules(h.DB)
+	if err != nil {
+		logger.Error("apiGetBypassRules: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var lines []string
+	for _, r := range rules {
+		if r.Note != "" {
+			lines = append(lines, r.CIDR+" # "+r.Note)
+		} else {
+			lines = append(lines, r.CIDR)
+		}
+	}
+
+	apiutil.JSON(w, http.StatusOK, map[string]string{
+		"bypass": strings.Join(lines, "\n"),
+	})
+}
+
+func (h *Handler) apiSaveBypassRules(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Bypass string `json:"bypass"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	var rules []db.BypassRule
+	for _, line := range strings.Split(req.Bypass, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// support inline notes: "1.2.3.4/32 # WP Umbrella"
+		cidr, note, _ := strings.Cut(line, "#")
+		rules = append(rules, db.BypassRule{
+			CIDR: strings.TrimSpace(cidr),
+			Note: strings.TrimSpace(note),
+		})
+	}
+
+	prior := db.SnapshotBypassRules(h.DB)
+
+	if err := db.ReplaceBypassRules(h.DB, rules); err != nil {
+		logger.Error("apiSaveBypassRules: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	allRules, _ := db.GetAllBypassRules(h.DB)
+	h.Proxy.WarmBypassCache(allRules)
+
+	logger.Debug("apiSaveBypassRules: saved %d rules", len(rules))
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotBypassRules(h.DB)))
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // -- shared implementations --------------------------------------------------

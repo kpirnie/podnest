@@ -23,6 +23,13 @@ type UARule struct {
 	Pattern  string
 }
 
+// BypassRule represents a single IP/CIDR that bypasses all security checks.
+type BypassRule struct {
+	ID   int64
+	CIDR string
+	Note string
+}
+
 // GetIPRules returns all IP rules optionally scoped to a site.
 // Pass nil for siteID to retrieve global rules only.
 func GetIPRules(db *sql.DB, siteID *int64) ([]*IPRule, error) {
@@ -291,4 +298,60 @@ func UARulesByType(rules []*UARule) (blacklist, whitelist []*UARule) {
 		}
 	}
 	return
+}
+
+// GetAllBypassRules returns every bypass rule.
+func GetAllBypassRules(db *sql.DB) ([]*BypassRule, error) {
+	rows, err := db.Query(`SELECT id, cidr, note FROM kppn_security_bypass ORDER BY id ASC`)
+	if err != nil {
+		logger.Error("GetAllBypassRules: query failed: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []*BypassRule
+	for rows.Next() {
+		r := &BypassRule{}
+		if err := rows.Scan(&r.ID, &r.CIDR, &r.Note); err != nil {
+			logger.Error("GetAllBypassRules: scan failed: %v", err)
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+
+	logger.Debug("GetAllBypassRules: retrieved %d rules", len(rules))
+	return rules, rows.Err()
+}
+
+// ReplaceBypassRules atomically replaces all bypass rules with the provided slice.
+func ReplaceBypassRules(db *sql.DB, rules []BypassRule) error {
+	tx, err := db.Begin()
+	if err != nil {
+		logger.Error("ReplaceBypassRules: begin tx failed: %v", err)
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM kppn_security_bypass`); err != nil {
+		logger.Error("ReplaceBypassRules: delete failed: %v", err)
+		return err
+	}
+
+	for _, r := range rules {
+		if _, err := tx.Exec(
+			`INSERT INTO kppn_security_bypass (cidr, note) VALUES (?, ?)`,
+			r.CIDR, r.Note,
+		); err != nil {
+			logger.Error("ReplaceBypassRules: insert failed: %v", err)
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("ReplaceBypassRules: commit failed: %v", err)
+		return err
+	}
+
+	logger.Debug("ReplaceBypassRules: replaced with %d entries", len(rules))
+	return nil
 }

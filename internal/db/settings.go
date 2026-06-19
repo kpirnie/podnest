@@ -91,11 +91,20 @@ func GetTrustedProxies(db *sql.DB) ([]string, error) {
 	var cidrs []string
 	for _, src := range []string{auto, custom} {
 		for _, line := range strings.Split(src, "\n") {
-			if cidr := strings.TrimSpace(line); cidr != "" {
-				if _, dup := seen[cidr]; !dup {
-					seen[cidr] = struct{}{}
-					cidrs = append(cidrs, cidr)
-				}
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// strip inline comments
+			if idx := strings.Index(line, "#"); idx != -1 {
+				line = strings.TrimSpace(line[:idx])
+			}
+			if line == "" {
+				continue
+			}
+			if _, dup := seen[line]; !dup {
+				seen[line] = struct{}{}
+				cidrs = append(cidrs, line)
 			}
 		}
 	}

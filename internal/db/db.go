@@ -420,6 +420,15 @@ CREATE TABLE IF NOT EXISTS kppn_ua_rules (
 CREATE INDEX IF NOT EXISTS idx_ua_rules_site ON kppn_ua_rules (site_id);
 CREATE INDEX IF NOT EXISTS idx_ua_rules_type ON kppn_ua_rules (list_type);
 
+CREATE TABLE IF NOT EXISTS kppn_security_bypass (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    cidr    TEXT    NOT NULL,
+    note    TEXT    NOT NULL DEFAULT '',
+    created DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_bypass_cidr ON kppn_security_bypass (cidr);
+
 CREATE TABLE IF NOT EXISTS kppn_totp_pending (
     token      TEXT    PRIMARY KEY,
     uid        INTEGER NOT NULL REFERENCES kppn_users(id) ON DELETE CASCADE,

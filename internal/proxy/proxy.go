@@ -94,6 +94,7 @@ type Proxy struct {
 	wafSiteEngines sync.Map                                     // int64(siteID) → *WAFEngine
 	wafOverrides   atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
 	trustedProxies atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
+	bypassNets     atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache   sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
 	redirectCache  sync.Map                                     // int64(siteID) → []db.Redirect
@@ -319,6 +320,10 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	if err != nil {
 		return err
 	}
+	bypassRules, err := db.GetAllBypassRules(p.database)
+	if err != nil {
+		return err
+	}
 	if justTrustedProxies {
 		p.warmTrustedProxies(cidrs)
 		return nil
@@ -335,6 +340,7 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	}
 
 	p.warmSecurityCache(ipRules, uaRules)
+	p.warmBypassCache(bypassRules)
 	p.warmBasicAuthCache()
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
@@ -594,6 +600,22 @@ func (p *Proxy) warmTrustedProxies(cidrs []string) {
 	logger.Debug("proxy: trusted proxies warmed — %d ranges", len(nets))
 }
 
+// warmBypassCache compiles bypass CIDRs/IPs and atomically installs the result.
+// Called on startup and after any bypass rule change.
+func (p *Proxy) warmBypassCache(rules []*db.BypassRule) {
+	compiled := make([]*compiledIPRule, 0, len(rules))
+	for _, r := range rules {
+		c, err := compileIPRule(r.CIDR)
+		if err != nil {
+			logger.Warn("warmBypassCache: skipping invalid entry '%s': %v", r.CIDR, err)
+			continue
+		}
+		compiled = append(compiled, c)
+	}
+	p.bypassNets.Store(&compiled)
+	logger.Debug("proxy: bypass cache warmed — %d entries", len(compiled))
+}
+
 // WarmWAFCache loads WAF settings and per-site overrides from the database,
 // compiles the Coraza engine(s), and installs them atomically.
 // Called once on startup and after any WAF settings change.
@@ -849,43 +871,49 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// enforce IP rules — blacklist always beats whitelist
-	if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		dur := time.Since(start)
-		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
-		return
-	}
+	// bypass list — matching IPs skip all IP, UA, and WAF enforcement
+	bypassed := clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load())
+	if !bypassed {
 
-	// enforce UA rules — blacklist always beats whitelist
-	if !checkUA(r.UserAgent(), sec.global, siteRules) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		dur := time.Since(start)
-		p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
-		return
-	}
-
-	// resolve the WAF engine once — used for both the debug log and enforcement
-	// to avoid calling resolveWAFEngine twice on every WAF-enabled request
-	var wafEngine *WAFEngine
-	if siteID > 0 {
-		wafEngine = p.resolveWAFEngine(siteID)
-	}
-
-	// guard the debug log behind IsDebug() so resolveWAFEngine is not called
-	// purely for log formatting when debug logging is disabled
-	if logger.IsDebug() {
-		logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), wafEngine != nil)
-	}
-
-	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
-	if wafEngine != nil {
-		if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
-			// WAF wrote the 403; record it in the access log for Fail2Ban
+		// enforce IP rules — blacklist always beats whitelist
+		if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			dur := time.Since(start)
 			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
 			return
 		}
+
+		// enforce UA rules — blacklist always beats whitelist
+		if !checkUA(r.UserAgent(), sec.global, siteRules) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			dur := time.Since(start)
+			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
+			return
+		}
+
+		// resolve the WAF engine once — used for both the debug log and enforcement
+		// to avoid calling resolveWAFEngine twice on every WAF-enabled request
+		var wafEngine *WAFEngine
+		if siteID > 0 {
+			wafEngine = p.resolveWAFEngine(siteID)
+		}
+
+		// guard the debug log behind IsDebug() so resolveWAFEngine is not called
+		// purely for log formatting when debug logging is disabled
+		if logger.IsDebug() {
+			logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), wafEngine != nil)
+		}
+
+		// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
+		if wafEngine != nil {
+			if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
+				// WAF wrote the 403; record it in the access log for Fail2Ban
+				dur := time.Since(start)
+				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
+				return
+			}
+		}
+
 	}
 
 	// wrap the writer to capture status + byte count for the access log
@@ -1278,4 +1306,23 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isIPBypassed returns true when the client IP matches any entry in the
+// bypass list — bypassed requests skip IP, UA, and WAF enforcement entirely.
+func isIPBypassed(ip net.IP, bypass []*compiledIPRule) bool {
+	for _, r := range bypass {
+		if r.matchesIP(ip) {
+			if logger.IsDebug() {
+				logger.Debug("isIPBypassed: %s matched bypass rule %s", ip, r.raw)
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// WarmBypassCache is the exported wrapper called by the security handler after a bypass rule change.
+func (p *Proxy) WarmBypassCache(rules []*db.BypassRule) {
+	p.warmBypassCache(rules)
 }
