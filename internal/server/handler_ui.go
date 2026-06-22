@@ -33,6 +33,9 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 		data["LatestVersion"] = latest
 	}
 
+	// per-request CSP nonce for inline <script> tags
+	data["Nonce"] = cspNonce(r)
+
 	// try to execute and load in the template
 	if err := web.Templates.ExecuteTemplate(w, "app.html", data); err != nil {
 		logger.Error("failed to execute app.html template: %v", err)

@@ -232,6 +232,15 @@ func extractCRSTar(r io.Reader, destDir string) error {
 				return err
 			}
 			f.Close()
+		case tar.TypeSymlink, tar.TypeLink:
+			// reject links outright — a crafted archive could point them outside
+			// destDir for a traversal write; CRS tarballs contain none legitimately
+			logger.Warn("extractCRSTar: skipping link entry %q -> %q", hdr.Name, hdr.Linkname)
+			continue
+		default:
+			// skip anything else (devices, fifos, etc.) — not expected in CRS archives
+			logger.Warn("extractCRSTar: skipping unsupported entry %q (type %d)", hdr.Name, hdr.Typeflag)
+			continue
 		}
 	}
 	return nil

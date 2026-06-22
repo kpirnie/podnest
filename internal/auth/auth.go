@@ -20,11 +20,12 @@ import (
 
 // setup the session cookie name and duration
 const (
-	SessionCookieName = "podnest_session"
-	SessionDuration   = 8 * time.Hour
-	PassChars         = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%^*-_+=!.~"
-	PassMin           = 32
-	PassMax           = 64
+	SessionCookieName     = "podnest_session"
+	SessionDuration       = 8 * time.Hour
+	PassChars             = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%^*-_+=!.~"
+	PassMin               = 32
+	PassMax               = 64
+	sessionExtendInterval = 5 * time.Minute
 )
 
 // Common authentication errors
@@ -199,6 +200,34 @@ func Logout(database *sql.DB, sessionID string) error {
 	return db.DeleteSession(database, sessionID)
 }
 
+// maybeExtendSession refreshes the sliding expiry only once the session has
+// aged past sessionExtendInterval since its last extension.
+func maybeExtendSession(database *sql.DB, s *models.Session) {
+	if time.Until(s.ExpiresAt) < SessionDuration-sessionExtendInterval {
+		if err := db.ExtendSession(database, s.ID, SessionDuration); err != nil {
+			logger.Error("failed to extend session: %v", err)
+		}
+	}
+}
+
+// SessionAndUser fetches the session and its user in a single DB read, throttling
+// the sliding-expiry write. Returns (nil, nil, nil) when missing or expired.
+func SessionAndUser(database *sql.DB, sessionID string) (*models.Session, *models.User, error) {
+	session, err := db.GetSession(database, sessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if session == nil {
+		return nil, nil, nil
+	}
+	maybeExtendSession(database, session)
+	user, err := db.GetUserByID(database, session.UID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, user, nil
+}
+
 // SessionUser retrieves the user associated with a session token
 // Returns nil if the session does not exist or is expired
 func SessionUser(database *sql.DB, sessionID string) (*models.User, error) {
@@ -210,15 +239,12 @@ func SessionUser(database *sql.DB, sessionID string) (*models.User, error) {
 		return nil, err
 	}
 	if session == nil {
-		logger.Error("failed to retrieve session: %v", session)
+		logger.Debug("session not found: %s", sessionID)
 		return nil, errors.New("session not found")
 	}
 
 	// Check if the session is expired
-	if err := db.ExtendSession(database, sessionID, SessionDuration); err != nil {
-		logger.Error("failed to extend session: %v", err)
-		return nil, err
-	}
+	maybeExtendSession(database, session)
 
 	logger.Debug("retrieved session: %v", session)
 

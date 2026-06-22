@@ -45,7 +45,7 @@ func GetRPRoutesBySite(db *sql.DB, siteID int64) ([]RPRoute, error) {
 // GetAllRPRoutes returns every route across all sites; used to warm the proxy cache
 func GetAllRPRoutes(db *sql.DB) ([]RPRoute, error) {
 	rows, err := db.Query(`
-		SELECT id, site_id, domain, upstream, position
+		SELECT id, site_id, domain, upstream, position, pass_host
 		FROM kppn_rp_routes ORDER BY site_id, position ASC`,
 	)
 	if err != nil {
@@ -57,7 +57,7 @@ func GetAllRPRoutes(db *sql.DB) ([]RPRoute, error) {
 	var routes []RPRoute
 	for rows.Next() {
 		var r RPRoute
-		if err := rows.Scan(&r.ID, &r.SiteID, &r.Domain, &r.Upstream, &r.Position); err != nil {
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.Domain, &r.Upstream, &r.Position, &r.PassHost); err != nil {
 			logger.Error("GetAllRPRoutes: failed to scan row: %v", err)
 			return nil, err
 		}

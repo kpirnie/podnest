@@ -5,8 +5,15 @@ import (
 	"fmt"
 	"podnest/internal/logger"
 	"podnest/internal/models"
+	"regexp"
 	"strings"
 )
+
+// safeConfigValue allows only characters found in legitimate scalar config
+// values (numbers, sizes, durations, on/off, paths, simple space/comma lists).
+// Anything else — newlines, ; { } " ' $ backtick etc. — is treated as a
+// directive-injection attempt and the value is rejected in favour of the default.
+var safeConfigValue = regexp.MustCompile(`^[A-Za-z0-9 ._:/=+,%-]*$`)
 
 // RenderNginxMain renders the nginx.conf from a config JSON blob
 func RenderNginxMain(configJSON string) (string, error) {
@@ -819,9 +826,13 @@ func get(cfg map[string]string, key string, defaults map[string]string) string {
 
 	logger.Debug("getting config value for key '%s'", key)
 
-	// Return the value from cfg if it exists and is not empty, otherwise return the default value from defaults
+	// Return the user value only when it is non-empty AND cannot break out of a
+	// single config directive; otherwise fall back to the safe default
 	if v, ok := cfg[key]; ok && v != "" {
-		return v
+		if safeConfigValue.MatchString(v) {
+			return v
+		}
+		logger.Warn("config: rejecting unsafe value for key '%s' — using default", key)
 	}
 
 	// If the value is not set in cfg, return the default value from defaults if it exists, otherwise return an empty string

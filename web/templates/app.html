@@ -11,7 +11,7 @@
         <link rel="apple-touch-icon" href="https://cdn.kcp.im/logos/podnest.svg">
         <link rel="manifest" href="/static/manifest.json">
         <meta name="theme-color" content="#070e20">
-        <script>
+        <script nonce="{{.Nonce}}">
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/static/sw.js');
             }
@@ -128,7 +128,7 @@
         <div id="kp-toasts" class="kp-toasts"></div>
 
         <!-- -- user data for JS ---------------------------------------------------- -->
-        <script>
+        <script nonce="{{.Nonce}}">
             window.KP = {
                 user: {
                     id:    {{.User.ID}},

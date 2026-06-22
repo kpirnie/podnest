@@ -41,7 +41,7 @@ func GetSession(db *sql.DB, id string) (*models.Session, error) {
 
 	// handle the case where no session was found or it has expired
 	if err == sql.ErrNoRows {
-		logger.Error("Session not found or expired: %s", id)
+		logger.Debug("session not found or expired: %s", id)
 		return nil, nil
 	}
 	if err != nil {

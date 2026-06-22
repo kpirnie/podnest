@@ -1,26 +1,46 @@
 package server
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"strings"
 )
 
-// cspPolicy defines the Content-Security-Policy for the panel.
-// 'unsafe-inline' is required for both script-src and style-src:
-//   - script-src: inline document.write() used in the footer year
-//   - style-src:  UIKit manipulates inline styles dynamically at runtime
-const cspPolicy = "" +
-	"default-src 'none'; " +
-	"script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; " +
-	"style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; " +
-	"font-src 'self' https://fonts.gstatic.com; " +
-	"img-src 'self' https://cdn.kcp.im data: blob:; " +
-	"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
-	"manifest-src 'self'; " +
-	"frame-src 'none'; " +
-	"object-src 'none'; " +
-	"base-uri 'self'; " +
-	"form-action 'self'"
+// cspNonceKey is the context key under which the per-request CSP script nonce
+// is stored by securityHeaders for templates to emit on inline <script> tags.
+type cspNonceKeyType struct{}
+
+var cspNonceKey cspNonceKeyType
+
+// cspNonce returns the per-request CSP nonce, or "" if none was set.
+func cspNonce(r *http.Request) string {
+	if v, ok := r.Context().Value(cspNonceKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// buildCSP returns the Content-Security-Policy carrying a per-request script
+// nonce instead of 'unsafe-inline' — only scripts tagged with this nonce run,
+// so panel XSS cannot inject executable inline script. style-src keeps
+// 'unsafe-inline' because UIKit and the templates rely on inline style
+// attributes, which nonces do not cover.
+func buildCSP(nonce string) string {
+	return "" +
+		"default-src 'none'; " +
+		"script-src 'self' https://cdn.jsdelivr.net 'nonce-" + nonce + "'; " +
+		"style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; " +
+		"font-src 'self' https://fonts.gstatic.com; " +
+		"img-src 'self' https://cdn.kcp.im data: blob:; " +
+		"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
+		"manifest-src 'self'; " +
+		"frame-src 'none'; " +
+		"object-src 'none'; " +
+		"base-uri 'self'; " +
+		"form-action 'self'"
+}
 
 // securityHeaders adds security-related HTTP response headers to all panel responses.
 // CSP is intentionally skipped for /pma/ paths — phpMyAdmin loads its own external
@@ -45,11 +65,19 @@ func securityHeaders(next http.Handler) http.Handler {
 		// restrict browser features not used by the panel
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), usb=()")
 
+		// generate a per-request script nonce so inline panel scripts run without
+		// 'unsafe-inline'; stored in context for the template to emit on its tags
+		var nb [16]byte
+		_, _ = rand.Read(nb[:])
+		nonce := base64.StdEncoding.EncodeToString(nb[:])
+		r = r.WithContext(context.WithValue(r.Context(), cspNonceKey, nonce))
+
 		// skip CSP for the PMA proxy — phpMyAdmin loads its own external assets
 		if !strings.HasPrefix(r.URL.Path, "/pma/") {
-			w.Header().Set("Content-Security-Policy", cspPolicy)
+			w.Header().Set("Content-Security-Policy", buildCSP(nonce))
 		}
 
 		next.ServeHTTP(w, r)
+
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"podnest/internal/logger"
@@ -32,9 +33,16 @@ func Open(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Limit connections to 1 to avoid locking issues with SQLite in a multi-threaded environment
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// SQLite under WAL allows many concurrent readers with a single writer; the
+	// DSN's busy_timeout=5000 lets writers serialize gracefully instead of
+	// erroring. Allow concurrent connections rather than funnelling every query
+	// (reads included) through one, which would throw away WAL's read concurrency.
+	maxConns := runtime.NumCPU() * 4
+	if maxConns < 8 {
+		maxConns = 8
+	}
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
 
 	// Verify the connection is valid
 	if err := db.Ping(); err != nil {

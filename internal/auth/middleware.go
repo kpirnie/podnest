@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"net/http"
 
-	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 )
@@ -32,7 +31,7 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 		}
 
 		// If a session cookie is found, look up the user in the database.
-		user, err := SessionUser(database, sessionID)
+		session, user, err := SessionAndUser(database, sessionID)
 		if err != nil || user == nil {
 			logger.Error("the session cookie is invalid: %v", err)
 			ClearSessionCookie(w)
@@ -44,8 +43,7 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 
 		// validate CSRF token on all state-changing requests
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
-			session, _ := db.GetSession(database, sessionID)
-			if session == nil || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
 				logger.Error("CSRF validation failed for user %v", user.UName)
 				apiForbidden(w)
 				return
@@ -53,15 +51,10 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 		}
 
 		// Add the authenticated user and CSRF token to the request context and call the next handler.
-		session, _ := db.GetSession(database, sessionID)
-		csrfToken := ""
-		if session != nil {
-			csrfToken = session.CSRFToken
-		}
 		next.ServeHTTP(w, r.WithContext(
 			context.WithValue(
 				context.WithValue(r.Context(), ctxUser, user),
-				ctxCSRF, csrfToken,
+				ctxCSRF, session.CSRFToken,
 			),
 		))
 	})
@@ -109,7 +102,7 @@ func RequireAPIAuth(database *sql.DB, next http.Handler) http.Handler {
 		}
 
 		// If a session cookie is found, look up the user in the database.
-		user, err := SessionUser(database, sessionID)
+		session, user, err := SessionAndUser(database, sessionID)
 		if err != nil || user == nil {
 			logger.Error("the session cookie is invalid: %v", err)
 			apiUnauthorized(w)
@@ -118,13 +111,9 @@ func RequireAPIAuth(database *sql.DB, next http.Handler) http.Handler {
 
 		logger.Debug("authenticated user: %v", user.UName)
 
-		// validate CSRF token on state-changing requests — the SPA sends the
-		// login-issued token in X-CSRF-Token; GET/HEAD/OPTIONS (including
-		// WebSocket upgrades) are exempt. Constant-time compare avoids leaking
-		// the token via response timing.
+		// validate CSRF token on state-changing requests
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
-			session, _ := db.GetSession(database, sessionID)
-			if session == nil || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
 				logger.Error("CSRF validation failed for API request by user %v", user.UName)
 				apiForbidden(w)
 				return

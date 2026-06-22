@@ -1,6 +1,7 @@
 package server
 
 import (
+	"mime"
 	"net/http"
 
 	"podnest/internal/auth"
@@ -26,6 +27,12 @@ import (
 // routes registers all HTTP routes and returns the composed handler.
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
+
+	// register JS/CSS mime types so static assets get a valid Content-Type —
+	// without this a minimal host can serve them with an empty type, which
+	// X-Content-Type-Options: nosniff then blocks
+	_ = mime.AddExtensionType(".js", "text/javascript; charset=utf-8")
+	_ = mime.AddExtensionType(".css", "text/css; charset=utf-8")
 
 	// serve embedded static assets under /static/
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.Static))))
