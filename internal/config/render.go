@@ -243,7 +243,7 @@ display_startup_errors = Off
 log_errors             = %s
 error_log              = /proc/self/fd/2
 error_reporting        = E_ALL & ~E_DEPRECATED & ~E_STRICT
-disable_functions      = exec,passthru,shell_exec,system,popen,parse_ini_file,show_source,symlink
+disable_functions      = exec,passthru,shell_exec,system,popen,pcntl_exec,dl,parse_ini_file,show_source,symlink,putenv
 
 memory_limit        = %s
 max_execution_time  = %s

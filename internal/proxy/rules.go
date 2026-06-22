@@ -254,8 +254,13 @@ func checkUA(ua string, global, site ruleSet) bool {
 }
 
 // parseClientIP extracts the real client IP from the request. X-Forwarded-For
-// is only trusted when RemoteAddr falls within a known trusted proxy range —
-// otherwise RemoteAddr is used directly to prevent header spoofing.
+// is only consulted when the direct peer (RemoteAddr) is itself a trusted proxy
+// or loopback; otherwise the header is attacker-controlled and RemoteAddr wins.
+// When trusted, the forwarded chain is walked right-to-left skipping trusted
+// hops — the first untrusted address is the real client as seen at our trust
+// boundary. Taking the leftmost entry instead would trust a value the client
+// can spoof, since appending proxies (Cloudflare/Fastly) preserve any
+// client-supplied X-Forwarded-For entries to the left of the real chain.
 func parseClientIP(remoteAddr, forwarded string, trustedProxies []*net.IPNet) net.IP {
 
 	// strip port from RemoteAddr and parse
@@ -265,26 +270,41 @@ func parseClientIP(remoteAddr, forwarded string, trustedProxies []*net.IPNet) ne
 	}
 	remote := net.ParseIP(host)
 
-	// only honour X-Forwarded-For when the connection arrives from a trusted proxy;
-	// loopback addresses (127.0.0.1, ::1) are always treated as trusted so that
-	// requests forwarded internally by the proxy itself carry the real client IP
-	if forwarded != "" && remote != nil {
-		trusted := remote.IsLoopback()
-		if !trusted {
-			for _, network := range trustedProxies {
-				if network.Contains(remote) {
-					trusted = true
-					break
-				}
+	// isTrusted reports whether an IP is a hop we control: loopback (internal
+	// forwarding by the proxy itself) or within a configured trusted-proxy range
+	isTrusted := func(ip net.IP) bool {
+		if ip == nil {
+			return false
+		}
+		if ip.IsLoopback() {
+			return true
+		}
+		for _, network := range trustedProxies {
+			if network.Contains(ip) {
+				return true
 			}
 		}
-		if trusted {
-			parts := strings.SplitN(forwarded, ",", 2)
-			if ip := net.ParseIP(strings.TrimSpace(parts[0])); ip != nil {
-				return ip
-			}
+		return false
+	}
+
+	// the header is only trustworthy when the connection itself arrived from a
+	// trusted hop; otherwise RemoteAddr is authoritative
+	if forwarded == "" || !isTrusted(remote) {
+		return remote
+	}
+
+	// walk right-to-left, skipping trusted hops; first untrusted entry is the client
+	parts := strings.Split(forwarded, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ip := net.ParseIP(strings.TrimSpace(parts[i]))
+		if ip == nil {
+			continue
+		}
+		if !isTrusted(ip) {
+			return ip
 		}
 	}
 
+	// every forwarded hop was trusted — fall back to the direct peer
 	return remote
 }

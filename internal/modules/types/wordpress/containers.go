@@ -86,8 +86,13 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		Env:     map[string]string{"SKIP_FIX_PERMS": "1"},
 		Mounts: []modules.Mount{
 			{Type: "bind", Source: cfg.SiteDir + "/redis/redis.conf", Destination: "/usr/local/etc/redis/redis.conf", Options: []string{"z"}},
-			{Type: "tmpfs", Destination: "/tmp"},
+			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=64m"}},
+			// persistence dir backed by tmpfs so the rootfs can be read-only; it was
+			// already ephemeral (no host bind) so behaviour is unchanged. mode=0777
+			// because CHOWN is dropped and SKIP_FIX_PERMS skips the entrypoint chown
+			{Type: "tmpfs", Destination: "/data", Options: []string{"rw", "nosuid", "nodev", "mode=0777", "size=256m"}},
 		},
+		ReadOnly:    true,
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{"SETUID", "SETGID"},
 		SecOpts:     []string{secNoNewPriv},
@@ -117,7 +122,13 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/html", Destination: "/var/www/html", Options: []string{"rw"}},
 			{Type: "bind", Source: cfg.SiteDir + "/php-fpm/www.conf", Destination: "/usr/local/etc/php-fpm.d/www.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/php-fpm/php.ini", Destination: "/usr/local/etc/php/conf.d/99-custom.ini", Options: []string{"ro", "z"}},
+			// writable scratch backed by tmpfs so the rest of the rootfs can be read-only —
+			// confines a webshell to the site's own /var/www/html plus RAM that is wiped on
+			// restart; nosuid/nodev block setuid binaries and device nodes a payload might drop
+			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=512m"}},
+			{Type: "tmpfs", Destination: "/run", Options: []string{"rw", "nosuid", "nodev", "mode=0755", "size=16m"}},
 		},
+		ReadOnly:    true,
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
 		SecOpts:     []string{secNoNewPriv},
@@ -137,10 +148,17 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		Env:     map[string]string{"UMASK": "0000"},
 		Mounts: []modules.Mount{
 			{Type: "tmpfs", Destination: "/var/log/nginx"},
+			// writable scratch backed by tmpfs so the rootfs can be read-only:
+			// /run holds nginx.pid, /var/cache/nginx holds client-body/proxy/fastcgi
+			// temp files, /tmp is general scratch — all wiped on restart
+			{Type: "tmpfs", Destination: "/run", Options: []string{"rw", "nosuid", "nodev", "mode=0755", "size=16m"}},
+			{Type: "tmpfs", Destination: "/var/cache/nginx", Options: []string{"rw", "nosuid", "nodev", "mode=0755", "size=128m"}},
+			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=64m"}},
 			{Type: "bind", Source: cfg.SiteDir + "/html", Destination: "/var/www/html", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/nginx.conf", Destination: "/etc/nginx/nginx.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/conf.d", Destination: "/etc/nginx/conf.d", Options: []string{"ro", "z"}},
 		},
+		ReadOnly:    true,
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
 		SecOpts:     []string{secNoNewPriv},

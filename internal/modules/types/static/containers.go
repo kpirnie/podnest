@@ -33,6 +33,7 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		return fmt.Errorf("create pod %s: %w", podName, err)
 	}
 
+	// nginx
 	if err := client.CreateContainer(ctx, modules.ContainerConfig{
 		Name:    modules.ContainerName(cfg.Site.Name, "nginx"),
 		Image:   models.ImgNginx,
@@ -40,10 +41,17 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		Env:     map[string]string{"UMASK": "0000"},
 		Mounts: []modules.Mount{
 			{Type: "tmpfs", Destination: "/var/log/nginx"},
+			// writable scratch backed by tmpfs so the rootfs can be read-only:
+			// /run holds nginx.pid, /var/cache/nginx holds client-body/proxy/fastcgi
+			// temp files, /tmp is general scratch — all wiped on restart
+			{Type: "tmpfs", Destination: "/run", Options: []string{"rw", "nosuid", "nodev", "mode=0755", "size=16m"}},
+			{Type: "tmpfs", Destination: "/var/cache/nginx", Options: []string{"rw", "nosuid", "nodev", "mode=0755", "size=128m"}},
+			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=64m"}},
 			{Type: "bind", Source: cfg.SiteDir + "/html", Destination: "/var/www/html", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/nginx.conf", Destination: "/etc/nginx/nginx.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/nginx/conf.d", Destination: "/etc/nginx/conf.d", Options: []string{"ro", "z"}},
 		},
+		ReadOnly:    true,
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{"NET_BIND_SERVICE", "CHOWN", "SETUID", "SETGID"},
 		SecOpts:     []string{secNoNewPriv},
@@ -55,6 +63,7 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		return fmt.Errorf("start nginx: %w", err)
 	}
 
+	// varnish
 	if vEnabled {
 		memSize := cfg.Configs[models.ConfigVarnish]["memory_size"]
 		if memSize == "" {

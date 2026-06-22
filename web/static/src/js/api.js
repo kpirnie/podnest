@@ -24,9 +24,9 @@ export const api = {
             throw err;
         }
     },
-    get:    (path)       => api._req("GET",    path),
-    post:   (path, body) => api._req("POST",   path, body),
-    put:    (path, body) => api._req("PUT",    path, body),
-    delete: (path)       => api._req("DELETE", path),
-    patch:  (path, body) => api._req("PATCH",  path, body),
+    get:    (path)                => api._req("GET",    path),
+    post:   (path, body, timeout) => api._req("POST",   path, body, timeout),
+    put:    (path, body, timeout) => api._req("PUT",    path, body, timeout),
+    delete: (path)                => api._req("DELETE", path),
+    patch:  (path, body)          => api._req("PATCH",  path, body),
 };

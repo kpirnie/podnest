@@ -219,7 +219,7 @@ func (h *Handler) apiSitePodStats(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	// roles included in pod stats (app container excluded per spec)
-	roles := []string{"nginx", "php", "db", "redis"}
+	roles := statsRoles(site.SiteType)
 	names := make([]string, len(roles))
 	for i, role := range roles {
 		names[i] = modules.ContainerName(site.Name, role)
@@ -228,6 +228,10 @@ func (h *Handler) apiSitePodStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+
+	// consecutive fetch failures — used to close the stream when the pod is
+	// gone (deleted/stopped) so the ticker does not loop forever logging 404s
+	fails := 0
 
 	logger.Debug("stats: ws pod stream opened for site %d", site.ID)
 
@@ -239,9 +243,16 @@ func (h *Handler) apiSitePodStats(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			payload, err := h.fetchPodStats(ctx, names)
 			if err != nil {
-				logger.Error("stats: fetchPodStats site %d: %v", site.ID, err)
+				// tolerate transient failures while a pod is still starting, but
+				// stop the stream once failures persist (pod deleted or stopped)
+				fails++
+				if fails >= 3 {
+					logger.Debug("stats: closing pod stream for site %d after %d consecutive failures: %v", site.ID, fails, err)
+					return
+				}
 				continue
 			}
+			fails = 0
 			if err := conn.WriteJSON(payload); err != nil {
 				logger.Debug("stats: ws write failed for site %d: %v", site.ID, err)
 				return
@@ -352,8 +363,8 @@ func (h *Handler) apiGlobalPod(w http.ResponseWriter, r *http.Request) {
 
 	// collect names for all pod-based running sites
 	var names []string
-	roles := []string{"nginx", "php", "db", "redis"}
 	for _, s := range sites {
+		roles := statsRoles(s.SiteType)
 		if s.SiteType == models.SiteTypeReverseProxy || s.SiteStatus != 1 {
 			continue
 		}
@@ -724,4 +735,21 @@ func isStaticAsset(path string) bool {
 		}
 	}
 	return false
+}
+
+// statsRoles returns the resource-consuming container roles to poll for a
+// given site type. The app container is excluded per spec, and only roles
+// that actually exist for the type are returned so stats does not 404 on
+// containers that were never created (e.g. php/db/redis on a static site).
+func statsRoles(siteType int) []string {
+	switch siteType {
+	case models.SiteTypeWordPress, models.SiteTypePHP:
+		return []string{"nginx", "php", "db", "redis"}
+	case models.SiteTypeNode, models.SiteTypeDotNet:
+		return []string{"nginx", "db", "redis"}
+	case models.SiteTypeStatic:
+		return []string{"nginx"}
+	default: // reverse proxy and anything else — no pod containers
+		return nil
+	}
 }

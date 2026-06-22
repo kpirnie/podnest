@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"net/http"
 
@@ -44,7 +45,7 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 		// validate CSRF token on all state-changing requests
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 			session, _ := db.GetSession(database, sessionID)
-			if session == nil || r.Header.Get("X-CSRF-Token") != session.CSRFToken {
+			if session == nil || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
 				logger.Error("CSRF validation failed for user %v", user.UName)
 				apiForbidden(w)
 				return
@@ -116,6 +117,19 @@ func RequireAPIAuth(database *sql.DB, next http.Handler) http.Handler {
 		}
 
 		logger.Debug("authenticated user: %v", user.UName)
+
+		// validate CSRF token on state-changing requests — the SPA sends the
+		// login-issued token in X-CSRF-Token; GET/HEAD/OPTIONS (including
+		// WebSocket upgrades) are exempt. Constant-time compare avoids leaking
+		// the token via response timing.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+			session, _ := db.GetSession(database, sessionID)
+			if session == nil || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
+				logger.Error("CSRF validation failed for API request by user %v", user.UName)
+				apiForbidden(w)
+				return
+			}
+		}
 
 		// Add the authenticated user to the request context and call the next handler.
 		next.ServeHTTP(w, r.WithContext(

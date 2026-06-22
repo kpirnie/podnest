@@ -134,7 +134,7 @@ export function showCreateSiteModal() {
         showProgressModal("Creating Site", progressMsg);
 
         try {
-            await api.post("/sites", body);
+            await api.post("/sites", body, 600000);
             hideProgressModal();
             toast.success(`Site '${body.name}' created`);
             router.go("sites");

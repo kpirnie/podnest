@@ -43,6 +43,7 @@ func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg Container
 		CapAdd:     cfg.CapAdd,
 		CapDrop:    cfg.CapDrop,
 		SecOpts:    cfg.SecOpts,
+		ReadOnlyFS: cfg.ReadOnly,
 	}
 
 	// map healthcheck if defined

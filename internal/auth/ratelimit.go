@@ -1,9 +1,6 @@
 package auth
 
 import (
-	"net"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -46,8 +43,7 @@ func init() {
 
 // LoginAllowed checks whether the given request IP is permitted to attempt a login.
 // Returns false if the IP is currently locked out.
-func LoginAllowed(r *http.Request) bool {
-	ip := clientIP(r)
+func LoginAllowed(ip string) bool {
 
 	// lock the limiter while we check the IP's status
 	loginLimiter.Lock()
@@ -80,8 +76,7 @@ func LoginAllowed(r *http.Request) bool {
 
 // RecordFailedLogin increments the failure count for the request IP and
 // applies a lockout once rlMaxAttempts is reached within the window.
-func RecordFailedLogin(r *http.Request) {
-	ip := clientIP(r)
+func RecordFailedLogin(ip string) {
 
 	// lock the limiter while we update the IP's record
 	loginLimiter.Lock()
@@ -115,8 +110,7 @@ func RecordFailedLogin(r *http.Request) {
 }
 
 // RecordSuccessfulLogin clears any recorded failures for the request IP
-func RecordSuccessfulLogin(r *http.Request) {
-	ip := clientIP(r)
+func RecordSuccessfulLogin(ip string) {
 
 	// lock the limiter while we clear the IP's record
 	loginLimiter.Lock()
@@ -124,28 +118,6 @@ func RecordSuccessfulLogin(r *http.Request) {
 
 	// successful login — remove any existing record for this IP
 	delete(loginLimiter.ips, ip)
-}
-
-// clientIP extracts the real client IP from the request, preferring
-// X-Forwarded-For (set by the reverse proxy) over RemoteAddr
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-
-		// X-Forwarded-For may contain a comma-separated list; the first entry is the client
-		if idx := len(xff); idx > 0 {
-			if comma := strings.IndexByte(xff, ','); comma != -1 {
-				return strings.TrimSpace(xff[:comma])
-			}
-			return strings.TrimSpace(xff)
-		}
-	}
-
-	// fallback to RemoteAddr if X-Forwarded-For is not set
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
 }
 
 // cleanupLoginLimiter removes stale entries from the IP map to prevent unbounded growth

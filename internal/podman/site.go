@@ -50,9 +50,15 @@ func ContainerName(siteName, role string) string {
 	return PodName(siteName) + "-" + role
 }
 
-// RemoveSitePod force-removes the pod and all containers for a site
+// RemoveSitePod force-removes the pod and all containers for a site, then
+// removes the site's dedicated network. Network cleanup is best-effort and
+// runs after the pod (a network cannot be removed while a pod is attached).
 func (c *Client) RemoveSitePod(ctx context.Context, siteName string) error {
-	return c.RemovePod(ctx, PodName(siteName))
+	podErr := c.RemovePod(ctx, PodName(siteName))
+	if err := c.RemoveNetwork(ctx, NetworkName(siteName)); err != nil {
+		logger.Debug("RemoveSitePod: network %s cleanup: %v", NetworkName(siteName), err)
+	}
+	return podErr
 }
 
 // SiteStatus returns the pod inspect for a site
@@ -162,4 +168,11 @@ func (c *Client) EnsureMariaDBUser(ctx context.Context, containerName, rootPass,
 	}
 	logger.Debug("EnsureMariaDBUser: user '%s' and database '%s' ensured in %s", dbUser, dbName, containerName)
 	return nil
+}
+
+// NetworkName returns the canonical per-site Podman network name. Each site
+// gets its own network so a compromised site cannot reach another site's
+// containers over a shared bridge.
+func NetworkName(siteName string) string {
+	return PodName(siteName) + "-net"
 }

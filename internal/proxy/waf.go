@@ -23,17 +23,7 @@ import (
 
 // wafMaxBodyBytes is the maximum request body size inspected per request.
 // Bytes beyond this limit are forwarded to the upstream uninspected.
-const wafMaxBodyBytes = 1 << 20 // 1 MB
-
-// wafBodyPool pools 1MB byte slices for WAF request body inspection to avoid
-// a fresh heap allocation per POST/PUT request — significantly reduces GC pressure
-// on sites with frequent form submissions, WooCommerce checkouts, or REST API writes
-var wafBodyPool = sync.Pool{
-	New: func() interface{} {
-		b := make([]byte, 0, wafMaxBodyBytes)
-		return &b
-	},
-}
+const wafMaxBodyBytes = 4 << 20 // 4 MB
 
 // pluginSuffixes are the three file types that make up a CRS plugin
 var pluginSuffixes = []string{"-config.conf", "-before.conf", "-after.conf"}
@@ -167,24 +157,20 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	// request body phase — buffer up to wafMaxBodyBytes using a pooled buffer to
 	// avoid per-request heap allocation; restore full stream for upstream after inspection
 	if r.Body != nil {
-		// acquire a pooled buffer and reset length, keeping capacity
-		bufPtr := wafBodyPool.Get().(*[]byte)
-		buf := (*bufPtr)[:0]
-		buf, _ = io.ReadAll(io.LimitReader(r.Body, wafMaxBodyBytes))
-
-		// restore the full body stream for the upstream — chunk already read + remainder
+		// read up to wafMaxBodyBytes for inspection, then restore the full stream for
+		// the upstream (inspected prefix + any unread remainder). The buffer is handed
+		// to the upstream and outlives this function, so it cannot be pooled/reused —
+		// a per-request allocation is inherent to buffer-then-forward inspection
+		buf, _ := io.ReadAll(io.LimitReader(r.Body, wafMaxBodyBytes))
 		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), r.Body))
 
 		if len(buf) > 0 {
 			if it, _, err := tx.WriteRequestBody(buf); err != nil {
 				logger.Error("waf: WriteRequestBody: %v", err)
 			} else if it != nil {
-				wafBodyPool.Put(bufPtr) // return buffer before early exit
-
 				return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
 			}
 		}
-		wafBodyPool.Put(bufPtr) // return buffer after use
 	}
 
 	if logger.IsDebug() {

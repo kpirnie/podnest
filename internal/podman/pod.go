@@ -16,6 +16,7 @@ import (
 type PodSpec struct {
 	Name         string              `json:"name"`
 	PortMappings []PortMap           `json:"portmappings"`
+	Netns        *NetworkNamespace   `json:"netns,omitempty"` // must be bridge mode when Networks is set (required rootless)
 	Networks     map[string]struct{} `json:"Networks,omitempty"`
 }
 
@@ -64,7 +65,7 @@ type ContainerSpec struct {
 	SecOpts      []string           `json:"security_opt"`
 	Entrypoint   []string           `json:"entrypoint,omitempty"`
 	Command      []string           `json:"command,omitempty"`
-	ReadOnlyFS   bool               `json:"read_only_rootfs,omitempty"`
+	ReadOnlyFS   bool               `json:"read_only_filesystem,omitempty"`
 	WorkingDir   string             `json:"work_dir,omitempty"`
 	User         string             `json:"user,omitempty"`
 	NetNS        NetworkNamespace   `json:"netns,omitempty"`
@@ -120,11 +121,21 @@ func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) 
 		})
 	}
 
-	// create the pod with the specified name and port mappings
+	// ensure this site's dedicated network exists before attaching it
+	netName := NetworkName(site.Name)
+	if err := c.EnsurePodmanNetwork(ctx, netName); err != nil {
+		logger.Error("failed to ensure network %s for pod %s: %v", netName, name, err)
+		return "", err
+	}
+
+	// create the pod with the specified name and port mappings; the infra
+	// container's netns must be bridge mode for the custom network to attach —
+	// rootless Podman otherwise defaults to pasta/slirp4netns and rejects it
 	spec := PodSpec{
 		Name:         name,
 		PortMappings: ports,
-		Networks:     map[string]struct{}{"pn_network": {}},
+		Netns:        &NetworkNamespace{NSMode: "bridge"},
+		Networks:     map[string]struct{}{netName: {}},
 	}
 
 	// hold the response from the pod creation endpoint, which will contain the new pod's ID

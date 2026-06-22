@@ -68,8 +68,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 
+		// resolve the real client IP via the proxy's trusted-proxy logic so the
+		// per-IP lockout cannot be bypassed by spoofing X-Forwarded-For
+		ip := s.proxy.ClientIP(r)
+
 		// reject the request immediately if this IP is locked out
-		if !auth.LoginAllowed(r) {
+		if !auth.LoginAllowed(ip) {
 			// record the blocked attempt before returning
 			audit.Record(models.AuditEntry{
 				IP:      auditClientIP(r),

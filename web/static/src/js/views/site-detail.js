@@ -573,7 +573,7 @@ export async function viewSiteDetail(root, { id }) {
         if (!name) return;
         showProgressModal("Cloning Site", "Copying files and database — this may take a few minutes...");
         try {
-            await api.post(`/sites/${id}/clone`, { name });
+            await api.post(`/sites/${id}/clone`, { name }, 600000);
             hideProgressModal();
             toast.success(`Site cloned as '${name}'`);
             router.go("sites");

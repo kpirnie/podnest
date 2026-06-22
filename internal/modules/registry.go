@@ -143,6 +143,7 @@ type ContainerConfig struct {
 	CapAdd      []string
 	CapDrop     []string
 	SecOpts     []string
+	ReadOnly    bool
 	Healthcheck *HealthcheckConfig
 }
 

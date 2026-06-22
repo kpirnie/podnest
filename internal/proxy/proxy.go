@@ -50,11 +50,23 @@ type statusWriter struct {
 	bytes  int
 }
 
+// compiledRedirect is a redirect rule with its Source pattern pre-compiled.
+// re is non-nil when Source compiled as a valid regex; when nil, matching
+// falls back to exact/prefix comparison against the request path.
+type compiledRedirect struct {
+	re     *regexp.Regexp
+	source string
+	target string
+	code   int
+}
+
+// write the response headers
 func (sw *statusWriter) WriteHeader(code int) {
 	sw.status = code
 	sw.ResponseWriter.WriteHeader(code)
 }
 
+// writ the response
 func (sw *statusWriter) Write(b []byte) (int, error) {
 	n, err := sw.ResponseWriter.Write(b)
 	sw.bytes += n
@@ -97,9 +109,10 @@ type Proxy struct {
 	bypassNets     atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
 	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache   sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
-	redirectCache  sync.Map                                     // int64(siteID) → []db.Redirect
+	redirectCache  sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
 	basicAuthCache sync.Map                                     // int64(siteID) → *basicAuthEntry; nil entry means disabled
 	transport      *http.Transport                              // shared connection pool across all reverse proxies
+	adminTransport *http.Transport                              // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
 	rpTransport    *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
 	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
 	accessLogMu    sync.Mutex                                   // guards concurrent writes to accessLog
@@ -122,6 +135,12 @@ type Config struct {
 	AdminPort   int
 	AppPath     string
 }
+
+// dummyBcryptHash is compared against when a basic-auth username is unknown, so
+// an unknown user costs the same time as a known user with a wrong password —
+// removing the username-enumeration timing oracle. Cost (12) must match the
+// basic-auth module's hashing cost so the comparison time is equivalent.
+var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("podnest-basic-auth-timing-equalizer"), 12)
 
 // basicAuthEntry holds the cached config and pre-hashed credentials for a site.
 type basicAuthEntry struct {
@@ -164,6 +183,20 @@ func New(cfg Config) *Proxy {
 			MaxIdleConnsPerHost:   20,
 			IdleConnTimeout:       90 * time.Second,
 			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
+		},
+		// admin-panel transport mirrors `transport` but omits ResponseHeaderTimeout:
+		// the panel is our own trusted upstream and long synchronous operations
+		// (site provisioning — image pulls, container starts, MariaDB readiness wait)
+		// legitimately take minutes to produce the first response byte
+		adminTransport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout: 10 * time.Second,
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 20,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 
@@ -355,7 +388,7 @@ func (p *Proxy) WarmRedirectCache(siteID int64, redirects []db.Redirect) {
 	if len(redirects) == 0 {
 		p.redirectCache.Delete(siteID)
 	} else {
-		p.redirectCache.Store(siteID, redirects)
+		p.redirectCache.Store(siteID, compileRedirects(redirects))
 	}
 	logger.Debug("proxy: redirect cache updated for siteID=%d (%d rules)", siteID, len(redirects))
 }
@@ -410,7 +443,7 @@ func (p *Proxy) warmRedirectCache() error {
 		grouped[rd.SiteID] = append(grouped[rd.SiteID], rd)
 	}
 	for siteID, rules := range grouped {
-		p.redirectCache.Store(siteID, rules)
+		p.redirectCache.Store(siteID, compileRedirects(rules))
 	}
 
 	logger.Debug("proxy: redirect cache warmed — %d total rules across %d sites", len(redirects), len(grouped))
@@ -813,23 +846,23 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// routing decisions, not subject to IP/UA/WAF filtering
 	if siteID > 0 {
 		if rules, ok := p.redirectCache.Load(siteID); ok {
-			for _, rd := range rules.([]db.Redirect) {
-				target := rd.Target
-				if re, err := regexp.Compile(rd.Source); err == nil {
-					if matches := re.FindStringSubmatch(r.URL.Path); matches != nil {
+			for _, rd := range rules.([]compiledRedirect) {
+				target := rd.target
+				if rd.re != nil {
+					if matches := rd.re.FindStringSubmatch(r.URL.Path); matches != nil {
 						for i, m := range matches[1:] {
 							target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
 						}
-						http.Redirect(w, r, target, rd.Code)
+						http.Redirect(w, r, target, rd.code)
 						dur := time.Since(start)
-						p.writeAccessLog(r, rd.Code, 0, start, dur, clientIPStr, siteID, siteName)
+						p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
 						return
 					}
 				} else {
-					if r.URL.Path == rd.Source || (rd.Source != "/" && strings.HasPrefix(r.URL.Path, rd.Source)) {
-						http.Redirect(w, r, target, rd.Code)
+					if r.URL.Path == rd.source || (rd.source != "/" && strings.HasPrefix(r.URL.Path, rd.source)) {
+						http.Redirect(w, r, target, rd.code)
 						dur := time.Since(start)
-						p.writeAccessLog(r, rd.Code, 0, start, dur, clientIPStr, siteID, siteName)
+						p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
 						return
 					}
 				}
@@ -850,7 +883,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			hash, known := entry.users[user]
-			if !known || bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil {
+			if !known {
+				// compare against a fixed dummy hash so an unknown user takes the
+				// same time as a wrong password for a known user (no timing oracle)
+				hash = string(dummyBcryptHash)
+			}
+			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil || !known {
 				w.Header().Set("WWW-Authenticate", `Basic realm="`+entry.realm+`"`)
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				dur := time.Since(start)
@@ -1024,8 +1062,18 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 		return rp.(*httputil.ReverseProxy)
 	}
 	target, _ := url.Parse(fmt.Sprintf("http://%s:%d", p.hostGateway, port))
+
+	// the admin panel is a trusted local upstream whose requests can run long
+	// (synchronous site provisioning); use the transport without a response-header
+	// timeout so the proxy does not abort those requests at the 60s site cap
+	tr := p.transport
+	if port == p.adminPort {
+		tr = p.adminTransport
+	}
+
+	// fire up the proxy
 	rp := &httputil.ReverseProxy{
-		Transport: p.transport,
+		Transport: tr,
 		// FlushInterval of -1 enables immediate flush for streaming/chunked responses;
 		// without this the proxy buffers until upstream closes, adding perceived latency
 		FlushInterval: -1,
@@ -1325,4 +1373,32 @@ func isIPBypassed(ip net.IP, bypass []*compiledIPRule) bool {
 // WarmBypassCache is the exported wrapper called by the security handler after a bypass rule change.
 func (p *Proxy) WarmBypassCache(rules []*db.BypassRule) {
 	p.warmBypassCache(rules)
+}
+
+// compileRedirects pre-compiles a slice of redirect rules so the request hot
+// path never calls regexp.Compile — removing both the per-request compile cost
+// and a per-request ReDoS surface on the user-supplied Source pattern.
+func compileRedirects(redirects []db.Redirect) []compiledRedirect {
+	out := make([]compiledRedirect, 0, len(redirects))
+	for _, rd := range redirects {
+		cr := compiledRedirect{source: rd.Source, target: rd.Target, code: rd.Code}
+		// a Source that fails to compile is matched literally at request time
+		if re, err := regexp.Compile(rd.Source); err == nil {
+			cr.re = re
+		}
+		out = append(out, cr)
+	}
+	return out
+}
+
+// ClientIP resolves the real client IP for a request using the proxy's
+// trusted-proxy ranges — the same spoof-resistant logic applied to proxied
+// site traffic. Use this anywhere the client IP must not be forgeable via
+// X-Forwarded-For (e.g. login rate limiting) instead of reading the header.
+func (p *Proxy) ClientIP(r *http.Request) string {
+	ip := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
+	if ip == nil {
+		return ""
+	}
+	return ip.String()
 }

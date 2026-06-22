@@ -24,9 +24,14 @@ var sucuriCIDRs = []string{
 	"2a02:fe80::/29",
 }
 
+// trustedProxyHTTPClient bounds every provider fetch so a hung or slow endpoint
+// cannot stall the refresher goroutine indefinitely — the bare http.Get has no
+// timeout. Response sizes are separately capped via io.LimitReader at each call site.
+var trustedProxyHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // fetchText fetches a plain-text URL and returns each non-empty line as a slice
 func fetchText(url string) ([]string, error) {
-	resp, err := http.Get(url)
+	resp, err := trustedProxyHTTPClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", url, err)
 	}
@@ -71,7 +76,7 @@ func fetchCloudflareCIDRs() ([]string, error) {
 
 // fetchFastlyCIDRs fetches the current Fastly IP ranges from their JSON endpoint
 func fetchFastlyCIDRs() ([]string, error) {
-	resp, err := http.Get("https://api.fastly.com/public-ip-list")
+	resp, err := trustedProxyHTTPClient.Get("https://api.fastly.com/public-ip-list")
 	if err != nil {
 		return nil, fmt.Errorf("fastly: GET: %w", err)
 	}
@@ -96,7 +101,7 @@ func fetchFastlyCIDRs() ([]string, error) {
 
 // fetchCloudfrontCIDRs fetches AWS IP ranges and filters for CloudFront entries
 func fetchCloudfrontCIDRs() ([]string, error) {
-	resp, err := http.Get("https://ip-ranges.amazonaws.com/ip-ranges.json")
+	resp, err := trustedProxyHTTPClient.Get("https://ip-ranges.amazonaws.com/ip-ranges.json")
 	if err != nil {
 		return nil, fmt.Errorf("cloudfront: GET: %w", err)
 	}

@@ -319,3 +319,14 @@ func (c *Client) EnsurePodmanNetwork(ctx context.Context, name string) error {
 	logger.Debug("created podman network %q", name)
 	return nil
 }
+
+// RemoveNetwork deletes the named Podman network. force=true disconnects any
+// lingering endpoints first; a 404 (already gone) surfaces as an error the
+// caller may choose to ignore.
+func (c *Client) RemoveNetwork(ctx context.Context, name string) error {
+	if err := c.delete(ctx, "/v4.0.0/libpod/networks/"+name+"?force=true"); err != nil {
+		return fmt.Errorf("remove network %q: %w", name, err)
+	}
+	logger.Debug("removed podman network %q", name)
+	return nil
+}
