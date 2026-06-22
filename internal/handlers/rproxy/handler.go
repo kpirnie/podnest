@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"podnest/internal/apiutil"
 	"podnest/internal/audit"
@@ -66,14 +67,17 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for i, rt := range routes {
-		if rt.Domain == "" {
+	for i := range routes {
+		// normalise the match host — trailing whitespace or mixed case silently
+		// fails to match the request Host and 404s the route
+		routes[i].Domain = strings.ToLower(strings.TrimSpace(routes[i].Domain))
+		if routes[i].Domain == "" {
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "route domain must not be empty")
 			return
 		}
-		if _, err := url.ParseRequestURI(rt.Upstream); err != nil || rt.Upstream == "" {
-			logger.Error("apiUpdateRPRoutes: invalid upstream '%s' at index %d: %v", rt.Upstream, i, err)
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid upstream URL: "+rt.Upstream)
+		if _, err := url.ParseRequestURI(routes[i].Upstream); err != nil || routes[i].Upstream == "" {
+			logger.Error("apiUpdateRPRoutes: invalid upstream '%s' at index %d: %v", routes[i].Upstream, i, err)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid upstream URL: "+routes[i].Upstream)
 			return
 		}
 	}

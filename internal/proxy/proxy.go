@@ -805,6 +805,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = h
 	}
 
+	// match hosts case-insensitively against stored (lowercased) domains
+	host = strings.ToLower(host)
+
 	// check if the request is for the admin domain before any cache lookups
 	p.adminMu.RLock()
 	adminDomain := p.adminDomain
