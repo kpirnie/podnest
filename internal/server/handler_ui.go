@@ -74,9 +74,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		// reject the request immediately if this IP is locked out
 		if !auth.LoginAllowed(ip) {
+
 			// record the blocked attempt before returning
 			audit.Record(models.AuditEntry{
-				IP:      auditClientIP(r),
+				IP:      ip,
 				UA:      r.Header.Get("User-Agent"),
 				Method:  r.Method,
 				Action:  "POST /login",
@@ -107,10 +108,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				logger.Error("failed to execute login.html template after failed login: %v", err)
 				http.Error(w, "template error", http.StatusInternalServerError)
 			}
-			auth.RecordFailedLogin(r)
+			auth.RecordFailedLogin(ip)
+
 			// record failed login attempt
 			audit.Record(models.AuditEntry{
-				IP:      auditClientIP(r),
+				IP:      ip,
 				UA:      r.Header.Get("User-Agent"),
 				Method:  r.Method,
 				Action:  "POST /login",
@@ -140,11 +142,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		// set the session cookie and redirect to the dashboard on success
 		logger.Debug("user '%s' logged in successfully", uname)
-		auth.RecordSuccessfulLogin(r)
+		auth.RecordSuccessfulLogin(ip)
 		// record successful login
 		audit.Record(models.AuditEntry{
 			Username: uname,
-			IP:       auditClientIP(r),
+			IP:       ip,
 			UA:       r.Header.Get("User-Agent"),
 			Method:   r.Method,
 			Action:   "POST /login",
@@ -181,6 +183,23 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case http.MethodPost:
+
+		// resolve the real client IP via the proxy's trusted-proxy logic so the
+		// per-IP lockout cannot be bypassed by spoofing X-Forwarded-For
+		ip := s.proxy.ClientIP(r)
+		if !auth.LoginAllowed(ip) {
+			audit.Record(models.AuditEntry{
+				IP:      ip,
+				UA:      r.Header.Get("User-Agent"),
+				Method:  r.Method,
+				Action:  "POST /login/totp",
+				Status:  http.StatusTooManyRequests,
+				Details: `{"event":"totp_lockout"}`,
+			})
+			http.Error(w, "too many failed attempts, please try again later", http.StatusTooManyRequests)
+			return
+		}
+
 		pendingToken := auth.TOTPPendingFromRequest(r)
 		if pendingToken == "" {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -209,6 +228,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if !auth.VerifyTOTP(user.TOTPSecret, code) {
+
 			// fall back to backup codes
 			used, _ := db.UseBackupCode(s.cfg.DB, user.ID, code)
 			if !used {
@@ -222,7 +242,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 				audit.Record(models.AuditEntry{
 					UID:      &user.ID,
 					Username: user.UName,
-					IP:       auditClientIP(r),
+					IP:       ip,
 					UA:       r.Header.Get("User-Agent"),
 					Method:   r.Method,
 					Action:   "POST /login/totp",
@@ -238,6 +258,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		// TOTP verified — consume the pending token and create a full session
 		_ = db.DeleteTOTPPending(s.cfg.DB, pendingToken)
 		auth.ClearTOTPPendingCookie(w)
+		auth.RecordSuccessfulLogin(ip)
 
 		sessionID, _, err := auth.CreateSession(s.cfg.DB, user.ID)
 		if err != nil {
@@ -251,7 +272,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		audit.Record(models.AuditEntry{
 			UID:      &user.ID,
 			Username: user.UName,
-			IP:       auditClientIP(r),
+			IP:       ip,
 			UA:       r.Header.Get("User-Agent"),
 			Method:   r.Method,
 			Action:   "POST /login/totp",
@@ -289,7 +310,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	audit.Record(models.AuditEntry{
 		UID:      uid,
 		Username: username,
-		IP:       auditClientIP(r),
+		IP:       s.auditClientIP(r),
 		UA:       r.Header.Get("User-Agent"),
 		Method:   r.Method,
 		Action:   "POST /logout",

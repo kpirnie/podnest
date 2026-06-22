@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -74,7 +73,7 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		audit.Record(models.AuditEntry{
 			UID:        uid,
 			Username:   username,
-			IP:         auditClientIP(r),
+			IP:         s.auditClientIP(r),
 			UA:         r.Header.Get("User-Agent"),
 			Method:     r.Method,
 			Action:     action,
@@ -154,18 +153,8 @@ func buildDetails(body []byte, rawQuery string) string {
 	return string(b)
 }
 
-// auditClientIP extracts the real client IP, preferring X-Forwarded-For over RemoteAddr.
-// Mirrors the logic in internal/auth/ratelimit.go clientIP().
-func auditClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if comma := strings.IndexByte(xff, ','); comma != -1 {
-			return strings.TrimSpace(xff[:comma])
-		}
-		return strings.TrimSpace(xff)
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+// auditClientIP resolves the real client IP via the proxy's trusted-proxy logic
+// so audit-log attribution cannot be spoofed through X-Forwarded-For.
+func (s *Server) auditClientIP(r *http.Request) string {
+	return s.proxy.ClientIP(r)
 }
