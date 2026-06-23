@@ -1,5 +1,15 @@
 "use strict";
 
+// escapeHtml escapes the HTML-significant characters so dynamic text can be
+// interpolated into innerHTML without markup/attribute injection
+export const escapeHtml = (s) =>
+    String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
 export const spinner = () =>
     `<div class="kp-spinner"><div uk-spinner="ratio: 1.25"></div></div>`;
 

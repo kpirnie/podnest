@@ -1,7 +1,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, hideProgressModal, showProgressModal } from '../helpers.js';
+import { confirm, escapeHtml, hideProgressModal, showProgressModal } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // renderCronsTab returns the static HTML shell for the crons tab
@@ -131,7 +131,7 @@ export async function loadCronsPanel(root, siteId) {
         const crons = await api.get(`/sites/${siteId}/crons`);
         wrap.innerHTML = renderCronList(crons);
     } catch (err) {
-        wrap.innerHTML = `<p class="kp-muted uk-text-small">Failed to load cron jobs: ${err.message}</p>`;
+        wrap.innerHTML = `<p class="kp-muted uk-text-small">Failed to load cron jobs: ${escapeHtml(err.message)}</p>`;
     }
 }
 

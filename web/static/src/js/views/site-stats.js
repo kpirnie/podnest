@@ -1,6 +1,7 @@
 "use strict";
 
 import { api } from '../api.js';
+import { escapeHtml } from "../helpers.js";
 import { toast } from '../toast.js';
 
 // holds the active Chart instance so it can be destroyed before recreating
@@ -523,7 +524,7 @@ async function openDrilldown(siteId, hour, statusClass) {
     try {
         entries = await api.get(`/sites/${siteId}/stats/drilldown?hour=${encodeURIComponent(hour)}&status=${statusClass}`);
     } catch (err) {
-        body.innerHTML = `<p class="kp-muted uk-text-small">Failed to load: ${err.message}</p>`;
+        body.innerHTML = `<p class="kp-muted uk-text-small">Failed to load: ${escapeHtml(err.message)}</p>`;
         return;
     }
 

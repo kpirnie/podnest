@@ -405,7 +405,7 @@ export function wireBackupsPanel(root, siteId) {
                     </div>`).join('');
             }
         } catch (err) {
-            sftpList.innerHTML = `<p class="kp-muted uk-text-small">Failed to list files: ${err.message}</p>`;
+            sftpList.innerHTML = `<p class="kp-muted uk-text-small">Failed to list files: ${escapeHtml(err.message)}</p>`;
         }
     });
 
