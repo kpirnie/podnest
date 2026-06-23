@@ -1885,6 +1885,14 @@ func extractTar(tr *tar.Reader, destDir string) error {
 				return fmt.Errorf("extractTar: write %s: %w", hdr.Name, err)
 			}
 			f.Close()
+		case tar.TypeSymlink, tar.TypeLink:
+			// never recreate links from an archive — a crafted backup could point
+			// one outside destDir; legitimate backups hold only dirs and reg files
+			logger.Warn("extractTar: skipping link entry %q -> %q", hdr.Name, hdr.Linkname)
+			continue
+		default:
+			logger.Warn("extractTar: skipping unsupported entry %q (type %d)", hdr.Name, hdr.Typeflag)
+			continue
 		}
 	}
 	return nil
@@ -1921,6 +1929,12 @@ func extractZip(src, destDir string) error {
 		// skip unsupported file types like symlinks for safety; only handle directories and regular files
 		if zf.FileInfo().IsDir() {
 			os.MkdirAll(target, 0755)
+			continue
+		}
+
+		// reject symlink entries — never materialise a link from an archive
+		if zf.Mode()&os.ModeSymlink != 0 {
+			logger.Warn("extractZip: skipping symlink entry %s", zf.Name)
 			continue
 		}
 
