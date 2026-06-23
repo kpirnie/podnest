@@ -1074,15 +1074,18 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 	srcDBContainer := podman.ContainerName(src.Name, "db")
 
 	var dumpStderr bytes.Buffer
-	dumpCmd := exec.CommandContext(ctx, "podman", "exec", srcDBContainer,
+	dumpCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", srcDBContainer,
 		"sh", "-c",
 		fmt.Sprintf(
-			"mysqldump -uroot -p%s --single-transaction --quick --routines %s 2>/dev/null || "+
-				"mariadb-dump -uroot -p%s --single-transaction --quick --routines %s",
-			srcRootPass, src.Name, srcRootPass, src.Name,
+			"mysqldump -uroot --single-transaction --quick --routines %s 2>/dev/null || "+
+				"mariadb-dump -uroot --single-transaction --quick --routines %s",
+			src.Name, src.Name,
 		),
 	)
-	dumpCmd.Env = podEnv
+	// capped append forces a new backing array so dump/restore envs don't alias;
+	// MYSQL_PWD via -e (name only) keeps the password out of argv on host + container
+	dumpCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+srcRootPass)
+
 	dumpCmd.Stdout = tmp
 	dumpCmd.Stderr = &dumpStderr
 	if err := dumpCmd.Run(); err != nil {
@@ -1099,14 +1102,14 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 	}
 
 	var mysqlStderr bytes.Buffer
-	mysqlCmd := exec.CommandContext(ctx, "podman", "exec", cloneDBContainer,
+	mysqlCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", cloneDBContainer,
 		"sh", "-c",
 		fmt.Sprintf(
-			"mariadb -uroot -p%s %s < /tmp/podnest-clone.sql && rm /tmp/podnest-clone.sql",
-			cloneRootPass, clone.Name,
+			"mariadb -uroot %s < /tmp/podnest-clone.sql && rm /tmp/podnest-clone.sql",
+			clone.Name,
 		),
 	)
-	mysqlCmd.Env = podEnv
+	mysqlCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+cloneRootPass)
 	mysqlCmd.Stderr = &mysqlStderr
 	if err := mysqlCmd.Run(); err != nil {
 		return fmt.Errorf("cloneDatabase: mariadb restore: %w — %s", err, mysqlStderr.String())

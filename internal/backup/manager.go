@@ -397,15 +397,17 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	// CONTAINER_HOST points the CLI at the correct socket
 	dbContainer := podman.ContainerName(site.Name, "db")
 	dumpCmd := exec.CommandContext(ctx, "podman",
-		"exec", "--user=mysql", dbContainer,
+		"exec", "--user=mysql", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
 		fmt.Sprintf(
-			"mysqldump -uroot -p%s --single-transaction --quick --routines %s 2>/dev/null || "+
-				"mariadb-dump -uroot -p%s --single-transaction --quick --routines %s",
-			rootPass, dbName, rootPass, dbName,
+			"mysqldump -uroot --single-transaction --quick --routines %s 2>/dev/null || "+
+				"mariadb-dump -uroot --single-transaction --quick --routines %s",
+			dbName, dbName,
 		),
 	)
-	dumpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	// MYSQL_PWD passed via -e (name only) so the password is in neither the host
+	// nor the container process list (it lives only in this command's env)
+	dumpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
 
 	// capture dump stderr for error reporting
 	var dumpStderr bytes.Buffer
@@ -604,11 +606,12 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 
 	// run mysql inside the container redirected from the copied file
 	mysqlCmd := exec.CommandContext(ctx, "podman",
-		"exec", dbContainer,
+		"exec", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
-		fmt.Sprintf("mariadb -uroot -p%s %s < /tmp/podnest-restore.sql && rm /tmp/podnest-restore.sql", rootPass, dbName),
+		fmt.Sprintf("mariadb -uroot %s < /tmp/podnest-restore.sql && rm /tmp/podnest-restore.sql", dbName),
 	)
-	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
 	var mysqlStderr bytes.Buffer
 	mysqlCmd.Stderr = &mysqlStderr
 	if err := mysqlCmd.Run(); err != nil {
@@ -2049,11 +2052,12 @@ func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, sit
 
 	// run the import inside the container
 	mysqlCmd := exec.CommandContext(ctx, "podman",
-		"exec", dbContainer,
+		"exec", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
-		fmt.Sprintf("mariadb -uroot -p%s %s < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql", rootPass, dbName),
+		fmt.Sprintf("mariadb -uroot %s < /tmp/podnest-import.sql && rm /tmp/podnest-import.sql", dbName),
 	)
-	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
 	var mysqlStderr bytes.Buffer
 	mysqlCmd.Stderr = &mysqlStderr
 	if err := mysqlCmd.Run(); err != nil {
