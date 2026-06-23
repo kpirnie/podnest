@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -35,10 +36,14 @@ func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
 	for _, r := range routes {
 		parsed, err := url.Parse(r.upstream)
 		if err != nil {
-			logger.Error("upstream: failed to parse upstream URL '%s': %v", r.upstream, err)
-			return nil, err
+			// skip the bad upstream but keep the rest of the pool alive
+			logger.Error("upstream: skipping unparseable upstream '%s': %v", r.upstream, err)
+			continue
 		}
 		pool.targets = append(pool.targets, UpstreamTarget{URL: parsed, PassHost: r.passHost})
+	}
+	if len(pool.targets) == 0 {
+		return nil, fmt.Errorf("no valid upstreams in pool")
 	}
 	return pool, nil
 }
