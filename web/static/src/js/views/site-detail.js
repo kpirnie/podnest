@@ -266,8 +266,8 @@ function renderRoutesTab() {
 function renderRouteRow(domain = "", upstream = "", passHost = false) {
     return `
         <div class="rp-route-row uk-flex uk-flex-middle uk-margin-small-bottom" style="gap:8px">
-            <input class="uk-input kp-input" style="flex:1" placeholder="HOST: example.com" value="${domain}" data-field="domain">
-            <input class="uk-input kp-input" style="flex:2" placeholder="UPSTREAM: https://10.0.0.1:8080" value="${upstream}" data-field="upstream">
+            <span>Host:</span><input class="uk-input kp-input" style="flex:1" placeholder="example.com" value="${domain}" data-field="domain">
+            <span>Upstream:</span><input class="uk-input kp-input" style="flex:2" placeholder="https://10.0.0.1:8080" value="${upstream}" data-field="upstream">
             <label style="white-space:nowrap;font-size:0.75rem;color:var(--kp-text-dim)" title="Send incoming domain as Host header instead of upstream hostname">
                 <input type="checkbox" class="uk-checkbox" data-field="pass_host" ${passHost ? "checked" : ""}> Pass Host
             </label>
