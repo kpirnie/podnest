@@ -547,10 +547,15 @@ export async function viewSiteDetail(root, { id }) {
     wireWAFTab(root, id);
     loadWAFTab(id);
 
-    // reverse proxy sites only need route management — skip all pod wiring
+    // reverse proxy sites only need route management — skip all pod wiring,
+    // but stats (from the per-site access.log) and basic auth still apply
     if (isRP) {
         wireRoutesTab(root, id);
         loadRoutesTab(id); // populate existing routes on load
+        wireStatsTab(root, id, site.SiteType);
+        loadStatsTab(id, site.SiteType);
+        wireBasicAuthTab(root, id);
+        loadBasicAuthTab(id);
         initPillTabs(root); // wire pill nav for RP sites
         return;
     }
@@ -610,6 +615,7 @@ export async function viewSiteDetail(root, { id }) {
         });
     });
 
+    // wire up everything
     wireConfigTabs(root, id);
     wireDomainActions(root, id);
     if (site.SiteType === 1) wireWPCLITab(root, id);
@@ -619,12 +625,11 @@ export async function viewSiteDetail(root, { id }) {
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
     wireRedirectsTab(root, id);
     loadRedirectsTab(id);
+    wireHealthBadges(root, id);
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
-    wireHealthBadges(root, id);
     initPillTabs(root);
     wireBasicAuthTab(root, id);
     loadBasicAuthTab(id);
-    // trigger ssl checks for all domains after the overview tab renders
     loadAllDomainSSL(domains ?? []);
 }

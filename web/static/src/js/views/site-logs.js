@@ -19,7 +19,7 @@ export function renderLogsTab(siteId, siteType) {
 
     // RP sites expose only the WAF log; all other types expose container streams
     const containerOptions = isRP
-        ? `<option value="proxy">Proxy Log</option><option value="waf">WAF Log</option>`
+        ? `<option value="access">Access Log</option><option value="waf">WAF Log</option>`
         : `<option value="access">Access</option>
             <option value="nginx">Nginx</option>
                     ${runtimeOption()}
