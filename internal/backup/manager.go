@@ -1821,8 +1821,13 @@ func extractTarGz(src, destDir string) error {
 // extractTarXz extracts a .tar.xz archive into destDir via the xz binary
 func extractTarXz(src, destDir string) error {
 
+	// bound the decompress so a malformed or oversized .tar.xz cannot hang the
+	// restore indefinitely
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
 	// decompress via xz CLI, pipe stdout into the tar reader
-	xzCmd := exec.Command("xz", "-d", "-c", src)
+	xzCmd := exec.CommandContext(ctx, "xz", "-d", "-c", src)
 	pr, err := xzCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("extractTarXz: stdout pipe: %w", err)
