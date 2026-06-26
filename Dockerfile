@@ -26,11 +26,11 @@ RUN CGO_ENABLED=1 GOOS=linux go build \
 FROM docker.io/library/alpine:latest
 
 # Metadata labels
-LABEL maintainer="Kevin Pirnie <support@podne.st>"
+LABEL maintainer="Kevin Pirnie <iam@kevinpirnie.com>"
 LABEL description="A hardened, high-performance web hosting pod manager built on Podman. Provision and manage isolated, production-ready site pods from a single web-based management UI."
-LABEL org.opencontainers.image.authors="Kevin Pirnie <support@podne.st>"
-LABEL org.opencontainers.image.vendor="PodNest ~ Kevin Pirnie"
-LABEL org.opencontainers.image.url="https://podne.st/"
+LABEL org.opencontainers.image.authors="Kevin Pirnie <iam@kevinpirnie.com>"
+LABEL org.opencontainers.image.vendor="PodNest - Kevin Pirnie"
+LABEL org.opencontainers.image.url="https://podnest.us/"
 LABEL org.opencontainers.image.source="https://github.com/kpirnie/podnest"
 LABEL org.opencontainers.image.licenses="MIT"
 

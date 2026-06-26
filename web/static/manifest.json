@@ -8,18 +8,18 @@
     "theme_color": "#070e20",
     "icons": [
         {
-            "src": "https://cdn.kcp.im/logos/podnest.svg",
+            "src": "https://c.pdn.st/logos/podnest.svg",
             "sizes": "any",
             "type": "image/svg+xml"
         },
         {
-            "src": "https://cdn.kcp.im/logos/podnest.png",
+            "src": "https://c.pdn.st/logos/podnest.png",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "any maskable"
         },
         {
-            "src": "https://cdn.kcp.im/logos/podnest.png",
+            "src": "https://c.pdn.st/logos/podnest.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any maskable"

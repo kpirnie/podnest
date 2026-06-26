@@ -1,8 +1,6 @@
-// @title Web Pod by Kevin Pirnie
-// @version 1.0
-// @description A web based control panel for managing your podman based websites
-// @contact.name Kevin Pirnie
-// @contact.email iam@kevinpirnie.com
+// PodNest - Self-hosted site management platform
+// Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com>
+// Licensed under the MIT License. See LICENSE file in the project root for full license text.
 
 package main
 

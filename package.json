@@ -1,11 +1,11 @@
 {
-  "name": "podnest-ui",
-  "version": "1.0.0",
+  "name": "podnest",
+  "version": "1.27.49",
   "private": true,
   "scripts": {
     "build": "npm run build:css && npm run build:js",
     "build:css": "postcss web/static/src/css/index.css -o web/static/css/app.css --no-map",
-    "build:js": "esbuild web/static/src/js/app.js --bundle --minify --outfile=web/static/js/app.js",
+    "build:js": "esbuild web/static/src/js/app.js --bundle --minify --banner:js=\"/*! PodNest - Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com> | MIT License */\" --outfile=web/static/js/app.js",
     "watch": "npm run watch:css & npm run watch:js",
     "watch:css": "postcss web/static/src/css/index.css -o web/static/css/app.css --watch --no-map",
     "watch:js": "esbuild web/static/src/js/app.js --bundle --outfile=web/static/js/app.js --watch"
@@ -15,10 +15,14 @@
     "esbuild": "^0.28.1",
     "npm": "^11.17.0",
     "postcss": "^8.5.15",
+    "postcss-banner": "^4.0.0",
     "postcss-cli": "^11.0.1",
     "postcss-import": "^16.1.1"
   },
   "allowScripts": {
     "esbuild@0.28.1": true
+  },
+  "dependencies": {
+    "n": "^10.2.0"
   }
 }
