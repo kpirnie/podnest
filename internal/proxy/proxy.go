@@ -852,14 +852,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			for _, rd := range rules.([]compiledRedirect) {
 				target := rd.target
 				if rd.re != nil {
-					if matches := rd.re.FindStringSubmatch(r.URL.Path); matches != nil {
-						for i, m := range matches[1:] {
-							target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
+					// match the path first, then host+path — lets host-aware
+					// rules (canonical-domain redirects) work without breaking
+					// existing path-only patterns. Host has no port on 80/443.
+					for _, candidate := range []string{r.URL.Path, r.Host + r.URL.Path} {
+						if matches := rd.re.FindStringSubmatch(candidate); matches != nil {
+							for i, m := range matches[1:] {
+								target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
+							}
+							http.Redirect(w, r, target, rd.code)
+							dur := time.Since(start)
+							p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
+							return
 						}
-						http.Redirect(w, r, target, rd.code)
-						dur := time.Since(start)
-						p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
-						return
 					}
 				} else {
 					if r.URL.Path == rd.source || (rd.source != "/" && strings.HasPrefix(r.URL.Path, rd.source)) {
