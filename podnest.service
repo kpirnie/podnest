@@ -6,9 +6,9 @@ Requires=podman.socket
 [Service]
 Restart=always
 RestartSec=5
-TimeoutStartSec=60
+Environment=GODEBUG=netdns=cgo
 ExecStartPre=-/usr/bin/podman rm -f podnest
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do [ -S /run/podman/podman.sock ] && exit 0; sleep 1; done; exit 1'
+ExecStartPre=/bin/bash -c 'systemctl start podman.socket; until [ -S /run/podman/podman.sock ]; do sleep 1; done'
 ExecStart=/usr/bin/podman run \
     --name podnest \
     --hostname podnest \
@@ -17,7 +17,7 @@ ExecStart=/usr/bin/podman run \
     -v /home/sites:/opt/podnest:z \
     --tmpfs /tmp \
     -e TZ=America/New_York \
-    -e LOG_LEVEL=INFO \
+    -e LOG_LEVEL=DEBUG \
     ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 9000 --socket /run/podman/podman.sock
 ExecStop=/usr/bin/podman stop podnest
 
