@@ -17,6 +17,7 @@ import (
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/basicauth"
 	"podnest/internal/modules/features/crons"
+	"podnest/internal/modules/features/files"
 	sftpfeature "podnest/internal/modules/features/sftp"
 	"podnest/internal/modules/features/stats"
 	"podnest/internal/modules/features/waf"
@@ -165,6 +166,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(basicauth.Module{
 		DB:         database,
 		WarmCaches: srv.WarmCaches,
+	})
+
+	// register the file manager module
+	modules.RegisterFeature(files.Module{
+		Podman: podman.New(podmanSock),
+		SFTP:   sftpMgr,
 	})
 
 	// log that the server is started and on which port

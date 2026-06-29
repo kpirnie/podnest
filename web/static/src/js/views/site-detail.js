@@ -13,6 +13,7 @@ import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-bac
 import { loadBasicAuthTab, renderBasicAuthTab, wireBasicAuthTab } from './site-basicauth.js';
 import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
 import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
+import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-redirects.js';
@@ -510,7 +511,8 @@ export async function viewSiteDetail(root, { id }) {
                     ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 11 : 10}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
                     <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
                     ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
-                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>                
+                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
+                    <a href="#" data-switcher="files"><span uk-icon="icon: folder; ratio: 0.85"></span> Files</a>
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -534,6 +536,7 @@ export async function viewSiteDetail(root, { id }) {
             <li>${renderBackupsTab(id)}</li>
             ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
             <li>${renderRedirectsTab()}</li>
+            <li>${renderFilesTab(id)}</li>
         </ul>`}`;
 
     document.getElementById("sd-back").addEventListener("click", () => router.go("sites"));
@@ -629,6 +632,14 @@ export async function viewSiteDetail(root, { id }) {
     if (showCrons) { wireCronsPanel(root, id); loadCronsPanel(root, id); }
     wireRedirectsTab(root, id);
     loadRedirectsTab(id);
+
+    // resolve the Files dropdown index to the appended panel's position, then wire it
+    const _fmSwitcher = root.querySelector("#kp-site-switcher");
+    const _fmLink = root.querySelector('a[data-switcher="files"]');
+    if (_fmSwitcher && _fmLink) _fmLink.dataset.switcher = String(_fmSwitcher.children.length - 1);
+    wireFilesTab(root, id);
+    loadFilesPanel(id);
+
     wireHealthBadges(root, id);
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
