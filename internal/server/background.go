@@ -13,11 +13,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"podnest/internal/auth"
@@ -152,7 +154,7 @@ func (s *Server) permissionReaper() {
 
 			os.Chown(siteDir, 0, 0)
 			os.Chmod(siteDir, 0755)
-			os.Chown(siteDir+"/html", sftpUID, sftpUID)
+			chownTreeTo(siteDir+"/html", sftpUID)
 			os.Chmod(siteDir+"/html", 02775)
 			os.Chown(siteDir+"/nginx", sftpUID, sftpUID)
 			os.Chmod(siteDir+"/nginx", 0755)
@@ -172,7 +174,7 @@ func (s *Server) permissionReaper() {
 	}
 
 	fix()
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
 		fix()
@@ -649,4 +651,30 @@ func (s *Server) mariadbUpgradeChecker() {
 	for range ticker.C {
 		run()
 	}
+}
+
+// chownTreeTo recursively forces ownership of root and everything beneath it to
+// uid:uid, skipping any entry already correct so the common (no-drift) case costs
+// only stat calls, not chowns. Symlinks are changed with Lchown so a stray link
+// is never followed out of the tree. This is the polled equivalent of an inotify
+// chown watcher: php-fpm and the file manager both run as the site UID, so this
+// only ever has work to do after a foreign-uid writer (restore, clone, import).
+func chownTreeTo(root string, uid int) {
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable entry — skip, don't abort the walk
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if ok && int(st.Uid) == uid && int(st.Gid) == uid {
+			return nil // already correct — no syscall needed
+		}
+		if err := os.Lchown(path, uid, uid); err != nil {
+			logger.Debug("chownTreeTo: %s: %v", path, err)
+		}
+		return nil
+	})
 }

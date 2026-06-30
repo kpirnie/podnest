@@ -41,7 +41,7 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 	if err := os.Chmod(dir, 0755); err != nil {
 		logger.Warn("could not chmod site dir: %v", err)
 	}
-	if err := os.Chown(dir+"/html", 33, cfg.SiteUID); err != nil {
+	if err := os.Chown(dir+"/html", cfg.SiteUID, cfg.SiteUID); err != nil {
 		logger.Warn("could not chown html: %v", err)
 	}
 	if err := os.Chmod(dir+"/html", 02775); err != nil {
