@@ -132,6 +132,19 @@ func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) 
 		return "", err
 	}
 
+	// if the pod already exists, reuse it in place rather than failing — this lets
+	// recreate refresh container images without tearing down the pod, its netns, or
+	// its published ports, minimizing downtime during an image update
+	if exists, _ := c.PodExists(ctx, name); exists {
+		inspect, err := c.InspectPod(ctx, name)
+		if err != nil {
+			logger.Error("failed to inspect existing pod %s for reuse: %v", name, err)
+			return "", err
+		}
+		logger.Debug("pod %s already exists — reusing ID %s", name, inspect.ID)
+		return inspect.ID, nil
+	}
+
 	// create the pod with the specified name and port mappings; the infra
 	// container's netns must be bridge mode for the custom network to attach —
 	// rootless Podman otherwise defaults to pasta/slirp4netns and rejects it
@@ -251,6 +264,16 @@ func (c *Client) PodExists(ctx context.Context, name string) (bool, error) {
 // CreateContainer creates a container within an existing pod
 func (c *Client) CreateContainer(ctx context.Context, spec ContainerSpec) (string, error) {
 
+	// replace any pre-existing container of the same name so creation doubles as an
+	// in-place image update: stop and remove the old container, then create the new
+	// one from the freshly pulled image (no-op on a clean create where none exists)
+	if exists, _ := c.ContainerExists(ctx, spec.Name); exists {
+		if err := c.RemoveContainer(ctx, spec.Name); err != nil {
+			logger.Error("failed to remove existing container %s before recreate: %v", spec.Name, err)
+			return "", err
+		}
+	}
+
 	// hold the response from the container creation endpoint, which will contain the new container's ID
 	var resp ContainerCreateResponse
 
@@ -279,6 +302,22 @@ func (c *Client) StartContainer(ctx context.Context, name string) error {
 
 	// log the successful start of the container with its name and return nil to indicate success
 	logger.Debug("started container %s", name)
+	return nil
+}
+
+// RemoveContainer force-removes a single container by name or ID; force=true
+// gracefully stops the container (honoring its stop timeout) before removal, so
+// it doubles as the stop+rm step of an in-place image update
+func (c *Client) RemoveContainer(ctx context.Context, name string) error {
+
+	// send the request to force-remove the container and handle any errors that occur
+	if err := c.delete(ctx, "/v4.0.0/libpod/containers/"+name+"?force=true"); err != nil {
+		logger.Error("failed to remove container %s: %v", name, err)
+		return err
+	}
+
+	// log the successful removal of the container with its name and return nil to indicate success
+	logger.Debug("removed container %s", name)
 	return nil
 }
 
@@ -429,6 +468,28 @@ func (c *Client) PruneOrphanedPods(ctx context.Context) error {
 	// log the completion of the prune operation for orphaned pods and return nil to indicate success
 	logger.Debug("pruned orphaned pods")
 	return nil
+}
+
+// PruneImages removes dangling (untagged) images from the local store —
+// the API equivalent of `podman image prune -f`. Returns the number of
+// images reclaimed so callers can log the result.
+func (c *Client) PruneImages(ctx context.Context) (int, error) {
+
+	// send the prune request to the libpod images prune endpoint; with no
+	// filters supplied the daemon removes only dangling images, matching the
+	// default `podman image prune` behavior, and decode the list of removed
+	// images so we can report how many were reclaimed
+	var pruned []struct {
+		Id string `json:"Id"`
+	}
+	if err := c.post(ctx, "/v4.0.0/libpod/images/prune", nil, &pruned); err != nil {
+		logger.Error("failed to prune dangling images: %v", err)
+		return 0, err
+	}
+
+	// log the completion of the prune operation with the count of reclaimed images and return that count to the caller
+	logger.Debug("pruned %d dangling image(s)", len(pruned))
+	return len(pruned), nil
 }
 
 // FlushPHPCache clears the OPcache by executing opcache_reset() inside the PHP container

@@ -114,11 +114,17 @@ document.addEventListener("kp:bulk-action", async (e) => {
     const { action, ids } = e.detail;
     if (!ids.length) return;
 
-    const labels = { start: "Starting", stop: "Stopping", restart: "Restarting", flush: "Flushing Caches" };
-    showProgressModal(`${labels[action]} ${ids.length} Site${ids.length !== 1 ? "s" : ""}`, "Please wait...");
+    const labels = { start: "Starting", stop: "Stopping", restart: "Restarting", flush: "Flushing Caches", recreate: "Recreating" };
+
+    // recreate is destructive and slow — its own note, a long per-call ceiling, and a
+    // prune flag so the server sweeps dangling images at the tail of each rebuild
+    const message = action === "recreate" ? "Please hold while we update your Pods" : "Please wait...";
+    const body    = action === "recreate" ? { prune: true } : undefined;
+    const timeout = action === "recreate" ? 20 * 60 * 1000 : undefined;
+    showProgressModal(`${labels[action]} ${ids.length} Site${ids.length !== 1 ? "s" : ""}`, message);
 
     const results = await Promise.allSettled(
-        ids.map(id => api.post(`/sites/${id}/${action}`))
+        ids.map(id => api.post(`/sites/${id}/${action}`, body, timeout))
     );
 
     hideProgressModal();
@@ -130,7 +136,7 @@ document.addEventListener("kp:bulk-action", async (e) => {
         toast.error(`${failed} of ${ids.length} sites failed — check logs`);
     }
 
-    if (["start", "stop", "restart"].includes(action)) router.go("sites");
+    if (["start", "stop", "restart", "recreate"].includes(action)) router.go("sites");
 });
 
 /* -- helpers --------------------------------------------------------------- */

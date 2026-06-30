@@ -35,7 +35,7 @@ Each pod is provisioned with nginx as the reverse proxy and optionally Varnish a
 | .NET | .NET 8.0, 9.0, 10.0 |
 | Reverse Proxy | Routes to an upstream URL — no pod provisioned |
 
-All sites share a single global SFTP container for file management. A global Fail2Ban container monitors SFTP access and automatically bans IPs that repeatedly fail authentication.
+All sites share a single global SFTP container for file management. The same container also backs a per-site web file manager — browse, upload, download, in-browser text editing, and permission changes scoped to each site's `html` directory, performed as the site's own user. A global Fail2Ban container monitors SFTP access and automatically bans IPs that repeatedly fail authentication.
 
 The recommended and fully supported deployment method is as a container. The binary option is available for those who prefer to compile and run it directly.
 

@@ -95,6 +95,16 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     align-items: center;
     gap: 8px;
 }
+.kp-btn-recreate {
+    background: rgba(255,69,96,0.1) !important;
+    border:1px solid rgba(255,69,96,0.3) !important;
+    color: var(--kp-danger) !important;
+}
+.kp-btn-recreate:hover {
+    background: rgba(255,69,96,0.18) !important;
+    border-color: var(--kp-danger) !important;
+    box-shadow: 0 0 16px rgba(255,69,96,0.3) !important;
+}
 .kp-btn-danger:hover {
     opacity: 0.88;
     color: var(--kp-white);
@@ -158,4 +168,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     height: 18px;
     min-width: 18px;
     min-height: 18px;
+}
+.kp-vert-sep{
+    width:1px;height:24px;background:var(--kp-border);margin:0 4px;flex-shrink:0;
 }

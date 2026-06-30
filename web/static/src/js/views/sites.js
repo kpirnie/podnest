@@ -24,17 +24,22 @@ export async function viewSites(root) {
             <div class="kp-bulk-actions">
                 <span id="sites-bulk-count" class="kp-bulk-count">0 selected</span>
                 <!-- desktop: individual buttons (hidden on mobile) -->
-                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-start" disabled>
-                    <span uk-icon="play"></span> Start
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-start" uk-tooltip="Start the Pod(s)" disabled>
+                    <span uk-icon="play"></span>
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-stop" disabled>
-                    <span uk-icon="ban"></span> Stop
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-stop" uk-tooltip="Stop the Pod(s)" disabled>
+                    <span uk-icon="ban"></span>
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-restart" disabled>
-                    <span uk-icon="refresh"></span> Restart
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-restart" uk-tooltip="Restart the Pod(s)" disabled>
+                    <span uk-icon="refresh"></span>
                 </button>
-                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-flush" disabled>
-                    <span uk-icon="bolt"></span> Flush Caches
+                <button class="uk-button kp-btn-secondary kp-btn-sm uk-visible@s" id="bulk-flush" uk-tooltip="Flush the Pod Cache(s)" disabled>
+                    <span uk-icon="bolt"></span>
+                </button>
+                <!-- separator + dangerous bulk action -->
+                <span class="uk-visible@s kp-vert-sep" aria-hidden="true"></span>
+                <button class="uk-button kp-btn-danger kp-btn-recreate kp-btn-sm uk-visible@s" id="bulk-recreate" uk-tooltip="Recreate the Pod(s)" disabled>
+                    <span uk-icon="cloud-download"></span>
                 </button>
                 <!-- mobile: actions dropdown (hidden on desktop), mirrors Manage dropdown -->
                 <li id="kp-bulk-mobile-pill" class="uk-hidden@s" style="position:relative;list-style:none">
@@ -46,6 +51,7 @@ export async function viewSites(root) {
                         <a href="#" id="bulk-mobile-stop"><span uk-icon="icon: ban; ratio: 0.85"></span> Stop</a>
                         <a href="#" id="bulk-mobile-restart"><span uk-icon="icon: refresh; ratio: 0.85"></span> Restart</a>
                         <a href="#" id="bulk-mobile-flush"><span uk-icon="icon: bolt; ratio: 0.85"></span> Flush Caches</a>
+                        <a href="#" id="bulk-mobile-recreate"><span uk-icon="icon: cloud-download; ratio: 0.85"></span> Recreate</a>
                     </div>
                 </li>
             </div>
@@ -164,7 +170,7 @@ export function siteRow(site, allSites = []) {
                             uk-tooltip="Flush Caches">
                         <span uk-icon="icon: bolt;"></span>
                     </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm"
+                    <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
                             data-action="recreate" data-id="${site.ID}"
                             uk-tooltip="Recreate Pod">
                         <span uk-icon="icon: history;"></span>
@@ -180,7 +186,7 @@ export function siteRow(site, allSites = []) {
                             uk-tooltip="Edit">
                         <span uk-icon="icon: pencil;"></span>
                     </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm"
+                    <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
                             data-action="delete" data-id="${site.ID}"
                             uk-tooltip="Delete">
                         <span uk-icon="icon: trash;"></span>
@@ -250,7 +256,7 @@ function wireBulkSelection() {
         countEl.textContent = `${n} selected`;
 
         // sync desktop buttons
-        ["bulk-start","bulk-stop","bulk-restart","bulk-flush"].forEach(id => {
+        ["bulk-start","bulk-stop","bulk-restart","bulk-flush","bulk-recreate"].forEach(id => {
             const btn = document.getElementById(id);
             if (btn) btn.disabled = n === 0;
         });
@@ -326,7 +332,7 @@ function wireBulkSelection() {
     });
 
     // desktop button clicks
-    ["bulk-start","bulk-stop","bulk-restart","bulk-flush"].forEach(action => {
+    ["bulk-start","bulk-stop","bulk-restart","bulk-flush","bulk-recreate"].forEach(action => {
         const btnId = action.replace("bulk-","");
         document.getElementById(action)?.addEventListener("click", () => {
             const ids = getChecked().map(cb => cb.dataset.siteId);
@@ -348,7 +354,7 @@ function wireBulkSelection() {
     }, { capture: true });
 
     // mobile dropdown item clicks
-    ["start","stop","restart","flush"].forEach(action => {
+    ["start","stop","restart","flush","recreate"].forEach(action => {
         document.getElementById(`bulk-mobile-${action}`)?.addEventListener("click", (e) => {
             e.preventDefault();
             mobileDropdown.hidden = true;

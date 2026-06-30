@@ -45,6 +45,7 @@ type SitesPodman interface {
 	SiteStatus(ctx context.Context, siteName string) (*podman.PodInspect, error)
 	FlushPHPCache(ctx context.Context, containerName string) error
 	FlushRedisCache(ctx context.Context, containerName, password string) error
+	PruneImages(ctx context.Context) (int, error)
 }
 
 // SitesProxy is the subset of proxy.Proxy consumed by this handler.
@@ -88,6 +89,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /sites/{id}/flush", h.apiSiteFlush)
 	api.HandleFunc("GET /sites/{id}/status", h.apiSiteStatus)
 	api.HandleFunc("POST /sites/{id}/recreate", h.apiSiteRecreate)
+	api.HandleFunc("POST /sites/prune-images", h.apiPruneImages)
 	api.HandleFunc("POST /sites/{id}/clone", h.apiSiteClone)
 }
 
@@ -695,19 +697,13 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 
 	var recreateReq struct {
 		InstallWordPress *bool `json:"install_wordpress"`
+		Prune            bool  `json:"prune"`
 	}
 	json.NewDecoder(r.Body).Decode(&recreateReq) //nolint — body is optional
 
 	siteDir := h.sitesBase() + "/" + site.Name
 	hostSiteDir := h.hostSitesBase() + "/" + site.Name
 	bgCtx := context.Background()
-
-	if err := h.Podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
-		logger.Warn("stop pod %s: %v", site.Name, err)
-	}
-	if err := h.Podman.RemoveSitePod(bgCtx, site.Name); err != nil {
-		logger.Warn("remove pod %s: %v", site.Name, err)
-	}
 
 	// pull fresh images — skips if already up to date
 	for _, img := range modules.TypeModule(site.SiteType).Images(site) {
@@ -793,8 +789,40 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	// run mariadb-upgrade if the DB version has changed
 	go h.maybeUpgradeMariaDB(r.Context(), site)
 
+	// prune dangling images left behind by the refreshed pod — runs only when the
+	// caller opted in (bulk recreate) and only here, after the pod is confirmed
+	// running, so cleanup can never race ahead of the rebuild even if the client
+	// connection has already dropped
+	if recreateReq.Prune {
+		if _, err := h.Podman.PruneImages(bgCtx); err != nil {
+			logger.Warn("recreate: image prune failed for site %s: %v", site.Name, err)
+		}
+	}
+
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
+}
+
+// apiPruneImages removes dangling images from the host store — the cleanup
+// step run after a bulk recreate so superseded image layers don't accumulate.
+func (h *Handler) apiPruneImages(w http.ResponseWriter, r *http.Request) {
+
+	// run the prune against a bounded background context so a client
+	// disconnect mid-request can't cancel the cleanup partway through
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// prune dangling images and surface any failure to the caller, otherwise return the count of reclaimed images
+	count, err := h.Podman.PruneImages(ctx)
+	if err != nil {
+		logger.Error("failed to prune dangling images: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// log and return the number of images reclaimed
+	logger.Debug("pruned %d dangling image(s) via api", count)
+	apiutil.JSON(w, http.StatusOK, map[string]int{"pruned": count})
 }
 
 func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
