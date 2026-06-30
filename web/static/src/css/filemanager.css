@@ -1,0 +1,68 @@
+/*
+PodNest - Self-hosted site management platform
+Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com>
+Licensed under the MIT License. See LICENSE file in the project root for full license text.
+*/
+
+/* row action icons — transparent, themed, no default button chrome */
+.kp-fm-act {
+    background: transparent;
+    border: none;
+    color: var(--kp-text-dim);
+    padding: 4px 6px;
+    margin: 0;
+    cursor: pointer;
+    border-radius: var(--kp-radius);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    text-decoration: none;
+    transition: color var(--kp-transition), background var(--kp-transition);
+}
+.kp-fm-act:hover {
+    color: var(--kp-cyan);
+    background: var(--kp-cyan-dim);
+}
+.kp-fm-act.fm-delete:hover {
+    color: var(--kp-danger);
+    background: rgba(255, 69, 96, 0.12);
+}
+.kp-fm-act [uk-icon] svg {
+    width: 17px;
+    height: 17px;
+}
+
+/* breadcrumb trail */
+.kp-fm-breadcrumb a {
+    color: var(--kp-text-dim);
+    text-decoration: none;
+}
+.kp-fm-breadcrumb a:hover { color: var(--kp-blue); }
+.kp-fm-sep { color: var(--kp-border-bright); margin: 0 4px; }
+
+/* listing name cells */
+.kp-fm-name a {
+    color: var(--kp-text);
+    text-decoration: none;
+}
+.kp-fm-name a:hover { color: var(--kp-blue); }
+.kp-fm-table td,
+.kp-fm-table th { vertical-align: middle; }
+
+/* editor modal — give CodeMirror a real height so lines stop collapsing on
+   top of one another, and a legible mono font/size on the dark theme */
+.kp-fm-editor-dialog {
+    width: 1100px;
+    max-width: 95vw;
+}
+.kp-fm-editor-body {
+    padding: 0;
+}
+.kp-fm-editor-body .CodeMirror {
+    height: 65vh;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    border-radius: 0 0 var(--kp-radius-lg) var(--kp-radius-lg);
+}

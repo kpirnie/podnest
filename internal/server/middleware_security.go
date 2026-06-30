@@ -37,7 +37,7 @@ func buildCSP(nonce string) string {
 		"script-src 'self' https://cdn.jsdelivr.net 'nonce-" + nonce + "'; " +
 		"style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; " +
 		"font-src 'self' https://fonts.gstatic.com; " +
-		"img-src 'self' https://cdn.kcp.im data: blob:; " +
+		"img-src 'self' https://c.pdn.st data: blob:; " +
 		"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
 		"manifest-src 'self'; " +
 		"frame-src 'none'; " +

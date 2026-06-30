@@ -71,16 +71,40 @@ function join(dir, name) {
     return dir ? dir + "/" + name : name;
 }
 
+
+// EDITABLE lists extensions (and bare dotfile names) the text editor accepts.
+// Anything not listed shows no pencil — download only.
+const EDITABLE = new Set([
+    "php", "js", "jsx", "ts", "tsx", "css", "scss", "sass", "less",
+    "html", "htm", "xml", "json", "txt", "md", "markdown", "yml", "yaml",
+    "ini", "conf", "cnf", "toml", "env", "sh", "bash", "sql", "log",
+    "csv", "tsv", "svg", "htaccess", "gitignore", "lock", "map",
+]);
+
+// isEditable reports whether a file should offer the in-browser text editor
+function isEditable(name, isDir) {
+    if (isDir) return false;
+    const dot = name.lastIndexOf(".");
+    // leading-dot files (.htaccess, .env) — match on the part after the dot
+    if (name.startsWith(".") && dot === 0) return EDITABLE.has(name.slice(1).toLowerCase());
+    return dot >= 0 && EDITABLE.has(name.slice(dot + 1).toLowerCase());
+}
+
 // renderRows builds the listing table body from the entries array
 function renderRows(entries) {
     if (!entries || !entries.length) return emptyState("folder", "This folder is empty");
 
+    const siteId = document.getElementById("fm-root").dataset.site;
+
     const rows = entries.map(e => {
         const rel = join(_cwd, e.name);
         const isDir = e.is_dir;
+        const editable = isEditable(e.name, isDir);
+
+        // only directories are clickable in the name cell; files are inert text
         const nameCell = isDir
             ? `<a href="#" class="fm-nav" data-path="${escapeHtml(rel)}"><span uk-icon="icon: ${entryIcon(e.type)}; ratio: 0.9"></span> ${escapeHtml(e.name)}</a>`
-            : `<a href="#" class="fm-edit" data-path="${escapeHtml(rel)}"><span uk-icon="icon: ${entryIcon(e.type)}; ratio: 0.9"></span> ${escapeHtml(e.name)}</a>`;
+            : `<span><span uk-icon="icon: ${entryIcon(e.type)}; ratio: 0.9"></span> ${escapeHtml(e.name)}</span>`;
 
         return `
             <tr data-path="${escapeHtml(rel)}" data-name="${escapeHtml(e.name)}" data-dir="${isDir ? 1 : 0}" data-mode="${escapeHtml(e.mode)}">
@@ -89,9 +113,10 @@ function renderRows(entries) {
                 <td><code class="kp-mono">${escapeHtml(e.mode)}</code></td>
                 <td class="uk-text-nowrap uk-text-small kp-muted">${fmtDate(e.mod_time)}</td>
                 <td class="uk-text-right uk-text-nowrap">
-                    ${isDir ? "" : `<a class="kp-fm-act fm-download" href="/api/sites/${document.getElementById("fm-root").dataset.site}/files/download?path=${encodeURIComponent(rel)}" uk-tooltip="Download"><span uk-icon="icon: download; ratio: 0.85"></span></a>`}
+                    ${editable ? `<button class="kp-fm-act fm-edit" data-path="${escapeHtml(rel)}" uk-tooltip="Edit"><span uk-icon="icon: pencil; ratio: 0.85"></span></button>` : ""}
+                    ${isDir ? "" : `<a class="kp-fm-act fm-download" href="/api/sites/${siteId}/files/download?path=${encodeURIComponent(rel)}" uk-tooltip="Download"><span uk-icon="icon: download; ratio: 0.85"></span></a>`}
                     <button class="kp-fm-act fm-chmod" uk-tooltip="Permissions"><span uk-icon="icon: settings; ratio: 0.85"></span></button>
-                    <button class="kp-fm-act fm-rename" uk-tooltip="Rename / Move"><span uk-icon="icon: pencil; ratio: 0.85"></span></button>
+                    <button class="kp-fm-act fm-rename" uk-tooltip="Rename / Move"><span uk-icon="icon: move; ratio: 0.85"></span></button>
                     <button class="kp-fm-act fm-copy" uk-tooltip="Copy"><span uk-icon="icon: copy; ratio: 0.85"></span></button>
                     <button class="kp-fm-act fm-delete" uk-tooltip="Delete"><span uk-icon="icon: trash; ratio: 0.85"></span></button>
                 </td>
@@ -120,7 +145,6 @@ export async function loadFilesPanel(id) {
     try {
         const entries = await api.get(`/sites/${id}/files?path=${encodeURIComponent(_cwd)}`);
         list.innerHTML = renderRows(entries);
-        if (window.UIkit) UIkit.icon(list);
     } catch (e) {
         list.innerHTML = errorState("Failed to list files: " + e.message);
     }
@@ -142,7 +166,7 @@ function fmPrompt(title, label, initial = "") {
         el.setAttribute("uk-modal", "");
         el.innerHTML = `
             <div class="uk-modal-dialog uk-modal-body kp-modal">
-                <h3 class="kp-modal-title">${escapeHtml(title)}</h3>
+                <h3 class="uk-modal-title">${escapeHtml(title)}</h3>
                 <label class="kp-label uk-margin-small-bottom">${escapeHtml(label)}</label>
                 <input class="uk-input kp-input" id="fm-prompt-input" value="${escapeHtml(initial)}" autocomplete="off">
                 <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
@@ -356,14 +380,14 @@ async function openEditor(id, relPath, name) {
     el.setAttribute("uk-modal", "");
     el.innerHTML = `
         <div class="uk-modal-dialog kp-modal kp-fm-editor-dialog">
-            <div class="uk-modal-header uk-flex uk-flex-middle uk-flex-between">
-                <h3 class="kp-modal-title uk-margin-remove"><span uk-icon="file-text"></span> ${escapeHtml(name)} <span id="fm-ed-dirty" class="kp-muted uk-text-small" hidden>• unsaved</span></h3>
+            <div class="uk-flex uk-flex-middle uk-flex-between uk-padding-small">
+                <h3 class="uk-modal-title uk-margin-remove"><span uk-icon="file-text"></span> ${escapeHtml(name)} <span id="fm-ed-dirty" class="kp-muted uk-text-small" hidden>• unsaved</span></h3>
                 <div class="uk-flex" style="gap:8px">
                     <button class="uk-button kp-btn-primary kp-btn-sm" id="fm-ed-save"><span uk-icon="icon: check; ratio: 0.85"></span> Save</button>
                     <button class="uk-button kp-btn-ghost kp-btn-sm uk-modal-close"><span uk-icon="icon: close; ratio: 0.85"></span></button>
                 </div>
             </div>
-            <div class="uk-modal-body kp-fm-editor-body">
+            <div class="kp-fm-editor-body">
                 <textarea id="fm-ed-area"></textarea>
             </div>
         </div>`;

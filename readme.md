@@ -1,4 +1,4 @@
-# <img src="https://cdn.kcp.im/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy" width="64" valign="middle"> PodNest
+# <img src="https://c.pdn.st/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy" width="64" valign="middle"> PodNest
 
 ## Secure. Manage. Deploy.
 
