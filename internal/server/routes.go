@@ -7,6 +7,7 @@ package server
 import (
 	"mime"
 	"net/http"
+	"os"
 
 	"podnest/internal/auth"
 	"podnest/internal/handlers/auditlog"
@@ -40,6 +41,20 @@ func (s *Server) routes() http.Handler {
 
 	// serve embedded static assets under /static/
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.Static))))
+
+	// serve an optional operator theme override from the on-disk app dir
+	// (e.g. /opt/podnest/custom.css) — lets deployments retheme the panel by
+	// mounting a stylesheet without rebuilding the embedded assets. Absent file
+	// 404s quietly, so the <link> in the templates is a harmless no-op.
+	mux.HandleFunc("/static/css/custom.css", func(w http.ResponseWriter, r *http.Request) {
+		p := s.cfg.AppPath + "/custom.css"
+		if _, err := os.Stat(p); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		http.ServeFile(w, r, p)
+	})
 
 	// serve the PWA manifest dynamically so its name reflects the host — an
 	// exact path so it wins over the /static/ subtree handler above

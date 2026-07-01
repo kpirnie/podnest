@@ -233,3 +233,24 @@ pre code {
     .kp-filter-bar input[type="date"].uk-input { width: 155px; }
     .kp-filter-bar .uk-select      { width: 155px; }
 }
+
+/* -- scroll to top --------------------------------------------------------- */
+.kp-totop {
+    position: fixed;
+    right: 20px;
+    bottom: 24px;
+    z-index: 190;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px);
+    transition: opacity var(--kp-transition), transform var(--kp-transition), visibility var(--kp-transition);
+}
+.kp-totop.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+/* lift above the mobile bottom nav (64px) so it isn't hidden behind it */
+@media (max-width: 959px) {
+    .kp-totop { bottom: 80px; }
+}

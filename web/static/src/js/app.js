@@ -28,6 +28,21 @@ router.register("security",    (root)         => viewSecurity(root));
 router.register("admin-logs",  (root)         => viewAdminLogs(root));
 router.register("audit-log",   (root)         => viewAuditLog(root));
 
+/* -- protect native caret keys in form fields ------------------------------ */
+// UIkit's tab/switcher keyboard nav intercepts arrow keys and preventDefaults
+// them; since the panel's forms live inside switcher-connected tab panels, that
+// kills caret movement in every field. Stop these keys in the capture phase so
+// UIkit never receives them — the browser's default caret behavior then runs.
+// The WP-CLI terminal deliberately uses Up/Down for history, so it's exempt.
+document.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (!t?.matches?.("input, textarea, select, [contenteditable='true']")) return;
+    if (t.id === "wpcli-input") return; // keep its Up/Down history handler
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+        e.stopPropagation();
+    }
+}, true); // capture — runs before UIkit's handler
+
 /* -- nav wiring ------------------------------------------------------------ */
 document.addEventListener("click", (e) => {
     const link = e.target.closest("[data-view]");
@@ -221,6 +236,24 @@ window.addEventListener("hashchange", () => {
     const { view, params } = parseHash();
     router.go(view, params);
 });
+
+/* -- scroll to top --------------------------------------------------------- */
+(() => {
+    const btn = document.getElementById("kp-totop");
+    if (!btn) return;
+
+    // reveal the button once the page is scrolled past a threshold
+    const onScroll = () => {
+        btn.classList.toggle("is-visible", window.scrollY > 150);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+
+    // smooth-scroll back to the top on click
+    btn.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+})();
 
 /* -- boot ------------------------------------------------------------------ */
 const { view: initialView, params: initialParams } = parseHash();

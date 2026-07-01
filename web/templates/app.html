@@ -5,8 +5,9 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>PodNest ~ Secure. Manage. Deploy.</title>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@latest/dist/css/uikit.min.css">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.25.19/dist/css/uikit.min.css">
         <link rel="stylesheet" href="/static/css/app.css">
+        <link rel="stylesheet" href="/static/css/custom.css">
         <link rel="icon" type="image/svg+xml" href="https://c.pdn.st/logos/podnest.svg">
         <link rel="alternate icon" type="image/svg+xml" href="https://c.pdn.st/logos/podnest.svg">
         <link rel="apple-touch-icon" href="https://c.pdn.st/logos/podnest.svg">
@@ -161,6 +162,11 @@
         <!-- -- toast container ----------------------------------------------------- -->
         <div id="kp-toasts" class="kp-toasts"></div>
 
+        <!-- -- scroll to top ------------------------------------------------------- -->
+        <button id="kp-totop" class="kp-btn-icon kp-totop" type="button" aria-label="Scroll to top" title="Scroll to top">
+            <span uk-icon="icon: chevron-up"></span>
+        </button>
+
         <!-- -- user data for JS ---------------------------------------------------- -->
         <script nonce="{{.Nonce}}">
             window.KP = {
@@ -176,9 +182,9 @@
             };
         </script>
 
-        <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit.min.js" defer></script>
-        <script src="https://cdn.jsdelivr.net/npm/uikit@latest/dist/js/uikit-icons.min.js" defer></script>
-        <script src="https://cdn.jsdelivr.net/npm/qrcode@latest/build/qrcode.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@3.25.19/dist/js/uikit.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/uikit@3.25.19/dist/js/uikit-icons.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js" defer></script>
         <script src="/static/js/app.js" defer></script>
     </body>
 </html>
