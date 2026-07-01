@@ -13,10 +13,38 @@
         <link rel="manifest" href="/static/manifest.json">
         <meta name="theme-color" content="#070e20">
         <script nonce="{{.Nonce}}">
+            // register the service worker at root scope so it controls the
+            // start_url — required for the panel to be installable as a PWA
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/static/sw.js');
+                navigator.serviceWorker.register('/sw.js');
             }
-        </script>
+
+            // capture the install prompt — Android Chrome no longer auto-shows
+            // it, so we stash the event and reveal our own install button
+            let kpDeferredPrompt = null;
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                kpDeferredPrompt = e;
+                const btn = document.getElementById('kp-install-btn');
+                if (btn) { btn.hidden = false; }
+            });
+
+            // fire the stashed prompt on user click, then hide the button
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#kp-install-btn') || !kpDeferredPrompt) { return; }
+                kpDeferredPrompt.prompt();
+                kpDeferredPrompt.userChoice.finally(() => {
+                    kpDeferredPrompt = null;
+                    document.getElementById('kp-install-btn').hidden = true;
+                });
+            });
+
+            // once installed, permanently hide the button
+            window.addEventListener('appinstalled', () => {
+                const btn = document.getElementById('kp-install-btn');
+                if (btn) { btn.hidden = true; }
+            });
+        </script>    
     </head>
     <body class="kp-app-body">
 
@@ -30,6 +58,11 @@
                     </h1>
                 </a>
             </div>
+            <!-- -- pwa install button — hidden until beforeinstallprompt fires -- -->
+            <button id="kp-install-btn" class="kp-btn-secondary kp-btn-sm" type="button" hidden>
+                <span uk-icon="icon: download; ratio: 0.9"></span>
+                Install
+            </button>
         </div>
 
         <!-- -- bottom nav bar (mobile) --------------------------------------------- -->

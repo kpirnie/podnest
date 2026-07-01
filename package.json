@@ -5,7 +5,7 @@
   "scripts": {
     "build": "npm run build:css && npm run build:js",
     "build:css": "postcss web/static/src/css/index.css -o web/static/css/app.css --no-map",
-    "build:js": "esbuild web/static/src/js/app.js --bundle --minify --banner:js=\"/*! PodNest - Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com> | MIT License */\" --outfile=web/static/js/app.js",
+    "build:js": "node esbuild.config.mjs",
     "watch": "npm run watch:css & npm run watch:js",
     "watch:css": "postcss web/static/src/css/index.css -o web/static/css/app.css --watch --no-map",
     "watch:js": "esbuild web/static/src/js/app.js --bundle --outfile=web/static/js/app.js --watch"

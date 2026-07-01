@@ -41,6 +41,19 @@ func (s *Server) routes() http.Handler {
 	// serve embedded static assets under /static/
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(web.Static))))
 
+	// serve the PWA manifest dynamically so its name reflects the host — an
+	// exact path so it wins over the /static/ subtree handler above
+	mux.HandleFunc("/static/manifest.json", s.handleManifest)
+
+	// serve the service worker from the site root so its scope is "/" and it
+	// controls the start_url — a worker served from /static/ only gets /static/
+	// scope, which makes Chrome treat the panel as non-installable (no prompt)
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		http.ServeFileFS(w, r, web.Static, "sw.js")
+	})
+
 	// public auth routes — no session required
 	mux.HandleFunc("/login", s.handleLogin)
 	mux.HandleFunc("/login/totp", s.handleLoginTOTP)

@@ -29,3 +29,7 @@ a:hover { color: var(--kp-blue); }
 ::-webkit-scrollbar-track { background: var(--kp-bg); }
 ::-webkit-scrollbar-thumb { background: var(--kp-border-bright); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--kp-blue); }
+
+/* the [hidden] attribute must still hide flex/inline-flex elements — the button
+   classes set display:inline-flex, which otherwise overrides the UA hidden default */
+[hidden] { display: none !important; }

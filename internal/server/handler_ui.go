@@ -63,10 +63,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// render the login page
-		var loginData map[string]any
+		// render the login page — include the CSP nonce so the inline PWA
+		// install script is allowed to execute under the page's CSP
+		loginData := map[string]any{"Nonce": cspNonce(r)}
 		if msg := r.URL.Query().Get("msg"); msg != "" {
-			loginData = map[string]any{"Error": msg}
+			loginData["Error"] = msg
 		}
 		if err := web.Templates.ExecuteTemplate(w, "login.html", loginData); err != nil {
 			logger.Error("failed to execute login.html template: %v", err)
@@ -110,6 +111,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			logger.Error("login failed for user '%s': %v", uname, err)
 			if err := web.Templates.ExecuteTemplate(w, "login.html", map[string]any{
+				"Nonce": cspNonce(r),
 				"Error": "Invalid username or password",
 			}); err != nil {
 				logger.Error("failed to execute login.html template after failed login: %v", err)
