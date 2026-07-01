@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<!--
+PodNest - Self-hosted site management platform
+Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com>
+Licensed under the MIT License. See LICENSE file in the project root for full license text.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PodNest — API Reference</title>
+    <link rel="icon" type="image/svg+xml" href="https://c.pdn.st/logos/podnest.svg">
+
+    <!-- panel typography — allowed by CSP (style-src fonts.googleapis.com, font-src fonts.gstatic.com) -->
+    <link rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+
+    <!--
+      Scalar theme mapped onto the PodNest palette (web/static/src/css/variables.css).
+      Inline <style> is fine under CSP (style-src 'unsafe-inline'); only inline <script> is blocked,
+      which is why the Scalar bootstrap lives in the external api-docs.js.
+    -->
+    <style>
+        :root {
+            --scalar-color-1:            #dde8f5;
+            --scalar-color-2:            #6b8cae;
+            --scalar-color-3:            #6b8cae;
+            --scalar-color-accent:       #2B8EFF;
+            --scalar-background-1:       #070e20;
+            --scalar-background-2:       #0c1530;
+            --scalar-background-3:       #101c3a;
+            --scalar-background-accent:  rgba(43,142,255,0.10);
+            --scalar-border-color:       #1a2a4a;
+            --scalar-scrollbar-color:        #2a3f6a;
+            --scalar-scrollbar-color-active: #2B8EFF;
+            --scalar-shadow-1: 0 2px 8px rgba(0,0,0,0.4);
+            --scalar-shadow-2: 0 4px 16px rgba(0,0,0,0.5);
+            --scalar-color-green:  #00e5a0;
+            --scalar-color-red:    #ff4560;
+            --scalar-color-yellow: #ffb020;
+            --scalar-color-blue:   #2B8EFF;
+            --scalar-color-orange: #ffb020;
+            --scalar-color-purple: #00D4FF;
+            --scalar-radius:    10px;
+            --scalar-radius-lg: 14px;
+            --scalar-font:      'Space Grotesk', sans-serif;
+            --scalar-font-code: 'JetBrains Mono', monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: var(--scalar-background-1);
+            color: var(--scalar-color-1);
+            font-family: var(--scalar-font);
+        }
+
+        /* top bar echoing the panel topbar */
+        #api-topbar {
+            background: rgba(12,21,48,0.95);
+            border-bottom: 1px solid var(--scalar-border-color);
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        #api-topbar::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, #2B8EFF, #00D4FF, transparent);
+            opacity: 0.5;
+        }
+        #api-topbar a.brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            color: inherit;
+        }
+        #api-topbar a.brand img { height: 40px; width: 40px; object-fit: contain; }
+        #api-topbar a.brand span { font-size: 1.1rem; font-weight: 700; }
+        #api-topbar a.brand .pod  { color: #2B8EFF; }
+        #api-topbar a.brand .nest { color: #00D4FF; }
+
+        #api-topbar a.back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 16px;
+            height: 42px;
+            background: rgba(43,142,255,0.08);
+            border: 1px solid #2a3f6a;
+            border-radius: var(--scalar-radius);
+            color: var(--scalar-color-2);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: border-color 0.2s ease, color 0.2s ease;
+        }
+        #api-topbar a.back-btn:hover { border-color: #2B8EFF; color: #00D4FF; }
+    </style>
+</head>
+<body>
+
+    <div id="api-topbar">
+        <a href="/" class="brand">
+            <img src="https://c.pdn.st/logos/podnest.svg" alt="PodNest">
+            <span><span class="pod">Pod</span><span class="nest">Nest</span> — API Reference</span>
+        </a>
+        <a href="/" class="back-btn">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Back to Panel
+        </a>
+    </div>
+
+    <!-- Scalar mounts here; bootstrap is external to satisfy the nonce'd script-src CSP -->
+    <script src="/api-docs/api-docs.js"></script>
+
+</body>
+</html>

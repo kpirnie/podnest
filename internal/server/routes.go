@@ -118,6 +118,9 @@ func (s *Server) routes() http.Handler {
 	pmaHandler.RegisterAPIRoutes(api)
 	pmaHandler.RegisterMuxRoutes(mux)
 
+	// admin-gated Scalar API reference (page + spec served privately)
+	s.registerAPIDocs(mux)
+
 	// users + TOTP
 	usersHandler := &users.Handler{DB: s.cfg.DB}
 	usersHandler.RegisterRoutes(api)

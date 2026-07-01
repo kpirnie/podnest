@@ -13,8 +13,13 @@ import (
 	"time"
 )
 
-//go:embed static templates
+//go:embed static templates apidocs
 var assets embed.FS
+
+// APIDocs is the private filesystem for the admin-gated API reference assets
+// (reference page, bootstrap, and OpenAPI spec) — deliberately kept out of the
+// public /static/ mount so the API surface is only reachable by an admin.
+var APIDocs fs.FS
 
 // Static is the filesystem for serving /static/ assets
 var Static fs.FS
@@ -30,6 +35,13 @@ func init() {
 	if err != nil {
 		logger.Error("failed to sub static assets: %v", err)
 		panic(fmt.Sprintf("failed to sub static assets: %v", err))
+	}
+
+	// serve the private API-docs assets — never exposed via /static/
+	APIDocs, err = fs.Sub(assets, "apidocs")
+	if err != nil {
+		logger.Error("failed to sub apidocs assets: %v", err)
+		panic(fmt.Sprintf("failed to sub apidocs assets: %v", err))
 	}
 
 	// try to parse thhtml templates
