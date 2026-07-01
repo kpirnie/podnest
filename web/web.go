@@ -44,7 +44,7 @@ func init() {
 		panic(fmt.Sprintf("failed to sub apidocs assets: %v", err))
 	}
 
-	// try to parse thhtml templates
+	// try to parse the html templates
 	Templates, err = template.New("").Funcs(template.FuncMap{
 
 		// currentYear renders the current year server-side — avoids inline JS in templates

@@ -37,7 +37,7 @@ func buildCSP(nonce string) string {
 		"script-src 'self' https://cdn.jsdelivr.net 'nonce-" + nonce + "'; " +
 		"style-src 'self' https://cdn.jsdelivr.net https://fonts.googleapis.com 'unsafe-inline'; " +
 		"font-src 'self' https://fonts.gstatic.com; " +
-		"img-src 'self' https://c.pdn.st data: blob:; " +
+		"img-src 'self' data: blob:; " +
 		"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
 		"manifest-src 'self'; " +
 		"frame-src 'none'; " +
@@ -81,6 +81,12 @@ func securityHeaders(next http.Handler) http.Handler {
 			w.Header().Set("Content-Security-Policy", buildCSP(nonce))
 		}
 
+		// set some headers for me
+		w.Header().Set("X-Powered-By", "PodNest")
+		w.Header().Set("X-Developed-By", "Kevin Pirnie <iam@kevinpirnie.com>")
+		w.Header().Set("X-Shameless-Link", "https://kevinpirnie.com/")
+
+		// serve the request to the next handler
 		next.ServeHTTP(w, r)
 
 	})

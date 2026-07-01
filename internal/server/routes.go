@@ -56,6 +56,12 @@ func (s *Server) routes() http.Handler {
 		http.ServeFile(w, r, p)
 	})
 
+	// serve /favicon.ico from the embedded brand images so the browser's
+	// automatic root-level request resolves instead of 404ing
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFileFS(w, r, web.Static, "images/favicon.ico")
+	})
+
 	// serve the PWA manifest dynamically so its name reflects the host — an
 	// exact path so it wins over the /static/ subtree handler above
 	mux.HandleFunc("/static/manifest.json", s.handleManifest)

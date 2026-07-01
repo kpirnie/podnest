@@ -4,13 +4,19 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="generator" content="PodNest {{.AppVersion}}">
+        <meta name="author" content="Kevin Pirnie, iam@kevinpirnie.com">
+        <meta name='copyright' content='Kevin Pirnie'>
         <title>PodNest ~ Secure. Manage. Deploy.</title>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.25.19/dist/css/uikit.min.css">
         <link rel="stylesheet" href="/static/css/app.css">
         <link rel="stylesheet" href="/static/css/custom.css">
-        <link rel="icon" type="image/svg+xml" href="https://c.pdn.st/logos/podnest.svg">
-        <link rel="alternate icon" type="image/svg+xml" href="https://c.pdn.st/logos/podnest.svg">
-        <link rel="apple-touch-icon" href="https://c.pdn.st/logos/podnest.svg">
+        <link rel="icon" type="image/svg+xml" sizes="16x16" href="/static/images/logo.svg">
+        <link rel="icon" type="image/svg+xml" sizes="32x32" href="/static/images/logo.svg">
+        <link rel="icon" type="image/svg+xml" sizes="48x48" href="/static/images/logo.svg">
+        <link rel="icon" type="image/svg+xml" sizes="192x192" href="/static/images/logo.svg">
+        <link rel="alternate icon" type="image/svg+xml" href="/static/images/logo.svg">
+        <link rel="apple-touch-icon" sizes="180x180" href="/static/images/logo-192.png">
         <link rel="manifest" href="/static/manifest.json">
         <meta name="theme-color" content="#070e20">
         <script nonce="{{.Nonce}}">
@@ -53,7 +59,7 @@
         <div class="kp-topbar">
             <div class="kp-topbar-brand">
                 <a href="/" class="uk-flex uk-flex-middle" style="gap:10px">
-                    <img src="https://c.pdn.st/logos/podnest.svg" alt="PodNest" class="kp-topbar-logo">
+                    <img src="/static/images/logo.svg" alt="PodNest" class="kp-topbar-logo">
                     <h1 class="kp-brand-heading" style="font-size:1.1rem;">
                         <span class="kp-brand-pod">POD</span><span class="kp-brand-nest">NEST</span>
                     </h1>
@@ -194,7 +200,7 @@
 
     <!-- brand -->
     <div class="kp-sidebar-brand kp-brand-sidebar">
-        <img src="https://c.pdn.st/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy." class="kp-logo-img-sm">
+        <img src="/static/images/logo.svg" alt="PodNest ~ Secure. Manage. Deploy." class="kp-logo-img-sm">
         <div>
             <h1 class="kp-brand-heading uk-margin-small-top uk-width-1-1 uk-text-center">
                 <span class="kp-brand-pod">POD</span><span class="kp-brand-nest">NEST</span>
