@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { errorState, isAdmin } from '../helpers.js';
+import { errorState, escapeHtml, isAdmin } from '../helpers.js';
 
 const PAGE_SIZE = 50;
 
@@ -54,7 +54,8 @@ function renderAuditLog(data, filter, page) {
             </div>
 
             <div class="kp-table-wrap">
-                <table class="uk-table uk-table-divider uk-table-small uk-table-middle uk-table-responsive uk-margin-remove">
+                <div class="uk-overflow-auto">
+                <table class="uk-table uk-table-divider uk-table-small uk-table-middle uk-margin-remove">
                     <thead>
                         <tr>
                             <th>Time</th>
@@ -69,6 +70,7 @@ function renderAuditLog(data, filter, page) {
                     </thead>
                     <tbody id="al-table-body">${rows}</tbody>
                 </table>
+                </div>
             </div>
 
             ${totalPages > 1 ? `<div id="al-pager">${pagerHTML(page, totalPages)}</div>` : `<div id="al-pager"></div>`}
@@ -125,13 +127,7 @@ function statusBadge(code) {
 }
 
 // html-escape helper — keeps user-supplied strings safe in attribute contexts
-function esc(s) {
-    return String(s ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
+const esc = (s) => escapeHtml(s ?? "");
 
 // -- fetch -------------------------------------------------------------------
 

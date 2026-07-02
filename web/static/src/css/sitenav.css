@@ -191,9 +191,11 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
     /* push main content above the bottom nav */
     .kp-main { padding-bottom: 80px; }
-}
 
-/* hide the hamburger when bottom nav is present — nav is handled there */
-@media (max-width: 959px) {
+    /* tighter tab pills on mobile */
+    .kp-tab-pills > li > a,
+    .kp-tab-pills > li > button {
+        padding: 5px 10px;
+    }
     .kp-hamburger { display: none; }
 }

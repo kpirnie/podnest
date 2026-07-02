@@ -23,7 +23,8 @@ export async function viewUsers(root) {
             </button>
         </div>
         <div class="kp-table-wrap">
-            <table class="uk-table uk-table-divider uk-table-middle uk-table-responsive uk-margin-remove">
+            <div class="uk-overflow-auto">
+            <table class="uk-table uk-table-divider uk-table-middle uk-margin-remove">
                 <thead>
                     <tr>
                         <th>User</th>
@@ -40,6 +41,7 @@ export async function viewUsers(root) {
                     ${users.map((u) => userRow(normalizeUser(u))).join("")}
                 </tbody>
             </table>
+            </div>
         </div>`;
 
     document.getElementById("users-new-btn")

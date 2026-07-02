@@ -169,6 +169,14 @@ async function loadWAFTab(id) {
             const enabledSet = new Set(selected ?? []);
             if (!available || available.length === 0) {
                 pluginsList.innerHTML = `<span class="kp-muted uk-text-small">No plugins found in local CRS install.</span>`;
+            } else if (window.matchMedia("(max-width: 959px)").matches) {
+                // mobile — styled multiselect instead of pills
+                pluginsList.innerHTML = `
+                    <select multiple class="uk-select kp-select waf-plugin-select" size="${Math.min(available.length, 8)}">
+                        ${available.map(p => `
+                        <option value="${p}" ${enabledSet.has(p) ? 'selected' : ''}>${p}</option>
+                        `).join("")}
+                    </select>`;
             } else {
                 pluginsList.innerHTML = `
                     <div class="waf-plugin-pills">
@@ -212,9 +220,11 @@ function wireWAFTab(root, id) {
         try {
             await api.put(`/sites/${id}/waf`, body);
 
-            // save plugin selection
-            const plugins = [...document.querySelectorAll(".waf-plugin-pill.active")]
-                .map(p => p.dataset.plugin);
+            // save plugin selection — pills on desktop, multiselect on mobile
+            const sel = document.querySelector(".waf-plugin-select");
+            const plugins = sel
+                ? [...sel.selectedOptions].map(o => o.value)
+                : [...document.querySelectorAll(".waf-plugin-pill.active")].map(p => p.dataset.plugin);
             await api.put(`/sites/${id}/waf/plugins`, plugins);
 
             toast.success("WAF override saved — engine recompiling in background");

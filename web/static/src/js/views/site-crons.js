@@ -112,7 +112,8 @@ function renderCronList(crons) {
         </tr>`).join("");
 
     return `
-        <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
+        <div class="uk-overflow-auto">
+        <table class="uk-table uk-table-divider uk-table-small uk-table-middle kp-fm-table">
             <thead>
                 <tr>
                     <th>Label</th>
@@ -124,7 +125,8 @@ function renderCronList(crons) {
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
-        </table>`;
+        </table>
+        </div>`;
 }
 
 // loadCronsPanel fetches cron jobs and populates the panel
@@ -217,14 +219,14 @@ export function wireCronsPanel(root, siteId) {
                 <div id="cron-detail-modal" uk-modal>
                     <div class="uk-modal-dialog kp-modal uk-modal-body uk-width-large">
                         <button class="uk-modal-close-default" type="button" uk-close></button>
-                        <h3 class="kp-view-title uk-margin-bottom">Run Details — ${escAttr(cron.Label || String(cron.ID))}</h3>
+                        <h3 class="kp-view-title uk-margin-bottom">Run Details — ${escapeHtml(cron.Label || String(cron.ID))}</h3>
                         <div class="uk-margin-small-bottom">
                             <label class="kp-label">Output</label>
-                            <pre class="kp-cron-output">${escAttr(cron.LastOutput || '(no output)')}</pre>
+                            <pre class="kp-cron-output">${escapeHtml(cron.LastOutput || '(no output)')}</pre>
                         </div>
                         <div class="uk-margin-small-top">
                             <label class="kp-label">Error</label>
-                            <pre class="kp-cron-output kp-cron-output-error">${escAttr(cron.LastError || '(no error)')}</pre>
+                            <pre class="kp-cron-output kp-cron-output-error">${escapeHtml(cron.LastError || '(no error)')}</pre>
                         </div>
                     </div>
                 </div>`);
@@ -331,15 +333,6 @@ export function wireCronsPanel(root, siteId) {
 }
 
 // -- helpers -----------------------------------------------------------------
-
-// escAttr escapes a string for use in an HTML attribute value or text content
-function escAttr(str) {
-    return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-}
 
 // describeSchedule returns a human-readable summary of a 5-field cron expression
 function describeSchedule(expr) {

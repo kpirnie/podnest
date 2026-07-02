@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, hideProgressModal, showProgressModal } from '../helpers.js';
+import { confirm, fmtBytes, hideProgressModal, showProgressModal } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // renderBackupsTab returns the static HTML shell for the backups tab
@@ -113,19 +113,12 @@ function renderBackupList(backups) {
         ? `<span class="kp-mono" style="color:var(--kp-cyan)">S3</span>`
         : `<span class="kp-mono" style="color:var(--kp-blue)">Local</span>`;
 
-    const fmtSize = (bytes) => {
-        if (bytes < 1024)       return `${bytes} B`;
-        if (bytes < 1048576)    return `${(bytes / 1024).toFixed(1)} KB`;
-        if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
-        return `${(bytes / 1073741824).toFixed(2)} GB`;
-    };
-
     const rows = backups.map((b) => `
         <tr>
             <td class="kp-mono" style="font-size:0.8rem">${b.SnapshotID}</td>
             <td>${b.Label || '—'}</td>
             <td>${typeLabel(b.BackupType)}</td>
-            <td>${fmtSize(b.SizeBytes)}</td>
+            <td>${fmtBytes(b.SizeBytes)}</td>
             <td>${new Date(b.Created).toLocaleString()}</td>
             <td>
                 <div class="uk-flex" style="gap:6px">
@@ -146,6 +139,7 @@ function renderBackupList(backups) {
         </tr>`).join("");
 
     return `
+        <div class="uk-overflow-auto">
         <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
             <thead>
                 <tr>
@@ -158,7 +152,8 @@ function renderBackupList(backups) {
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
-        </table>`;
+        </table>
+        </div>`;
 }
 
 // pollRestoreStatus polls the restore-status endpoint and dismisses the

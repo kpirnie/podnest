@@ -17,7 +17,6 @@ export function renderConfigTab(siteId, type, cfg) {
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                 <div class="uk-flex uk-flex-middle" style="gap:10px">
                     <h4 class="kp-view-title uk-margin-remove">${configLabels[type]}</h4>
-                    <span class="kp-muted uk-text-small">${entries.length} keys</span>
                 </div>
                 <div class="uk-flex" style="gap:8px">
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="${type}" uk-tooltip="Add a Key">
@@ -53,7 +52,6 @@ export function renderVarnishTab(siteId, cfg) {
             <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom" uk-tooltip="Add a Key">
                 <div class="uk-flex uk-flex-middle" style="gap:10px">
                     <h4 class="kp-view-title uk-margin-remove">Varnish</h4>
-                    <span class="kp-muted uk-text-small">${entries.length} keys</span>
                 </div>
                 <div class="uk-flex" style="gap:8px">
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="5">
@@ -90,7 +88,7 @@ export function renderVarnishTab(siteId, cfg) {
         </div>`;
 }
 
-export function configRow(k = "", v = "") {
+function configRow(k = "", v = "") {
     return `<div class="kp-config-row">
         <div class="kp-config-key">
             <input class="cfg-key" type="text" value="${k}" placeholder="key">

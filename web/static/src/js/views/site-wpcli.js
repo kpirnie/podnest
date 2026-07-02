@@ -24,7 +24,7 @@ const quickCommands = [
 // renderWPCLITab returns the HTML markup for the WP-CLI terminal tab
 export function renderWPCLITab(siteId) {
     return `
-        <div>
+        <div class="kp-wpcli">
             <div class="kp-log-controls" style="flex-wrap:wrap;gap:6px">
                 ${quickCommands.map((q) => `
                    <button class="uk-button kp-btn-ghost kp-btn-sm"

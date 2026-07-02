@@ -138,7 +138,7 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
 }
 
 // domainRow renders a single domain entry — ssl status is loaded async after render
-export function domainRow(d) {
+function domainRow(d) {
     return `<div class="uk-flex uk-flex-between uk-flex-middle kp-config-row" data-domain-id="${d.ID}">
         <div class="uk-flex uk-flex-middle kp-domain-row-inner">
             <span id="ssl-icon-${d.ID}" class="kp-ssl-pending" uk-icon="icon: more; ratio: 0.85"></span>

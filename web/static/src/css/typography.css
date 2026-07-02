@@ -7,9 +7,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 /* ── uikit overrides ──────────────────────────────────────────────────────── */
 .uk-card            { background: var(--kp-bg-card); color: var(--kp-text); }
 .uk-modal-dialog    { background: var(--kp-bg-card); color: var(--kp-text); }
-.uk-offcanvas-bar   { background: var(--kp-bg-card); }
 .uk-form-label      { color: var(--kp-text-dim); }
-.uk-text-muted      { color: var(--kp-text-dim) !important; }
 .uk-alert           { border-radius: var(--kp-radius); border: none; }
 
 .uk-table th {
@@ -23,8 +21,6 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 .uk-table td { padding: 14px 16px; vertical-align: middle; }
 .uk-table td,
 .uk-table th { border-color: var(--kp-border); }
-.uk-table-striped > tr:nth-of-type(odd),
-.uk-table-striped tbody tr:nth-of-type(odd) { background: rgba(21,32,64,0.5); }
 
 .uk-tab > .uk-active > a {
     color: var(--kp-cyan) !important;
@@ -45,16 +41,9 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 .kp-mono   { font-family: 'JetBrains Mono', monospace; }
-.kp-accent { color: var(--kp-blue); }
 .kp-cyan   { color: var(--kp-cyan); }
 .kp-muted  { color: var(--kp-text-dim); }
 
-.kp-title {
-    color: var(--kp-white);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    font-family: 'Space Grotesk', sans-serif;
-}
 
 .kp-cursor::after {
     content: '_';

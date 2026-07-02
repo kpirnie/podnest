@@ -5,22 +5,13 @@
 "use strict";
 
 import { api } from '../api.js';
-import { escapeHtml } from "../helpers.js";
+import { escapeHtml, fmtBytes } from "../helpers.js";
 import { toast } from '../toast.js';
 
 // holds the active Chart instance so it can be destroyed before recreating
 let _siteChart = null;
 
 // -- helpers -----------------------------------------------------------------
-
-// fmtBytes formats a raw byte count into a human-readable string
-export function fmtBytes(bytes) {
-    if (bytes === 0)           return '0 B';
-    if (bytes < 1024)          return `${bytes} B`;
-    if (bytes < 1048576)       return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1073741824)    return `${(bytes / 1048576).toFixed(1)} MB`;
-    return `${(bytes / 1073741824).toFixed(2)} GB`;
-}
 
 // fmtPercent formats a float as a percentage string
 function fmtPercent(n) {

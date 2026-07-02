@@ -5,9 +5,9 @@
 "use strict";
 
 import { api } from '../api.js';
-import { emptyState } from '../helpers.js';
+import { emptyState, fmtBytes } from '../helpers.js';
 import { showCreateSiteModal } from '../modals/create-site.js';
-import { fmtBytes, loadChartJS } from './site-stats.js';
+import { loadChartJS } from './site-stats.js';
 import { siteCard } from './sites.js';
 
 // holds the active Chart instance so it can be destroyed before recreating

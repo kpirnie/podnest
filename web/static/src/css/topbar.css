@@ -36,31 +36,6 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     align-items: center;
     gap: 10px;
 }
-.kp-topbar-brand-name {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--kp-white);
-    font-family: 'Space Grotesk', sans-serif;
-    letter-spacing: -0.01em;
-}
-
-.kp-hamburger {
-    background: rgba(43,142,255,0.08);
-    border: 1px solid var(--kp-border-bright);
-    border-radius: var(--kp-radius);
-    color: var(--kp-text-dim);
-    width: 42px;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: border-color var(--kp-transition), color var(--kp-transition);
-}
-.kp-hamburger:hover {
-    border-color: var(--kp-blue);
-    color: var(--kp-cyan);
-}
 
 /* topbar logo — constrained to fit the 60px bar */
 .kp-topbar-logo {

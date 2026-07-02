@@ -14,6 +14,15 @@ export const escapeHtml = (s) =>
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
 
+// fmtBytes formats a raw byte count into a human-readable string
+export function fmtBytes(bytes) {
+    if (bytes === 0)           return '0 B';
+    if (bytes < 1024)          return `${bytes} B`;
+    if (bytes < 1048576)       return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1073741824)    return `${(bytes / 1048576).toFixed(1)} MB`;
+    return `${(bytes / 1073741824).toFixed(2)} GB`;
+}
+
 export const spinner = () =>
     `<div class="kp-spinner"><div uk-spinner="ratio: 1.25"></div></div>`;
 
@@ -40,7 +49,7 @@ export const statusBadge = (status) => {
     return `<span class="kp-status kp-status-${cls}">${label}</span>`;
 };
 
-export const phpLabel = (v) =>
+const phpLabel = (v) =>
     ({ 3: "8.2", 4: "8.3", 5: "8.4", 6: "8.5" })[v] || "?";
 
 export const siteTypeLabel = (t) =>

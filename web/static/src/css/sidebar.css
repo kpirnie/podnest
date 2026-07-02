@@ -38,14 +38,6 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     flex-wrap: wrap;
     justify-content: center;
 }
-.kp-sidebar-brand-name {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--kp-white);
-    font-family: 'Space Grotesk', sans-serif;
-    margin-top:5px;
-    margin-bottom: -15px;
-}
 
 .kp-user-badge {
     margin: 4px 14px 12px;
@@ -166,14 +158,4 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     height: 128px;
     object-fit: contain;
     filter: drop-shadow(0 0 8px rgba(43,142,255,0.3));
-}
-.kp-logo-img-xs {
-    width: 75px;
-    height: 75px;
-    object-fit: contain;    
-    filter: drop-shadow(0 0 8px rgba(43,142,255,0.3));
-}
-
-.uk-offcanvas-overlay::before {
-    background: rgba(0, 0, 0, .65) !important;
 }

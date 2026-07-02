@@ -20,16 +20,6 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     pointer-events: none;
 }
 
-.kp-card-hover {
-    transition: border-color var(--kp-transition), transform var(--kp-transition), box-shadow var(--kp-transition);
-    cursor: pointer;
-}
-.kp-card-hover:hover {
-    border-color: var(--kp-blue);
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(43,142,255,0.15);
-}
-
 .kp-stat-card {
     background: var(--kp-bg-card);
     border: 1px solid var(--kp-border);

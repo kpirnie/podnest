@@ -114,11 +114,3 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     word-break: break-all;
     max-width: 300px;
 }
-
-/* drilldown sort headers */
-.kp-dd-sort {
-    cursor: pointer;
-    user-select: none;
-}
-
-.kp-dd-sort:hover { color: var(--kp-blue); }

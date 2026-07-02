@@ -92,7 +92,7 @@ export async function viewSites(root) {
     wireBulkSelection();
 }
 
-export function siteRow(site, allSites = []) {
+function siteRow(site, allSites = []) {
     const primaryDomain = site.Domains?.[0] ?? null;
     const isRP          = site.SiteType === 6;
     // resolve parent only when this site is a clone

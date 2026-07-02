@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, emptyState, errorState, escapeHtml, spinner } from '../helpers.js';
+import { confirm, emptyState, errorState, escapeHtml, fmtBytes, spinner } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // current working directory within the html root, relative and slash-free at the root
@@ -41,15 +41,6 @@ function renderBreadcrumb() {
         crumbs.push(`<span class="kp-fm-sep">/</span><a href="#" data-path="${escapeHtml(acc)}">${escapeHtml(p)}</a>`);
     }
     return crumbs.join("");
-}
-
-// fmtSize renders a byte count in human-readable units
-function fmtSize(bytes, isDir) {
-    if (isDir) return "—";
-    const u = ["B", "KB", "MB", "GB", "TB"];
-    let n = bytes, i = 0;
-    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-    return `${i === 0 ? n : n.toFixed(1)} ${u[i]}`;
 }
 
 // fmtDate renders an ISO timestamp as a compact local date-time
@@ -109,7 +100,7 @@ function renderRows(entries) {
         return `
             <tr data-path="${escapeHtml(rel)}" data-name="${escapeHtml(e.name)}" data-dir="${isDir ? 1 : 0}" data-mode="${escapeHtml(e.mode)}">
                 <td class="kp-fm-name">${nameCell}</td>
-                <td class="uk-text-nowrap">${fmtSize(e.size, isDir)}</td>
+                <td class="uk-text-nowrap">${fmtBytes(e.size, isDir)}</td>
                 <td><code class="kp-mono">${escapeHtml(e.mode)}</code></td>
                 <td class="uk-text-nowrap uk-text-small kp-muted">${fmtDate(e.mod_time)}</td>
                 <td class="uk-text-right uk-text-nowrap">

@@ -55,13 +55,6 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     margin-bottom: 14px;
     gap: 10px;
 }
-.kp-site-name {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--kp-white);
-    font-family: 'Space Grotesk', sans-serif;
-    margin: 0;
-}
 .kp-site-meta {
     font-size: 0.78rem;
     color: var(--kp-text-dim);
@@ -90,12 +83,6 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     width: 100%;
     height: 0;
 }
-
-.kp-site-name {
-    cursor: pointer;
-    transition: color var(--kp-transition);
-}
-.kp-site-name:hover { color: var(--kp-cyan); }
 
 .kp-card-footer-text {
     color:var(--kp-text-dim);
