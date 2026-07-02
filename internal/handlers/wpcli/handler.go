@@ -24,7 +24,8 @@ import (
 )
 
 // wpcliContainerPath is where wp-cli is installed inside the PHP container.
-const wpcliContainerPath = "/usr/local/bin/wp"
+// the rootfs is read-only, so it lives on the /tmp tmpfs and reinstalls on demand
+const wpcliContainerPath = "/tmp/wp"
 
 // WPCLIClient is the subset of podman.Client consumed by this handler.
 type WPCLIClient interface {
@@ -180,7 +181,7 @@ func (h *Handler) ensureWPCLI(ctx context.Context, siteName string, conn *websoc
 	containerName := podman.ContainerName(siteName, "php")
 
 	checkSpec := map[string]any{
-		"AttachStdout": false,
+		"AttachStdout": true,
 		"AttachStderr": false,
 		"Detach":       false,
 		"Cmd":          []string{"test", "-f", wpcliContainerPath},
@@ -217,7 +218,7 @@ func (h *Handler) ensureWPCLI(ctx context.Context, siteName string, conn *websoc
 		"Detach":       false,
 		"Cmd": []string{
 			"sh", "-c",
-			"wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -O /tmp/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar /usr/local/bin/wp",
+			fmt.Sprintf("wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -O /tmp/wp-cli.phar && chmod +x /tmp/wp-cli.phar && mv /tmp/wp-cli.phar %s", wpcliContainerPath),
 		},
 	}
 	var installResp struct {
