@@ -167,7 +167,7 @@ export function wireConfigTabs(root, siteId) {
         fd.append("file", file);
 
         try {
-            const res = await fetch(`/api/sites/${site}/configs/${type}/import`, { method: "POST", body: fd });
+            const res = await fetch(`/api/sites/${site}/configs/${type}/import`, { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 

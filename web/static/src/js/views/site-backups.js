@@ -432,6 +432,7 @@ export function wireBackupsPanel(root, siteId) {
         try {
             await fetch(`/api/sites/${siteId}/backups/import/upload`, {
                 method: 'POST',
+                headers: { 'X-CSRF-Token': window.KP?.csrf ?? '' },
                 body: formData,
                 credentials: 'same-origin',
             }).then(async res => {

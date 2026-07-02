@@ -599,7 +599,7 @@ func (h *Handler) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 	go h.Proxy.WarmCaches(false)
 
 	// run mariadb-upgrade if the DB version has changed
-	go h.maybeUpgradeMariaDB(r.Context(), site)
+	go h.maybeUpgradeMariaDB(context.Background(), site)
 
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
@@ -787,7 +787,7 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// run mariadb-upgrade if the DB version has changed
-	go h.maybeUpgradeMariaDB(r.Context(), site)
+	go h.maybeUpgradeMariaDB(context.Background(), site)
 
 	// prune dangling images left behind by the refreshed pod — runs only when the
 	// caller opted in (bulk recreate) and only here, after the pod is confirmed
@@ -1187,9 +1187,6 @@ func clearDirContents(dir string) error {
 // maybeUpgradeMariaDB runs mariadb-upgrade inside the DB container if the
 // MariaDB version has changed since the data directory was last initialised.
 // It is a no-op for site types without a database.
-// maybeUpgradeMariaDB runs mariadb-upgrade inside the DB container if the
-// MariaDB version has changed since the data directory was last initialised.
-// It is a no-op for site types without a database.
 func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 	if !modules.TypeModule(site.SiteType).HasDatabase() {
 		return
@@ -1204,13 +1201,24 @@ func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 	}
 
 	dbContainer := modules.ContainerName(site.Name, "db")
-	cmd := exec.CommandContext(ctx, "podman",
-		"exec", "--user=mysql", dbContainer,
-		"mariadb-upgrade", "-uroot", "-p"+rootPass,
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		logger.Warn("maybeUpgradeMariaDB: site %s: %v — %s", site.Name, err, string(out))
-		return
+
+	// retry for up to 2 minutes — the DB is usually still initializing right after the pod comes up
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		cmd := exec.CommandContext(ctx, "podman",
+			"exec", "--user=mysql", dbContainer,
+			"mariadb-upgrade", "-uroot", "-p"+rootPass,
+		)
+		cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+h.PodmanSock)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			logger.Warn("maybeUpgradeMariaDB: site %s: %v — %s", site.Name, err, string(out))
+			return
+		}
+		time.Sleep(5 * time.Second)
 	}
 
 	logger.Debug("maybeUpgradeMariaDB: upgrade check complete for site %s", site.Name)

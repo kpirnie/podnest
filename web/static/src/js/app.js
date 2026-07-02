@@ -174,7 +174,9 @@ async function deleteSite(id) {
     showProgressModal("Deleting Site", "Creating final backup and removing the pod — please wait...");
 
     let resp;
-    try { resp = await fetch(`/api/sites/${id}`, { method: "DELETE" }); } catch (e) { /* poll below */ }
+    
+    // send CSRF token — raw fetch bypasses api.js which normally adds it
+    try { resp = await fetch(`/api/sites/${id}`, { method: "DELETE", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" } }); } catch (e) { /* poll below */ }
 
     hideProgressModal();
 

@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"time"
 
 	"podnest/internal/apiutil"
@@ -41,17 +40,7 @@ type Handler struct {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  512,
 	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		return u.Host == r.Host
-	},
+	CheckOrigin:     apiutil.WSSameOrigin,
 }
 
 // RegisterRoutes mounts health routes onto api.

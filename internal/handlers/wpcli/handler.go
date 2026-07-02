@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -46,17 +45,7 @@ var upgrader = websocket.Upgrader{
 	// reject cross-origin upgrades — only same-origin (or non-browser, empty
 	// Origin) clients may open the WP-CLI terminal, which is an effective root
 	// shell in the container
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		return u.Host == r.Host
-	},
+	CheckOrigin: apiutil.WSSameOrigin,
 }
 
 // RegisterRoutes mounts WP-CLI routes onto api.

@@ -373,7 +373,7 @@ export async function viewSettings(root) {
         const fd = new FormData();
         fd.append("file", file);
         try {
-            const res  = await fetch("/api/settings/import", { method: "POST", body: fd });
+            const res  = await fetch("/api/settings/import", { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
             toast.success("Settings imported");

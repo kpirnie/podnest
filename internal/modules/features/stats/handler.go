@@ -10,7 +10,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"sort"
@@ -127,17 +126,7 @@ type Handler struct {
 var wsUpgrader = websocket.Upgrader{
 	ReadBufferSize:  512,
 	WriteBufferSize: 4096,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		return u.Host == r.Host
-	},
+	CheckOrigin:     apiutil.WSSameOrigin,
 }
 
 // -- per-site routes ---------------------------------------------------------
