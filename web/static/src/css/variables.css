@@ -47,6 +47,8 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     /* bg pattern */
     --kp-dot-color:     rgba(43,142,255,0.08);
 
-    /* brand */
-    --kp-font-brand: 'Orbitron', sans-serif;
+    /* font */
+    --kp-font-brand:   'Orbitron', sans-serif;
+    --kp-font-display: 'Space Grotesk', sans-serif;
+    --kp-font-mono:    'JetBrains Mono', monospace;
 }

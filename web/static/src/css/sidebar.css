@@ -61,13 +61,13 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     font-size: 0.9rem;
     color: var(--kp-white);
     flex-shrink: 0;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
 }
 .kp-user-name {
     font-size: 0.88rem;
     font-weight: 600;
     color: var(--kp-text);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     line-height: 1.2;
 }
 .kp-user-role { margin-top: 4px; }
@@ -80,7 +80,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     text-transform: uppercase;
     color: var(--kp-text-dim);
     padding: 20px 8px 8px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
 }
 
 .kp-nav-link {
@@ -92,7 +92,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-text-dim) !important;
     font-size: 0.9rem;
     font-weight: 500;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     text-decoration: none;
     position: relative;
     margin-bottom: 4px;

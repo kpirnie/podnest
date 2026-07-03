@@ -28,7 +28,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     background: transparent;
     border: none;
     color: var(--kp-cyan);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     font-size: 0.8rem;
     padding: 2px 0;
 }
@@ -43,7 +43,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-text);
     padding: 6px 10px;
     font-size: 0.82rem;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     height: 36px;
     transition: border-color var(--kp-transition);
 }
@@ -72,3 +72,10 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-danger);
     background: rgba(255,69,96,0.08);
 }
+
+/* -- settings input height override ----------------------------------------- */
+.kp-input-sm          { height: 38px; }
+
+/* -- settings view ---------------------------------------------------------- */
+.kp-settings-wrap         { max-width: 100%; }
+.kp-settings-domain-wrap  { align-items: center; gap: 10px; }

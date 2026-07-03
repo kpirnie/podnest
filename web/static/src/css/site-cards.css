@@ -62,7 +62,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
 }
 .kp-site-meta-item {
     display: flex;

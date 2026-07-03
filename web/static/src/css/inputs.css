@@ -9,7 +9,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     border: 1px solid var(--kp-border-bright) !important;
     color: var(--kp-text) !important;
     border-radius: var(--kp-radius) !important;
-    font-family: 'Space Grotesk', sans-serif !important;
+    font-family: var(--kp-font-display) !important;
     font-size: 0.95rem !important;
     padding: 0 14px !important;
     transition: border-color var(--kp-transition), box-shadow var(--kp-transition);
@@ -40,7 +40,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-text) !important;
     border-radius: var(--kp-radius) !important;
     height: 48px;
-    font-family: 'Space Grotesk', sans-serif !important;
+    font-family: var(--kp-font-display) !important;
     font-size: 0.95rem !important;
     padding: 0 14px !important;
 }
@@ -55,7 +55,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     border: 1px solid var(--kp-border-bright) !important;
     color: var(--kp-text) !important;
     border-radius: var(--kp-radius) !important;
-    font-family: 'Space Grotesk', sans-serif !important;
+    font-family: var(--kp-font-display) !important;
     font-size: 0.9rem !important;
     padding: 12px 14px !important;
     resize: vertical;
@@ -73,7 +73,60 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-danger);
     border: 1px solid rgba(255,69,96,0.2);
     border-radius: var(--kp-radius);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     font-size: 0.88rem;
     padding: 14px 16px;
+}
+
+
+.waf-plugin-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.waf-plugin-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--kp-border);
+    color: var(--kp-muted);
+    font-size: 0.75rem;
+    font-family: var(--kp-font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.waf-plugin-pill:hover {
+    border-color: var(--kp-primary);
+    color: var(--kp-primary);
+}
+
+.waf-plugin-pill.active {
+    background: var(--kp-primary);
+    border-color: var(--kp-primary);
+    color: #fff;
+}
+
+/* audit log filter bar */
+.kp-filter-bar { gap: 8px; flex-wrap: wrap; }
+.kp-filter-bar .uk-input,
+.kp-filter-bar .uk-select { width: 100%; }
+@media (min-width: 960px) {
+    .kp-filter-bar input.uk-input  { width: 150px; }
+    .kp-filter-bar input[type="date"].uk-input { width: 155px; }
+    .kp-filter-bar .uk-select      { width: 155px; }
+}
+
+/* ── filter bar (mobile) ───────────────────────────────────────────────────── */
+@media (max-width: 959px) {
+    .kp-filter-bar .uk-input,
+    .kp-filter-bar .uk-select {
+        height: 32px;
+        padding: 0 10px;
+    }
 }

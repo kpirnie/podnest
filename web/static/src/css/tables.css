@@ -20,7 +20,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 .kp-site-row-name {
     font-weight: 600;
     color: var(--kp-white);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     transition: color var(--kp-transition);
 }
 .kp-site-row-name:hover { color: var(--kp-cyan); }
@@ -60,7 +60,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 .kp-bulk-count {
     font-size: 0.85rem;
     color: var(--kp-text-dim);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     white-space: nowrap;
 }
 .kp-sites-search {

@@ -10,7 +10,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     border: none;
     border-radius: var(--kp-radius);
     font-weight: 600;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     font-size: 0.85rem;
     letter-spacing: 0.04em;
     padding: 0 20px;
@@ -36,7 +36,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     border: 1px solid rgba(43,142,255,0.3);
     border-radius: var(--kp-radius);
     font-weight: 600;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     font-size: 0.85rem;
     letter-spacing: 0.04em;
     padding: 0 20px;
@@ -60,7 +60,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-text-dim);
     border: 1px solid var(--kp-border-bright);
     border-radius: var(--kp-radius);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     font-size: 0.85rem;
     font-weight: 500;
     padding: 0 18px;
@@ -84,7 +84,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     border: none;
     border-radius: var(--kp-radius);
     font-weight: 600;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     font-size: 0.85rem;
     padding: 0 20px;
     height: 42px;

@@ -1,0 +1,30 @@
+/* 
+PodNest - Self-hosted site management platform
+Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com>
+Licensed under the MIT License. See LICENSE file in the project root for full license text.
+*/
+
+/* -- cron run detail ------------------------------------------------------- */
+.kp-cron-detail-btn {
+    margin-left: 4px;
+}
+.kp-cron-output {
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--kp-bg-card);
+    border: 1px solid var(--kp-border);
+    padding: 10px;
+    font-family: var(--kp-font-mono);
+    font-size: 0.8rem;
+    line-height: 1.7;
+    margin-top: 6px;
+}
+.kp-cron-output-error {
+    color: var(--kp-danger);
+    max-height: 300px;
+}
+
+/* -- cron action buttons row ----------------------------------------------- */
+.kp-cron-actions { gap: 6px; }

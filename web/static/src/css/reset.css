@@ -14,7 +14,7 @@ html {
 body {
     background: var(--kp-bg);
     color: var(--kp-text);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     font-size: 1rem;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;

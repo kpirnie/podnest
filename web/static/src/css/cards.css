@@ -45,7 +45,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     font-weight: 700;
     color: var(--kp-white);
     line-height: 1;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
 }
 .kp-stat-card .kp-stat-label {
     font-size: 0.72rem;
@@ -53,7 +53,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-top: 8px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
 }
 .kp-stat-card .kp-stat-icon { color: var(--kp-blue); }
 

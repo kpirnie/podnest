@@ -17,20 +17,20 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 .kp-stats-bandwidth-val {
     color: var(--kp-cyan);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
 }
 
 /* -- top IPs / UAs tables -------------------------------------------------- */
 
 .kp-stats-table-cell-mono {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     font-size: 0.8rem;
 }
 
 .kp-stats-table-cell-count {
     text-align: right;
     color: var(--kp-cyan);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     font-size: 0.8rem;
 }
 
@@ -45,12 +45,12 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 /* -- pod stats table ------------------------------------------------------- */
 
 .kp-stats-pod-role {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     font-size: 0.8rem;
 }
 
 .kp-stats-pod-cpu {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     font-size: 0.8rem;
     color: var(--kp-cyan);
 }
@@ -92,7 +92,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 .kp-stats-mem-pct {
     font-size: 0.75rem;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     color: var(--kp-text-dim);
 }
 

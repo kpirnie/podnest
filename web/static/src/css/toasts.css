@@ -26,7 +26,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     border-radius: var(--kp-radius);
     font-size: 0.85rem;
     font-weight: 500;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: var(--kp-font-display);
     animation: kp-slide-in 0.2s ease;
     box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     backdrop-filter: blur(8px);

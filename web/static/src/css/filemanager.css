@@ -61,7 +61,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 }
 .kp-fm-editor-body .CodeMirror {
     height: 65vh;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     font-size: 13px;
     line-height: 1.5;
     border-radius: 0 0 var(--kp-radius-lg) var(--kp-radius-lg);

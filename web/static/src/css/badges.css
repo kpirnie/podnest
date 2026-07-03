@@ -13,7 +13,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
 }
 .kp-badge-admin {
     background: rgba(43,142,255,0.15);
@@ -36,7 +36,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     white-space: nowrap;
 }
 .kp-status::before {
@@ -124,7 +124,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 
 .kp-health-badge-label {
     font-size: 0.6rem;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--kp-font-mono);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--kp-text-dim);
