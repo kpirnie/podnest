@@ -5,8 +5,34 @@
 #############################################
 set -euo pipefail
 
-# ---- adjust how you see fit ----
-PN_USER="${1:-podnest}"
+# Get the user to create this under
+if [ -n "${1:-}" ]; then
+  PN_USER="$1"
+else
+  read -rp "PodNest User [podnest]: " PN_USER
+  PN_USER="${PN_USER:-podnest}"
+fi
+
+#############################################
+# update: pull :latest and restart the service
+# Run as root:  bash podnest-user.sh update [user]
+#############################################
+if [ "${1:-}" = "update" ]; then
+  if [ -n "${2:-}" ]; then
+    PN_USER="$2"
+  else
+    read -rp "PodNest user [podnest]: " PN_USER
+    PN_USER="${PN_USER:-podnest}"
+  fi
+  PNUID=$(id -u "$PN_USER")
+  RUN="sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID"
+  $RUN podman pull ghcr.io/kpirnie/podnest:latest
+  $RUN systemctl --user restart podnest.service
+  $RUN systemctl --user status podnest.service --no-pager | head -8
+  $RUN podman image prune -f
+  exit 0
+fi
+
 PN_DATA=/home/$PN_USER/sites        # host-side site data
 PN_PORT=9000                       # UI port
 PN_TZ=America/New_York
@@ -118,14 +144,14 @@ cat <<EOF
     sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID journalctl --user -u podnest -f
 
 >>> Start the service with: 
-    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl start podnest.service
+    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl --user start podnest.service
 
 >>> Stop the service with: 
-    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl stop podnest.service
+    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl --user stop podnest.service
 
 >>> Restart the service with: 
-    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl restart podnest.service
+    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl --user restart podnest.service
     
 >>> Check the service status with:
-    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl status podnest.service
+    sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID systemctl --user status podnest.service
 EOF
