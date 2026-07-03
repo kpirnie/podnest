@@ -39,6 +39,10 @@ var (
 	ErrForbidden          = errors.New("forbidden")
 )
 
+// loginDummyHash is compared against when a panel username is unknown, so
+// unknown-user and known-user-wrong-password logins take the same time
+var loginDummyHash, _ = bcrypt.GenerateFromPassword([]byte("podnest-login-timing-equalizer"), bcrypt.DefaultCost)
+
 // LoginResult is returned by Login to indicate the outcome of a login attempt.
 type LoginResult struct {
 	SessionID    string
@@ -85,6 +89,9 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 
 	// If user is nil, it means the username does not exist
 	if user == nil {
+		// Compare against the dummy hash so the response time matches a real-user wrong password
+		h := sha256.Sum256([]byte(password))
+		_ = bcrypt.CompareHashAndPassword(loginDummyHash, []byte(fmt.Sprintf("%x", h)))
 		logger.Error("failed to retrieve user: %v", ErrInvalidCredentials)
 		return nil, ErrInvalidCredentials
 	}
