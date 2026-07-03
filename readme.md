@@ -97,25 +97,13 @@ ghcr.io/kpirnie/podnest:dev
 ghcr.io/kpirnie/podnest:beta
 ```
 
-### Quick Start — Podman Run
+### Quick Start
+
+Run the following command in shell on your server.  Replace USER with whatever username you would like to utilize.
 
 ```bash
-podman run -d \
-  --name podnest \
-  --hostname podnest \
-  --restart unless-stopped \
-  -p 80:80 \
-  -p 443:443 \
-  -p 9000:8080 \
-  -v /run/podman/podman.sock:/run/podman/podman.sock:rw \
-  -v /your/persistent/path:/opt/podnest:z \
-  --tmpfs /tmp \
-  -e TZ=America/New_York \
-  -e LOG_LEVEL=INFO \
-  ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port 8080 --socket /run/podman/podman.sock
+curl -fsSL https://raw.githubusercontent.com/kpirnie/podnest/main/setup.sh | sudo bash -s -- USER
 ```
-
-Replace `/your/persistent/path` with a host path where site configs, the database, and application data should persist across restarts and container recreations. Without this mount, all data is lost when the container is removed.
 
 Once running, the UI is available at: `http://your-host:9000`
 

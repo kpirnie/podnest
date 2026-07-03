@@ -20,6 +20,10 @@ id "$PN_USER" &>/dev/null || useradd -m -s /usr/sbin/nologin "$PN_USER"
 grep -q "^$PN_USER:" /etc/subuid || usermod --add-subuids 200000-265535 "$PN_USER"
 grep -q "^$PN_USER:" /etc/subgid || usermod --add-subgids 200000-265535 "$PN_USER"
 
+# rootless proxy needs to bind 80/443
+echo 'net.ipv4.ip_unprivileged_port_start=80' > /etc/sysctl.d/99-podnest.conf
+sysctl --system >/dev/null
+
 # run user services with no login, and bring the user manager up now
 loginctl enable-linger "$PN_USER"
 
@@ -45,6 +49,12 @@ cat > "/home/$PN_USER/.config/systemd/user/podman.socket.d/override.conf" <<'EOF
 RemoveOnStop=yes
 EOF
 chown -R "$PN_USER:$PN_USER" "/home/$PN_USER/.config/systemd/user/podman.socket.d"
+
+# fix root-owned intermediates created by install -d
+chown "$PN_USER:$PN_USER" "/home/$PN_USER/.config" "/home/$PN_USER/.config/systemd" "/home/$PN_USER/.config/systemd/user"
+
+# clear a stale/dangling enable symlink from prior installs
+rm -f "/home/$PN_USER/.config/systemd/user/sockets.target.wants/podman.socket"
 
 #############################################
 # 3. Bring up the ROOTLESS podman socket
