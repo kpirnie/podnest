@@ -108,6 +108,8 @@ func migrateColumns(db *sql.DB) error {
 		// redirect module
 		`CREATE TABLE IF NOT EXISTS kppn_redirects (id INTEGER PRIMARY KEY AUTOINCREMENT, site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE, source TEXT NOT NULL, target TEXT NOT NULL, code INTEGER NOT NULL DEFAULT 301, position INTEGER NOT NULL DEFAULT 0, created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated DATETIME)`,
 		`CREATE INDEX IF NOT EXISTS idx_redirects_site ON kppn_redirects (site_id)`,
+		// pma sso session validation
+		`ALTER TABLE kppn_pma_tokens ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0`,
 	}
 
 	for _, m := range migrations {
@@ -388,6 +390,15 @@ CREATE TABLE IF NOT EXISTS kppn_pma_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_pma_tokens_site ON kppn_pma_tokens (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_pma_sessions (
+    token      TEXT    PRIMARY KEY,
+    site_id    INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    user_id    INTEGER NOT NULL,
+    expires_at DATETIME NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pma_sessions_site ON kppn_pma_sessions (site_id);
 
 CREATE TABLE IF NOT EXISTS kppn_sftp_creds (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,

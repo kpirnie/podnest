@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
@@ -66,7 +67,14 @@ func (h *Handler) apiIssuePMAToken(w http.ResponseWriter, r *http.Request) {
 	}
 	token := hex.EncodeToString(b)
 
-	if err := db.CreatePMAToken(h.DB, token, site.ID, pmaTokenTTL); err != nil {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		logger.Error("no authenticated user issuing PMA token for site %d", site.ID)
+		apiutil.ErrorMsg(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	if err := db.CreatePMAToken(h.DB, token, site.ID, user.ID, pmaTokenTTL); err != nil {
 		logger.Error("failed to persist PMA token for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
@@ -97,7 +105,8 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 	idStr := parts[0]
 
 	if tok := r.URL.Query().Get("tok"); tok != "" {
-		siteID, err := db.ConsumePMAToken(h.DB, tok)
+
+		siteID, userID, err := db.ConsumePMAToken(h.DB, tok)
 		if err != nil {
 			logger.Error("failed to consume PMA token for site %d: %v", id, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -108,9 +117,21 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid or expired token", http.StatusUnauthorized)
 			return
 		}
+		sb := make([]byte, 32)
+		if _, err := rand.Read(sb); err != nil {
+			logger.Error("failed to generate PMA session for site %d: %v", id, err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		sess := hex.EncodeToString(sb)
+		if err := db.CreatePMASession(h.DB, sess, id, userID, pmaCookieTTL); err != nil {
+			logger.Error("failed to persist PMA session for site %d: %v", id, err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
 		http.SetCookie(w, &http.Cookie{
 			Name:     pmaCookieName + "_" + idStr,
-			Value:    tok,
+			Value:    sess,
 			Path:     "/pma/" + idStr,
 			HttpOnly: true,
 			Secure:   isSecureReq(r),
@@ -125,6 +146,18 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(pmaCookieName + "_" + idStr)
 	if err != nil || cookie.Value == "" {
 		logger.Error("missing or empty PMA session cookie for site %d", id)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	valid, err := db.ValidatePMASession(h.DB, cookie.Value, id)
+	if err != nil {
+		logger.Error("failed to validate PMA session for site %d: %v", id, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if !valid {
+		logger.Error("invalid or expired PMA session cookie for site %d", id)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

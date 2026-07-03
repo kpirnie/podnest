@@ -39,6 +39,7 @@ func (s *Server) sessionReaper() {
 	for range ticker.C {
 		_ = auth.PurgeExpiredSessions(s.cfg.DB)
 		_ = db.DeleteExpiredPMATokens(s.cfg.DB)
+		_ = db.DeleteExpiredPMASessions(s.cfg.DB)
 	}
 }
 
