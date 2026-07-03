@@ -90,6 +90,8 @@ func migrateColumns(db *sql.DB) error {
 		// TOTP support
 		`ALTER TABLE kppn_users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE kppn_users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+		// per-user salt for password-derived totp secret encryption
+		`ALTER TABLE kppn_users ADD COLUMN totp_salt TEXT NOT NULL DEFAULT ''`,
 		// Notifiy support
 		`ALTER TABLE kppn_users ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE kppn_users ADD COLUMN notify_sms INTEGER NOT NULL DEFAULT 0`,

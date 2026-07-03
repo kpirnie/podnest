@@ -138,6 +138,7 @@ type User struct {
 	Phone       string
 	Role        int
 	TOTPSecret  string
+	TOTPSalt    string
 	TOTPEnabled bool
 	NotifyEmail bool
 	NotifySMS   bool

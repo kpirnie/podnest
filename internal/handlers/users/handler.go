@@ -267,6 +267,12 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		logger.Debug("invalidating all sessions for user %d after password change", target.ID)
 		_ = db.DeleteUserSessions(h.DB, target.ID)
+
+		// the TOTP secret is encrypted with a key derived from the old password — force re-enrollment
+		if target.TOTPEnabled {
+			_ = db.DisableTOTP(h.DB, target.ID)
+			_ = db.DeleteBackupCodes(h.DB, target.ID)
+		}
 	}
 
 	logger.Debug("updated user %d: %s", target.ID, target.UName)
@@ -356,9 +362,24 @@ func (h *Handler) apiTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !auth.VerifyTOTP(fresh.TOTPSecret, req.Code) {
+	// decrypt with the caller's password-derived key; pending secrets are stored plaintext
+	totpKey := auth.GetTOTPKey(auth.SessionFromRequest(r))
+	secret, decErr := auth.DecryptTOTPSecret(totpKey, fresh.TOTPSecret)
+	if decErr != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "please log out and back in, then retry TOTP setup")
+		return
+	}
+
+	if !auth.VerifyTOTP(secret, req.Code) {
 		apiutil.ErrorMsg(w, http.StatusUnprocessableEntity, "invalid TOTP code")
 		return
+	}
+
+	// encrypt the confirmed secret with the owner's key — only when confirming our own
+	if caller.ID == target.ID && totpKey != nil && !auth.IsEncryptedTOTPSecret(fresh.TOTPSecret) {
+		if enc, encErr := auth.EncryptTOTPSecret(totpKey, fresh.TOTPSecret); encErr == nil {
+			_ = db.UpdateTOTPSecret(h.DB, target.ID, enc)
+		}
 	}
 
 	if err := db.EnableTOTP(h.DB, target.ID); err != nil {

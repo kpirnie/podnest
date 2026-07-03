@@ -48,6 +48,7 @@ type LoginResult struct {
 	SessionID    string
 	TOTPRequired bool
 	UserID       int64
+	TOTPKey      []byte
 }
 
 // isSecure reports whether the request arrived over a secure connection,
@@ -106,10 +107,22 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 		return nil, ErrInvalidCredentials
 	}
 
+	// Derive the TOTP encryption key from the password while it is still in hand
+	salt := user.TOTPSalt
+	if salt == "" {
+		if s, sErr := GenerateTOTPSalt(); sErr == nil && db.SetTOTPSalt(database, user.ID, s) == nil {
+			salt = s
+		}
+	}
+	var totpKey []byte
+	if salt != "" {
+		totpKey = DeriveTOTPKey(password, salt)
+	}
+
 	// If TOTP is enabled, signal the caller to handle the second step
 	if user.TOTPEnabled {
 		logger.Debug("TOTP required for user: %s", uname)
-		return &LoginResult{TOTPRequired: true, UserID: user.ID}, nil
+		return &LoginResult{TOTPRequired: true, UserID: user.ID, TOTPKey: totpKey}, nil
 	}
 
 	// Generate a new session ID
@@ -141,6 +154,9 @@ func Login(database *sql.DB, uname, password string) (*LoginResult, error) {
 	}
 
 	logger.Debug("User logged in: %s", uname)
+
+	// Keep the derived key in memory for the session so enrollment can encrypt immediately
+	StashTOTPKey(sessionID, totpKey, SessionDuration)
 
 	// Return the session ID to be set in the cookie
 	return &LoginResult{SessionID: sessionID}, nil

@@ -57,11 +57,11 @@ func GetUserByUsername(db *sql.DB, uname string) (*models.User, error) {
 
 	// query the database for a user matching the provided username and scan the result into the user struct
 	err := db.QueryRow(`
-		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_enabled, notify_email, notify_sms, created, updated
+		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, created, updated
 		FROM kppn_users WHERE uname = ?`, uname,
 	).Scan(
 		&u.ID, &u.UName, &u.PWord, &u.UHash, &u.FName, &u.LName,
-		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPEnabled,
+		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPSalt, &u.TOTPEnabled,
 		&u.NotifyEmail, &u.NotifySMS, &u.Created, &u.Updated,
 	)
 	if err == sql.ErrNoRows {
@@ -84,11 +84,11 @@ func GetUserByID(db *sql.DB, id int64) (*models.User, error) {
 
 	// query the database for a user matching the provided ID and scan the result into the user struct
 	err := db.QueryRow(`
-		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_enabled, notify_email, notify_sms, created, updated
+		SELECT id, uname, pword, uhash, fname, lname, email, phone, role, totp_secret, totp_salt, totp_enabled, notify_email, notify_sms, created, updated
 		FROM kppn_users WHERE id = ?`, id,
 	).Scan(
 		&u.ID, &u.UName, &u.PWord, &u.UHash, &u.FName, &u.LName,
-		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPEnabled,
+		&u.Email, &u.Phone, &u.Role, &u.TOTPSecret, &u.TOTPSalt, &u.TOTPEnabled,
 		&u.NotifyEmail, &u.NotifySMS, &u.Created, &u.Updated,
 	)
 	if err == sql.ErrNoRows {
@@ -198,6 +198,24 @@ func SetTOTPSecret(db *sql.DB, id int64, secret string) error {
 	_, err := db.Exec(`UPDATE kppn_users SET totp_secret=?, totp_enabled=0, updated=datetime('now') WHERE id=?`, secret, id)
 	if err != nil {
 		logger.Error("SetTOTPSecret: failed for user %d: %v", id, err)
+	}
+	return err
+}
+
+// SetTOTPSalt stores the per-user salt used for TOTP secret key derivation.
+func SetTOTPSalt(db *sql.DB, id int64, salt string) error {
+	_, err := db.Exec(`UPDATE kppn_users SET totp_salt=?, updated=datetime('now') WHERE id=?`, salt, id)
+	if err != nil {
+		logger.Error("SetTOTPSalt: failed for user %d: %v", id, err)
+	}
+	return err
+}
+
+// UpdateTOTPSecret replaces the stored TOTP secret without touching the enabled flag.
+func UpdateTOTPSecret(db *sql.DB, id int64, secret string) error {
+	_, err := db.Exec(`UPDATE kppn_users SET totp_secret=?, updated=datetime('now') WHERE id=?`, secret, id)
+	if err != nil {
+		logger.Error("UpdateTOTPSecret: failed for user %d: %v", id, err)
 	}
 	return err
 }

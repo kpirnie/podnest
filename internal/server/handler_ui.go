@@ -236,7 +236,17 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if !auth.VerifyTOTP(user.TOTPSecret, code) {
+		// decrypt the stored secret with the password-derived key from the login step
+		totpKey := auth.GetTOTPKey(pendingToken)
+		secret, decErr := auth.DecryptTOTPSecret(totpKey, user.TOTPSecret)
+		if decErr != nil {
+			logger.Warn("unable to decrypt TOTP secret for user %d: %v", user.ID, decErr)
+			auth.ClearTOTPPendingCookie(w)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+
+		if !auth.VerifyTOTP(secret, code) {
 
 			// fall back to backup codes
 			used, _ := db.UseBackupCode(s.cfg.DB, user.ID, code)
@@ -271,12 +281,23 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		auth.ClearTOTPPendingCookie(w)
 		auth.RecordSuccessfulLogin(ip)
 
+		// lazily encrypt a plaintext secret now that the password-derived key is in hand
+		if totpKey != nil && !auth.IsEncryptedTOTPSecret(user.TOTPSecret) {
+			if enc, encErr := auth.EncryptTOTPSecret(totpKey, user.TOTPSecret); encErr == nil {
+				_ = db.UpdateTOTPSecret(s.cfg.DB, user.ID, enc)
+			}
+		}
+
 		sessionID, _, err := auth.CreateSession(s.cfg.DB, user.ID)
 		if err != nil {
 			logger.Error("failed to create session after TOTP for user %d: %v", user.ID, err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+
+		// hand the derived key from the pending token to the new session
+		auth.DropTOTPKey(pendingToken)
+		auth.StashTOTPKey(sessionID, totpKey, auth.SessionDuration)
 
 		logger.Debug("user '%s' completed TOTP login", user.UName)
 		// record successful TOTP login
