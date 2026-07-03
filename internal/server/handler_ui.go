@@ -247,6 +247,8 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 				}); err != nil {
 					http.Error(w, "template error", http.StatusInternalServerError)
 				}
+				auth.RecordFailedLogin(ip)
+
 				// record TOTP failure
 				audit.Record(models.AuditEntry{
 					UID:      &user.ID,
