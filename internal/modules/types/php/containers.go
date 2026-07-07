@@ -6,8 +6,6 @@ package php
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
 	"podnest/internal/models"
@@ -200,36 +198,9 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		}
 	}
 
-	// phpMyAdmin
-	h := sha256.Sum256([]byte(cfg.DBRootPass))
-	blowfish := hex.EncodeToString(h[:])[:32]
-	if err := client.CreateContainer(ctx, modules.ContainerConfig{
-		Name:    modules.ContainerName(cfg.Site.Name, "pma"),
-		Image:   models.ImgPMA,
-		PodName: podName,
-		Env: map[string]string{
-			"PMA_HOST":                "127.0.0.1",
-			"PMA_PORT":                "3306",
-			"PMA_USER":                cfg.DBUser,
-			"PMA_PASSWORD":            cfg.DBPass,
-			"PMA_BLOWFISH_SECRET":     blowfish,
-			"PMA_ABSOLUTE_URI":        fmt.Sprintf("/pma/%d/", cfg.Site.ID),
-			"APACHE_PORT":             fmt.Sprintf("%d", models.PHPMyAdminPort),
-			"PHP_MEMORY_LIMIT":        "512M",
-			"PHP_MAX_EXECUTION_TIME":  "300",
-			"PHP_UPLOAD_MAX_FILESIZE": "256M",
-			"PHP_POST_MAX_SIZE":       "256M",
-			"UPLOAD_LIMIT":            "256M",
-		},
-		CapDrop:     []string{"ALL"},
-		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"},
-		SecOpts:     []string{secNoNewPriv},
-		Healthcheck: modules.HC(modules.HCRolePMA),
-	}); err != nil {
-		return fmt.Errorf("create pma: %w", err)
-	}
-	if err := client.StartContainer(ctx, modules.ContainerName(cfg.Site.Name, "pma")); err != nil {
-		return fmt.Errorf("start pma: %w", err)
+	// phpMyAdmin — shared helper so PMA env/hardening changes are a one-place edit
+	if err := modules.CreatePMAContainer(ctx, client, cfg, podName); err != nil {
+		return err
 	}
 
 	return nil

@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,7 +34,6 @@ import (
 
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // domainEntry holds the routing target for a registered domain
@@ -52,16 +50,6 @@ type statusWriter struct {
 	http.ResponseWriter
 	status int
 	bytes  int
-}
-
-// compiledRedirect is a redirect rule with its Source pattern pre-compiled.
-// re is non-nil when Source compiled as a valid regex; when nil, matching
-// falls back to exact/prefix comparison against the request path.
-type compiledRedirect struct {
-	re     *regexp.Regexp
-	source string
-	target string
-	code   int
 }
 
 // write the response headers
@@ -140,18 +128,6 @@ type Config struct {
 	AdminDomain string
 	AdminPort   int
 	AppPath     string
-}
-
-// dummyBcryptHash is compared against when a basic-auth username is unknown, so
-// an unknown user costs the same time as a known user with a wrong password —
-// removing the username-enumeration timing oracle. Cost (12) must match the
-// basic-auth module's hashing cost so the comparison time is equivalent.
-var dummyBcryptHash, _ = bcrypt.GenerateFromPassword([]byte("podnest-basic-auth-timing-equalizer"), 12)
-
-// basicAuthEntry holds the cached config and pre-hashed credentials for a site.
-type basicAuthEntry struct {
-	realm string
-	users map[string]string // username → bcrypt hash
 }
 
 // New creates and configures the proxy but does not start listeners
@@ -396,75 +372,6 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
 	p.warmConnections()
-	return nil
-}
-
-// WarmRedirectCache atomically replaces the redirect rules for a single site.
-// Called immediately after a redirect save so the proxy reflects changes without
-// a full cache reload.
-func (p *Proxy) WarmRedirectCache(siteID int64, redirects []db.Redirect) {
-	if len(redirects) == 0 {
-		p.redirectCache.Delete(siteID)
-	} else {
-		p.redirectCache.Store(siteID, compileRedirects(redirects))
-	}
-	logger.Debug("proxy: redirect cache updated for siteID=%d (%d rules)", siteID, len(redirects))
-}
-
-// WarmBasicAuthCache loads all enabled basic auth configs and credentials
-// from the database and atomically replaces the in-memory cache.
-// Called on startup and after any basic auth change.
-func (p *Proxy) warmBasicAuthCache() {
-	cfgs, users, err := db.GetAllBasicAuthData(p.database)
-	if err != nil {
-		logger.Error("proxy: WarmBasicAuthCache: %v", err)
-		return
-	}
-
-	// clear existing entries before repopulating
-	p.basicAuthCache.Range(func(k, _ any) bool {
-		p.basicAuthCache.Delete(k)
-		return true
-	})
-
-	for siteID, cfg := range cfgs {
-		entry := &basicAuthEntry{
-			realm: cfg.Realm,
-			users: make(map[string]string, len(users[siteID])),
-		}
-		for _, u := range users[siteID] {
-			entry.users[u.Username] = u.PasswordHash
-		}
-		p.basicAuthCache.Store(siteID, entry)
-	}
-	logger.Debug("proxy: basic auth cache warmed — %d sites", len(cfgs))
-}
-
-// warmRedirectCache loads all redirect rules from the database and populates
-// the in-memory cache. Called during full cache warm on startup and settings changes.
-func (p *Proxy) warmRedirectCache() error {
-	redirects, err := db.GetAllRedirects(p.database)
-	if err != nil {
-		logger.Error("proxy: failed to warm redirect cache: %v", err)
-		return err
-	}
-
-	// clear existing entries
-	p.redirectCache.Range(func(k, _ any) bool {
-		p.redirectCache.Delete(k)
-		return true
-	})
-
-	// group by site and store
-	grouped := make(map[int64][]db.Redirect)
-	for _, rd := range redirects {
-		grouped[rd.SiteID] = append(grouped[rd.SiteID], rd)
-	}
-	for siteID, rules := range grouped {
-		p.redirectCache.Store(siteID, compileRedirects(rules))
-	}
-
-	logger.Debug("proxy: redirect cache warmed — %d total rules across %d sites", len(redirects), len(grouped))
 	return nil
 }
 
@@ -870,63 +777,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// check redirect rules before security enforcement — redirects are intentional
 	// routing decisions, not subject to IP/UA/WAF filtering
-	if siteID > 0 {
-		if rules, ok := p.redirectCache.Load(siteID); ok {
-			for _, rd := range rules.([]compiledRedirect) {
-				target := rd.target
-				if rd.re != nil {
-					// match the path first, then host+path — lets host-aware
-					// rules (canonical-domain redirects) work without breaking
-					// existing path-only patterns. Host has no port on 80/443.
-					for _, candidate := range []string{r.URL.Path, r.Host + r.URL.Path} {
-						if matches := rd.re.FindStringSubmatch(candidate); matches != nil {
-							for i, m := range matches[1:] {
-								target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
-							}
-							http.Redirect(w, r, target, rd.code)
-							dur := time.Since(start)
-							p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
-							return
-						}
-					}
-				} else {
-					if r.URL.Path == rd.source || (rd.source != "/" && strings.HasPrefix(r.URL.Path, rd.source)) {
-						http.Redirect(w, r, target, rd.code)
-						dur := time.Since(start)
-						p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
-						return
-					}
-				}
-			}
-		}
+	if siteID > 0 && p.applyRedirects(w, r, siteID, start, clientIPStr, siteName) {
+		return
 	}
 
 	// enforce per-site basic auth — checked before IP/UA/WAF so 401 is returned cleanly
-	if siteID > 0 {
-		if v, ok := p.basicAuthCache.Load(siteID); ok {
-			entry := v.(*basicAuthEntry)
-			user, pass, hasAuth := r.BasicAuth()
-			if !hasAuth {
-				w.Header().Set("WWW-Authenticate", `Basic realm="`+entry.realm+`"`)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				dur := time.Since(start)
-				p.writeAccessLog(r, http.StatusUnauthorized, 0, start, dur, clientIPStr, siteID, siteName)
-				return
-			}
-			hash, known := entry.users[user]
-			if !known {
-				// compare against a fixed dummy hash so an unknown user takes the
-				// same time as a wrong password for a known user (no timing oracle)
-				hash = string(dummyBcryptHash)
-			}
-			if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil || !known {
-				w.Header().Set("WWW-Authenticate", `Basic realm="`+entry.realm+`"`)
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				dur := time.Since(start)
-				p.writeAccessLog(r, http.StatusUnauthorized, 0, start, dur, clientIPStr, siteID, siteName)
-				return
-			}
-		}
+	if siteID > 0 && p.enforceBasicAuth(w, r, siteID, start, clientIPStr, siteName) {
+		return
 	}
 
 	// load the compiled security cache — single atomic load, no lock
@@ -1224,89 +1081,6 @@ func (p *Proxy) getOrCreateRPProxy(target *url.URL, passHost bool) *httputil.Rev
 	return actual.(*httputil.ReverseProxy)
 }
 
-// siteLogFile returns the open *os.File for a per-site log, creating the file
-// and its parent logs/ directory on first access. The result is cached in the
-// appropriate sync.Map (cache) so the file is opened at most once per site.
-// logType must be "access" or "waf"; the corresponding filename is derived from it.
-func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType string) *os.File {
-	// fast path — already open
-	if v, ok := cache.Load(siteID); ok {
-		return v.(*os.File)
-	}
-
-	// slow path — create directory and open file
-	dir := fmt.Sprintf("%s/sites/%s/logs", p.appPath, siteName)
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		logger.Error("proxy: siteLogFile: mkdir %s: %v", dir, err)
-		return nil
-	}
-
-	filename := "access.log"
-	if logType == "waf" {
-		filename = "waf.log"
-	}
-
-	path := dir + "/" + filename
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
-	if err != nil {
-		logger.Error("proxy: siteLogFile: open %s: %v", path, err)
-		return nil
-	}
-	logger.Debug("proxy: siteLogFile: opened %s for siteID=%d", path, siteID)
-
-	// store; if another goroutine raced us, close the duplicate and use theirs
-	actual, loaded := cache.LoadOrStore(siteID, f)
-	if loaded {
-		f.Close()
-		return actual.(*os.File)
-	}
-	return f
-}
-
-// writeAccessLog writes a single structured line to the correct access log.
-// siteID 0 (admin/unmatched traffic) routes to the global proxy-access.log;
-// all other sites route to {appPath}/sites/{siteName}/logs/access.log.
-// siteName is only required when siteID > 0.
-func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Time, dur time.Duration, clientIP string, siteID int64, siteName string) {
-	line := fmt.Sprintf("%s %s %s %s %d %d %s %s %q\n",
-		start.UTC().Format(time.RFC3339),
-		r.Method,
-		r.Host,
-		r.URL.Path,
-		status,
-		bytes,
-		dur.Round(time.Millisecond).String(),
-		clientIP,
-		r.UserAgent(),
-	)
-
-	if siteID > 0 {
-		// per-site log
-		f := p.siteLogFile(&p.siteAccessLogs, siteID, siteName, "access")
-		if f == nil {
-			return
-		}
-		p.accessLogMu.Lock()
-		_, err := f.WriteString(line)
-		p.accessLogMu.Unlock()
-		if err != nil {
-			logger.Error("proxy: site access log write failed siteID=%d: %v", siteID, err)
-		}
-		return
-	}
-
-	// global log — siteID 0 (admin domain, unmatched)
-	if p.accessLog == nil {
-		return
-	}
-	p.accessLogMu.Lock()
-	_, err := p.accessLog.WriteString(line)
-	p.accessLogMu.Unlock()
-	if err != nil {
-		logger.Error("proxy: access log write failed: %v", err)
-	}
-}
-
 // selfSignedCert generates or loads a persistent self-signed cert from the cert directory.
 func selfSignedCert(certDir string) (tls.Certificate, error) {
 	certFile := certDir + "/self-signed.crt"
@@ -1448,22 +1222,6 @@ func isIPBypassed(ip net.IP, bypass []*compiledIPRule) bool {
 // WarmBypassCache is the exported wrapper called by the security handler after a bypass rule change.
 func (p *Proxy) WarmBypassCache(rules []*db.BypassRule) {
 	p.warmBypassCache(rules)
-}
-
-// compileRedirects pre-compiles a slice of redirect rules so the request hot
-// path never calls regexp.Compile — removing both the per-request compile cost
-// and a per-request ReDoS surface on the user-supplied Source pattern.
-func compileRedirects(redirects []db.Redirect) []compiledRedirect {
-	out := make([]compiledRedirect, 0, len(redirects))
-	for _, rd := range redirects {
-		cr := compiledRedirect{source: rd.Source, target: rd.Target, code: rd.Code}
-		// a Source that fails to compile is matched literally at request time
-		if re, err := regexp.Compile(rd.Source); err == nil {
-			cr.re = re
-		}
-		out = append(out, cr)
-	}
-	return out
 }
 
 // ClientIP resolves the real client IP for a request using the proxy's
