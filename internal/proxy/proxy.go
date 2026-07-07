@@ -97,37 +97,39 @@ func (sw *statusWriter) Flush() {
 
 // Proxy is the built-in TLS-terminating reverse proxy
 type Proxy struct {
-	database       *sql.DB
-	hostGateway    string
-	adminDomain    string
-	adminPort      int
-	appPath        string
-	adminMu        sync.RWMutex                                 // guards adminDomain only
-	cache          atomic.Pointer[map[string]domainEntry]       // domain → entry; swapped atomically on every change
-	secCache       atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
-	wafEnabled     atomic.Bool                                  // true when global WAF is on
-	wafEngine      atomic.Pointer[WAFEngine]                    // global compiled engine
-	wafSiteEngines sync.Map                                     // int64(siteID) → *WAFEngine
-	wafOverrides   atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
-	trustedProxies atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
-	bypassNets     atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
-	rpCache        sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
-	rpProxyCache   sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
-	redirectCache  sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
-	basicAuthCache sync.Map                                     // int64(siteID) → *basicAuthEntry; nil entry means disabled
-	transport      *http.Transport                              // shared connection pool across all reverse proxies
-	adminTransport *http.Transport                              // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
-	rpTransport    *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
-	accessLog      *os.File                                     // structured access log for Fail2Ban consumption
-	accessLogMu    sync.Mutex                                   // guards concurrent writes to accessLog
-	wafLog         *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
-	wafLogMu       sync.Mutex                                   // guards concurrent writes to wafLog
-	siteAccessLogs sync.Map                                     // int64(siteID) → *os.File for per-site access.log
-	siteWAFLogs    sync.Map                                     // int64(siteID) → *os.File for per-site waf.log
-	manager        *autocert.Manager
-	httpSrv        *http.Server
-	httpsSrv       *http.Server
-	http3Srv       *http3.Server
+	database          *sql.DB
+	hostGateway       string
+	adminDomain       string
+	adminPort         int
+	appPath           string
+	adminMu           sync.RWMutex                                 // guards adminDomain only
+	cache             atomic.Pointer[map[string]domainEntry]       // domain → entry; swapped atomically on every change
+	secCache          atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
+	wafEnabled        atomic.Bool                                  // true when global WAF is on
+	wafEngine         atomic.Pointer[WAFEngine]                    // global compiled engine
+	wafSiteEngines    sync.Map                                     // int64(siteID) → *WAFEngine
+	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
+	trustedProxies    atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
+	bypassNets        atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
+	rpCache           sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
+	rpProxyCache      sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
+	redirectCache     sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
+	basicAuthCache    sync.Map                                     // int64(siteID) → *basicAuthEntry; nil entry means disabled
+	transport         *http.Transport                              // shared connection pool across all reverse proxies
+	adminTransport    *http.Transport                              // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
+	rpTransport       *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
+	rpVerifyTransport *http.Transport                              // verifying twin of rpTransport for upstreams whose certs probe as valid
+	rpTLSVerified     sync.Map                                     // string(upstream host) → bool; probed cert-verification verdicts
+	accessLog         *os.File                                     // structured access log for Fail2Ban consumption
+	accessLogMu       sync.Mutex                                   // guards concurrent writes to accessLog
+	wafLog            *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
+	wafLogMu          sync.Mutex                                   // guards concurrent writes to wafLog
+	siteAccessLogs    sync.Map                                     // int64(siteID) → *os.File for per-site access.log
+	siteWAFLogs       sync.Map                                     // int64(siteID) → *os.File for per-site waf.log
+	manager           *autocert.Manager
+	httpSrv           *http.Server
+	httpsSrv          *http.Server
+	http3Srv          *http3.Server
 }
 
 // Config holds the proxy dependencies
@@ -187,6 +189,18 @@ func New(cfg Config) *Proxy {
 			MaxIdleConnsPerHost:   20,
 			IdleConnTimeout:       90 * time.Second,
 			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
+		},
+		// verifying twin of rpTransport for upstreams whose certs probe as valid
+		rpVerifyTransport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+			MaxIdleConns:          200,
+			MaxIdleConnsPerHost:   20,
+			IdleConnTimeout:       90 * time.Second,
 		},
 		// admin-panel transport mirrors `transport` but omits ResponseHeaderTimeout:
 		// the panel is our own trusted upstream and long synchronous operations
@@ -575,6 +589,11 @@ func (p *Proxy) warmConnections() {
 			if entry.pool != nil {
 				targets := entry.pool.Targets()
 				for _, target := range targets {
+
+					// probe the cert verdict so serving can opportunistically verify TLS
+					p.probeUpstreamTLS(target)
+
+					// setup the url
 					url := target.Scheme + "://" + target.Host + "/"
 					resp, err := rpClient.Head(url)
 					if err != nil {
@@ -980,7 +999,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// first attempt — direct passthrough, no buffering
 		first := rpPool.At(startIdx)
-		if tryUpstreamDirect(sw, r, first, p.rpTransport) {
+		if tryUpstreamDirect(sw, r, first, p.rpTransportForTarget(first)) {
+			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+			return
+		}
+
+		// a verified upstream may have a newly-broken cert — flip it back and retry once unverified
+		if p.markTLSUnverified(first) && tryUpstream(sw, r, first, p.rpTransport) {
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
@@ -988,7 +1013,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// first upstream failed — try remaining upstreams with buffered recorder
 		for i := 1; i < rpPool.Len(); i++ {
 			target := rpPool.At(startIdx + i)
-			if tryUpstream(sw, r, target, p.rpTransport) {
+			if tryUpstream(sw, r, target, p.rpTransportForTarget(target)) {
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 				return
 			}
@@ -1146,6 +1171,44 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 	}
 	actual, _ := p.rpCache.LoadOrStore(port, rp)
 	return actual.(*httputil.ReverseProxy)
+}
+
+// probeUpstreamTLS records whether an https upstream presents a verifiable certificate,
+// so serving can pick the verifying transport without a per-route setting
+func (p *Proxy) probeUpstreamTLS(u *url.URL) {
+	if u.Scheme != "https" {
+		return
+	}
+	host := u.Host
+	if u.Port() == "" {
+		host = net.JoinHostPort(u.Hostname(), "443")
+	}
+	d := &net.Dialer{Timeout: 5 * time.Second}
+	conn, err := tls.DialWithDialer(d, "tcp", host, &tls.Config{ServerName: u.Hostname()})
+	if err != nil {
+		p.rpTLSVerified.Store(u.Host, false)
+		return
+	}
+	conn.Close()
+	p.rpTLSVerified.Store(u.Host, true)
+	logger.Debug("proxy: upstream %s presents a verifiable certificate", u.Host)
+}
+
+// rpTransportForTarget returns the verifying transport when the upstream's cert probed as valid
+func (p *Proxy) rpTransportForTarget(t UpstreamTarget) *http.Transport {
+	if v, ok := p.rpTLSVerified.Load(t.URL.Host); ok && v.(bool) {
+		return p.rpVerifyTransport
+	}
+	return p.rpTransport
+}
+
+// markTLSUnverified flips a probed-verified host back to skip-verify; returns true if flipped
+func (p *Proxy) markTLSUnverified(t UpstreamTarget) bool {
+	if v, ok := p.rpTLSVerified.Load(t.URL.Host); ok && v.(bool) {
+		p.rpTLSVerified.Store(t.URL.Host, false)
+		return true
+	}
+	return false
 }
 
 // getOrCreateRPProxy returns a cached *httputil.ReverseProxy for the given upstream URL,
