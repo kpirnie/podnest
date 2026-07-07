@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Kevin Pirnie <iam@kevinpirnie.com>
 // Licensed under the MIT License. See LICENSE file in the project root for full license text.
 
-package modules
+package containers
 
 import (
 	"context"
@@ -11,20 +11,17 @@ import (
 	"fmt"
 
 	"podnest/internal/models"
+	"podnest/internal/modules"
 )
 
-// pmaSecNoNewPriv mirrors the per-module security option applied to all site containers.
-const pmaSecNoNewPriv = "no-new-privileges:true"
+// CreatePMA creates and starts the phpMyAdmin container for a site pod.
+func CreatePMA(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, podName string) error {
 
-// CreatePMAContainer creates and starts the phpMyAdmin container for a site pod.
-// Shared across all database-backed type modules so a PMA env, hardening, or
-// healthcheck change is a one-place edit.
-func CreatePMAContainer(ctx context.Context, client PodmanClient, cfg PodConfig, podName string) error {
 	// derive a stable blowfish secret from the root password
 	h := sha256.Sum256([]byte(cfg.DBRootPass))
 	blowfish := hex.EncodeToString(h[:])[:32]
-	if err := client.CreateContainer(ctx, ContainerConfig{
-		Name:    ContainerName(cfg.Site.Name, "pma"),
+	if err := client.CreateContainer(ctx, modules.ContainerConfig{
+		Name:    modules.ContainerName(cfg.Site.Name, "pma"),
 		Image:   models.ImgPMA,
 		PodName: podName,
 		Env: map[string]string{
@@ -43,12 +40,12 @@ func CreatePMAContainer(ctx context.Context, client PodmanClient, cfg PodConfig,
 		},
 		CapDrop:     []string{"ALL"},
 		CapAdd:      []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "NET_BIND_SERVICE"},
-		SecOpts:     []string{pmaSecNoNewPriv},
-		Healthcheck: HC(HCRolePMA),
+		SecOpts:     []string{"no-new-privileges:true"},
+		Healthcheck: modules.HC(modules.HCRolePMA),
 	}); err != nil {
 		return fmt.Errorf("create pma: %w", err)
 	}
-	if err := client.StartContainer(ctx, ContainerName(cfg.Site.Name, "pma")); err != nil {
+	if err := client.StartContainer(ctx, modules.ContainerName(cfg.Site.Name, "pma")); err != nil {
 		return fmt.Errorf("start pma: %w", err)
 	}
 	return nil
