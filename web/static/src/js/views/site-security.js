@@ -13,9 +13,10 @@ export function renderSecurityPanel(siteId = null) {
     const ipBase  = siteId ? `/sites/${siteId}/security/ip` : `/security/ip`;
     const uaBase  = siteId ? `/sites/${siteId}/security/ua` : `/security/ua`;
     const wafBase = siteId ? `/sites/${siteId}/waf`          : `/settings/waf`;
+    const geoBase = siteId ? `/sites/${siteId}/security/country` : `/security/country`;
 
     return `
-        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-waf-base="${wafBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
+        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-waf-base="${wafBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
 
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
@@ -95,6 +96,41 @@ export function renderSecurityPanel(siteId = null) {
                         </label>
                         <textarea class="uk-textarea kp-textarea" id="sec-ua-blacklist" rows="6"
                             placeholder="# block these agents&#10;sqlmap&#10;nikto&#10;masscan"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="kp-card uk-padding-small uk-margin-bottom">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">Country Rules</h3>
+                    <div class="uk-flex" style="gap:8px">
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-geo-save" uk-tooltip="Save the Country Rules">
+                            <span uk-icon="check"></span>
+                        </button>
+                    </div>
+                </div>
+                <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                    One ISO 3166-1 alpha-2 country code per line (e.g. <span class="kp-mono">US</span>
+                    or <span class="kp-mono">DE</span>).
+                    Blacklist always wins. Whitelist is disabled when empty.
+                    Unresolvable IPs (private ranges, unknown) are always allowed.
+                </p>
+                <div class="uk-grid-small" uk-grid>
+                    <div class="uk-width-1-2@s">
+                        <label class="kp-label">
+                            <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
+                            Whitelist
+                        </label>
+                        <textarea class="uk-textarea kp-textarea" id="sec-geo-whitelist" rows="6"
+                            placeholder="# allow only these countries&#10;US&#10;CA"></textarea>
+                    </div>
+                    <div class="uk-width-1-2@s">
+                        <label class="kp-label">
+                            <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
+                            Blacklist
+                        </label>
+                        <textarea class="uk-textarea kp-textarea" id="sec-geo-blacklist" rows="6"
+                            placeholder="# block these countries&#10;CN&#10;RU"></textarea>
                     </div>
                 </div>
             </div>
@@ -236,9 +272,10 @@ export async function loadSecurityPanel(root) {
     const wafBase = panel.dataset.wafBase;
 
     try {
-        const fetches = [api.get(ipBase), api.get(uaBase)];
+        const geoBase = panel.dataset.geoBase;
+        const fetches = [api.get(ipBase), api.get(uaBase), api.get(geoBase)];
         if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"), api.get("/security/bypass"));
-        const [ip, ua, waf, tp, bp] = await Promise.all(fetches);
+        const [ip, ua, geo, waf, tp, bp] = await Promise.all(fetches);
 
         // bail if the user navigated away while the fetch was in flight
         if (!root.querySelector("#sec-ip-whitelist")) return;
@@ -247,6 +284,8 @@ export async function loadSecurityPanel(root) {
         root.querySelector("#sec-ip-blacklist").value = ip.blacklist ?? "";
         root.querySelector("#sec-ua-whitelist").value = ua.whitelist ?? "";
         root.querySelector("#sec-ua-blacklist").value = ua.blacklist ?? "";
+        root.querySelector("#sec-geo-whitelist").value = geo.whitelist ?? "";
+        root.querySelector("#sec-geo-blacklist").value = geo.blacklist ?? "";
 
         if (waf) {
             const enabled  = root.querySelector("#sec-waf-enabled");
@@ -284,6 +323,7 @@ export function wireSecurityPanel(root) {
 
     const ipBase  = panel.dataset.ipBase;
     const uaBase  = panel.dataset.uaBase;
+    const geoBase = panel.dataset.geoBase;
 
     // save IP rules
     root.querySelector("#sec-ip-save")?.addEventListener("click", async () => {
@@ -320,6 +360,26 @@ export function wireSecurityPanel(root) {
         } catch (e) {
             toast.error(e.message);
         } finally {
+            btn.disabled  = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // save country rules
+    root.querySelector("#sec-geo-save")?.addEventListener("click", async () => {
+        const btn  = root.querySelector("#sec-geo-save");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            await api.put(geoBase, {
+                whitelist: root.querySelector("#sec-geo-whitelist").value,
+                blacklist: root.querySelector("#sec-geo-blacklist").value,
+            });
+            toast.success("Country rules saved");
+        } catch (e) {
+            toast.error(e.message);
+        }  finally {
             btn.disabled  = false;
             btn.innerHTML = orig;
         }

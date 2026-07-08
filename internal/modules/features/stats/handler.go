@@ -71,6 +71,7 @@ type DrilldownEntry struct {
 	Status   int    `json:"status"`
 	ClientIP string `json:"client_ip"`
 	UA       string `json:"ua"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // podStatEntry is a single container's live resource snapshot.
@@ -650,9 +651,18 @@ func parseDrilldown(logPath, hour, statusClass string) ([]DrilldownEntry, error)
 			continue
 		}
 
+		// blocked requests carry a trailing "reason=<value>" token after the
+		// quoted UA — detach it before joining so it never pollutes the UA
+		reason := ""
+		last := len(fields)
+		if strings.HasPrefix(fields[last-1], "reason=") && !strings.HasSuffix(fields[last-1], "\"") {
+			reason = strings.TrimPrefix(fields[last-1], "reason=")
+			last--
+		}
+
 		ua := ""
-		if len(fields) >= 9 {
-			ua = strings.Trim(strings.Join(fields[8:], " "), "\"")
+		if last >= 9 {
+			ua = strings.Trim(strings.Join(fields[8:last], " "), "\"")
 		}
 
 		results = append(results, DrilldownEntry{
@@ -662,6 +672,7 @@ func parseDrilldown(logPath, hour, statusClass string) ([]DrilldownEntry, error)
 			Status:   statusCode,
 			ClientIP: fields[7],
 			UA:       ua,
+			Reason:   reason,
 		})
 
 		if len(results) >= 500 {

@@ -171,6 +171,9 @@ func (s *Server) Start() error {
 	// nightly CRS rule update — runs immediately on startup then every 24 hours
 	go s.crsUpdater()
 
+	// nightly GEO-IP rule update — runs immediately on startup then every 24 hours
+	go s.geoUpdater()
+
 	// try to grab a cert
 	if adminDomain != "" {
 		px.ObtainCert(adminDomain)

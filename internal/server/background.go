@@ -66,6 +66,29 @@ func (s *Server) crsUpdater() {
 	}
 }
 
+// geoUpdater checks for an updated DB-IP Lite country database daily and
+// reloads the proxy's in-memory copy when a new release is downloaded.
+func (s *Server) geoUpdater() {
+	run := func() {
+		if err := proxy.UpdateGeoDB(s.cfg.AppPath); err != nil {
+			logger.Warn("geoip: update check failed: %v", err)
+			return
+		}
+		if s.proxy != nil {
+			if err := s.proxy.LoadGeoDB(); err != nil {
+				logger.Error("geoip: reload after update failed: %v", err)
+			}
+		}
+	}
+
+	run()
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		run()
+	}
+}
+
 // detectHostAppPath inspects the running container's mounts to resolve the
 // host-side path for the app data directory, falling back to the configured
 // app path if unavailable.

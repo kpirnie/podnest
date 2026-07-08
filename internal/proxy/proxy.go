@@ -24,6 +24,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 
+	"github.com/oschwald/maxminddb-golang"
 	"github.com/quic-go/quic-go/http3"
 	"golang.org/x/crypto/acme/autocert"
 )
@@ -91,6 +92,7 @@ type Proxy struct {
 	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
 	trustedProxies    atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
 	bypassNets        atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
+	geoDB             atomic.Pointer[maxminddb.Reader]             // in-memory country database; swapped atomically on refresh
 	rpCache           sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache      sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
 	redirectCache     sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
@@ -420,7 +422,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			dur := time.Since(start)
-			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
+			// log the block with a distinct reason token for stats drilldown
+			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "ip")
 			return
 		}
 
@@ -428,8 +431,22 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !checkUA(r.UserAgent(), sec.global, siteRules) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			dur := time.Since(start)
-			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
+			// log the block with a distinct reason token for stats drilldown
+			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "ua")
 			return
+		}
+
+		// enforce country rules — geo lookup is skipped entirely when no
+		// country rules are configured in either scope
+		if clientIP != nil && hasCountryRules(sec.global, siteRules) {
+			code := p.countryCode(clientIP)
+			if !checkCountry(code, sec.global, siteRules) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				dur := time.Since(start)
+				// log the block with the resolved country for stats drilldown
+				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "geo:"+code)
+				return
+			}
 		}
 
 		// resolve the WAF engine once — used for both the debug log and enforcement
@@ -450,7 +467,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
 				// WAF wrote the 403; record it in the access log for Fail2Ban
 				dur := time.Since(start)
-				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName)
+				// log the block with a distinct reason token for stats drilldown;
+				// the triggering rule ID is already recorded in waf.log by writeWAFLog
+				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "waf")
 				return
 			}
 		}

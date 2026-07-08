@@ -26,10 +26,12 @@ type compiledUARule struct {
 
 // ruleSet holds the four lists for a single scope (global or per-site)
 type ruleSet struct {
-	ipBlacklist []*compiledIPRule
-	ipWhitelist []*compiledIPRule
-	uaBlacklist []*compiledUARule
-	uaWhitelist []*compiledUARule
+	ipBlacklist      []*compiledIPRule
+	ipWhitelist      []*compiledIPRule
+	uaBlacklist      []*compiledUARule
+	uaWhitelist      []*compiledUARule
+	countryBlacklist []string
+	countryWhitelist []string
 }
 
 // securityCache holds the compiled global rule set and a map of per-site rule sets
@@ -70,7 +72,7 @@ func (r *compiledIPRule) matchesIP(ip net.IP) bool {
 
 // buildSecurityCache compiles all IP and UA rules from the database into
 // an in-memory securityCache ready for zero-allocation hot-path lookups.
-func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) securityCache {
+func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules []*db.CountryRule) securityCache {
 	cache := securityCache{
 		perSite: make(map[int64]ruleSet),
 	}
@@ -128,7 +130,36 @@ func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule) securityCach
 		}
 	}
 
-	logger.Debug("buildSecurityCache: compiled %d IP rules and %d UA rules", len(ipRules), len(uaRules))
+	// compile country rules into the appropriate scope and list — codes are
+	// uppercased once at compile time so hot-path matching is a direct compare
+	for _, r := range countryRules {
+		code := strings.ToUpper(strings.TrimSpace(r.Code))
+		if len(code) != 2 {
+			// log and skip invalid entries rather than aborting the whole cache build
+			logger.Warn("buildSecurityCache: skipping invalid country code '%s'", r.Code)
+			continue
+		}
+
+		if r.SiteID == nil {
+			// global rule
+			if r.ListType == 0 {
+				cache.global.countryBlacklist = append(cache.global.countryBlacklist, code)
+			} else {
+				cache.global.countryWhitelist = append(cache.global.countryWhitelist, code)
+			}
+		} else {
+			// per-site rule — get or create the site's rule set
+			rs := cache.perSite[*r.SiteID]
+			if r.ListType == 0 {
+				rs.countryBlacklist = append(rs.countryBlacklist, code)
+			} else {
+				rs.countryWhitelist = append(rs.countryWhitelist, code)
+			}
+			cache.perSite[*r.SiteID] = rs
+		}
+	}
+
+	logger.Debug("buildSecurityCache: compiled %d IP rules, %d UA rules, and %d country rules", len(ipRules), len(uaRules), len(countryRules))
 	return cache
 }
 
@@ -190,6 +221,84 @@ func checkIP(ip net.IP, global, site ruleSet) bool {
 	}
 
 	return true
+}
+
+// checkCountry evaluates a resolved ISO country code against a rule set
+// following the same precedence as checkIP: blacklist always wins, then
+// whitelist (if non-empty) must match. An empty code (unknown country —
+// private IP, unallocated range, or DB not loaded) is always allowed so
+// local and unresolvable traffic is never locked out. Returns false if
+// the request should be blocked.
+func checkCountry(code string, global, site ruleSet) bool {
+
+	// unknown country — default allow
+	if code == "" {
+		return true
+	}
+
+	// global blacklist — hard block, no override
+	for _, c := range global.countryBlacklist {
+		if c == code {
+			if logger.IsDebug() {
+				logger.Debug("checkCountry: blocked by global blacklist: %s", code)
+			}
+			return false
+		}
+	}
+
+	// per-site blacklist — hard block, no override
+	for _, c := range site.countryBlacklist {
+		if c == code {
+			if logger.IsDebug() {
+				logger.Debug("checkCountry: blocked by site blacklist: %s", code)
+			}
+			return false
+		}
+	}
+
+	// global whitelist — if non-empty, code must appear in it
+	if len(global.countryWhitelist) > 0 {
+		allowed := false
+		for _, c := range global.countryWhitelist {
+			if c == code {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			if logger.IsDebug() {
+				logger.Debug("checkCountry: blocked by global whitelist miss: %s", code)
+			}
+			return false
+		}
+	}
+
+	// per-site whitelist — if non-empty, code must appear in it
+	if len(site.countryWhitelist) > 0 {
+		allowed := false
+		for _, c := range site.countryWhitelist {
+			if c == code {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			if logger.IsDebug() {
+				logger.Debug("checkCountry: blocked by site whitelist miss: %s", code)
+			}
+			return false
+		}
+	}
+
+	return true
+}
+
+// hasCountryRules reports whether either scope carries any country rules —
+// used to skip the geo database lookup entirely on the hot path when the
+// feature is unconfigured.
+func hasCountryRules(global, site ruleSet) bool {
+	return len(global.countryBlacklist) > 0 || len(global.countryWhitelist) > 0 ||
+		len(site.countryBlacklist) > 0 || len(site.countryWhitelist) > 0
 }
 
 // checkUA evaluates a user-agent string against a rule set following the same

@@ -439,7 +439,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
                 <td class="kp-stats-table-cell-mono" style="white-space:nowrap">${e.time.slice(11, 19)}</td>
                 <td class="kp-stats-table-cell-mono">${e.method}</td>
                 <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
-                <td><span class="kp-badge ${statusClass}">${e.status}</span></td>
+                <td><span class="kp-badge ${statusClass}">${e.status}</span>${e.reason ? ` <span class="kp-badge kp-badge-danger" style="font-size:0.65rem" uk-tooltip="Blocked by security rule">${e.reason}</span>` : ''}</td>
                 <td class="kp-stats-table-cell-mono">${e.client_ip}</td>
                 <td class="kp-dd-ua-cell">${uaShort}</td>
             </tr>`;

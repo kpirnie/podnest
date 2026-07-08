@@ -59,6 +59,15 @@ func SnapshotUARules(database *sql.DB, siteID *int64) string {
 	return snapshotJSON(rules)
 }
 
+// SnapshotCountryRules fetches the current country rules for a scope as a JSON string.
+func SnapshotCountryRules(database *sql.DB, siteID *int64) string {
+	rules, err := GetCountryRules(database, siteID)
+	if err != nil {
+		return ""
+	}
+	return snapshotJSON(rules)
+}
+
 // SnapshotRedirects fetches the current redirects for a site as a JSON string.
 func SnapshotRedirects(database *sql.DB, siteID int64) string {
 	redirects, err := GetRedirectsBySite(database, siteID)

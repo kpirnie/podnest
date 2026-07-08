@@ -68,6 +68,14 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("PUT /sites/{id}/security/ua", h.apiSaveSiteUARules)
 	api.HandleFunc("GET /sites/{id}/security/ua/export", h.apiExportSiteUARules)
 	api.HandleFunc("POST /sites/{id}/security/ua/import", h.apiImportSiteUARules)
+
+	// global country rules — admin only
+	api.Handle("GET /security/country", admin(h.apiGetGlobalCountryRules))
+	api.Handle("PUT /security/country", admin(h.apiSaveGlobalCountryRules))
+
+	// per-site country rules
+	api.HandleFunc("GET /sites/{id}/security/country", h.apiGetSiteCountryRules)
+	api.HandleFunc("PUT /sites/{id}/security/country", h.apiSaveSiteCountryRules)
 }
 
 // -- global ------------------------------------------------------------------
@@ -168,6 +176,86 @@ func (h *Handler) apiImportSiteUARules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.importUARules(w, r, &site.ID)
+}
+
+func (h *Handler) apiGetGlobalCountryRules(w http.ResponseWriter, r *http.Request) {
+	h.getCountryRules(w, nil)
+}
+
+func (h *Handler) apiSaveGlobalCountryRules(w http.ResponseWriter, r *http.Request) {
+	h.saveCountryRules(w, r, nil)
+}
+
+func (h *Handler) apiGetSiteCountryRules(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
+	if !ok {
+		return
+	}
+	h.getCountryRules(w, &site.ID)
+}
+
+func (h *Handler) apiSaveSiteCountryRules(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
+	if !ok {
+		return
+	}
+	h.saveCountryRules(w, r, &site.ID)
+}
+
+// getCountryRules returns the whitelist and blacklist country codes for a
+// scope as newline-joined strings, matching the IP/UA rule response shape.
+func (h *Handler) getCountryRules(w http.ResponseWriter, siteID *int64) {
+	rules, err := db.GetCountryRules(h.DB, siteID)
+	if err != nil {
+		logger.Error("getCountryRules: failed to fetch: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var wl, bl []string
+	for _, rule := range rules {
+		if rule.ListType == models.RuleWhitelist {
+			wl = append(wl, rule.Code)
+		} else {
+			bl = append(bl, rule.Code)
+		}
+	}
+
+	logger.Debug("getCountryRules: siteID=%v wl=%d bl=%d", siteID, len(wl), len(bl))
+	apiutil.JSON(w, http.StatusOK, map[string]string{
+		"whitelist": strings.Join(wl, "\n"),
+		"blacklist": strings.Join(bl, "\n"),
+	})
+}
+
+// saveCountryRules replaces the country rules for a scope from newline-
+// delimited whitelist/blacklist input, then refreshes the proxy rule cache.
+func (h *Handler) saveCountryRules(w http.ResponseWriter, r *http.Request, siteID *int64) {
+	var req securityRulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("saveCountryRules: failed to decode body: %v", err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	rules := parseCountryRules(req.Whitelist, models.RuleWhitelist)
+	rules = append(rules, parseCountryRules(req.Blacklist, models.RuleBlacklist)...)
+
+	prior := db.SnapshotCountryRules(h.DB, siteID)
+
+	if err := db.ReplaceCountryRules(h.DB, siteID, rules); err != nil {
+		logger.Error("saveCountryRules: replace failed: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := h.refreshSecurityCache(); err != nil {
+		logger.Error("saveCountryRules: cache refresh failed: %v", err)
+	}
+
+	logger.Debug("saveCountryRules: siteID=%v saved %d rules", siteID, len(rules))
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotCountryRules(h.DB, siteID)))
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) apiGetBypassRules(w http.ResponseWriter, r *http.Request) {
@@ -517,6 +605,21 @@ func parseUARules(raw string, listType int) []db.UARule {
 			continue
 		}
 		out = append(out, db.UARule{ListType: listType, Pattern: line})
+	}
+	return out
+}
+
+// parseCountryRules converts newline-delimited ISO country codes into rule
+// structs, skipping blanks and comment lines. Codes are uppercased here so
+// the stored form matches what the cache compiler and UI expect.
+func parseCountryRules(raw string, listType int) []db.CountryRule {
+	var out []db.CountryRule
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.ToUpper(strings.TrimSpace(line))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out = append(out, db.CountryRule{ListType: listType, Code: line})
 	}
 	return out
 }
