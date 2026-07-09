@@ -39,7 +39,7 @@ All sites share a single global SFTP container for file management. The same con
 
 The recommended and fully supported deployment method is as a container. The binary option is available for those who prefer to compile and run it directly.
 
-> **Full documentation** — feature guides, configuration reference, the security model, and the complete API reference — lives in the [PodNest Knowledge Base](https://podne.st). This README covers only what you need to get an instance up and running. See [Documentation](#documentation) below for the topic index.
+> **Full documentation** — feature guides, configuration reference, the security model, and the complete API reference — lives in the [PodNest Knowledge Base](https://podnest.us). This README covers only what you need to get an instance up and running. See [Documentation](#documentation) below for the topic index.
 
 ---
 
@@ -255,6 +255,14 @@ PodNest also provides a `reset` command for recovering account access from the h
 
 `reset` interactively resets a user's password and/or clears their TOTP — useful when an admin is locked out. It accepts the same `--app-path` flag.
 
+There is also a `security` command for recovering panel access when a security rule has locked you out:
+
+```bash
+./podnest security --bypass 203.0.113.7 --app-path /opt/podnest
+```
+
+`--bypass` accepts an IP or CIDR and adds it to the security bypass list (skipping all IP/UA/country/ASN/WAF checks). Restart the podnest service for it to take effect.
+
 ---
 
 ## First Login
@@ -325,14 +333,14 @@ The `.env` file inside each site directory holds the auto-generated database and
 
 ## Documentation
 
-Day-to-day usage, configuration, and the full API reference are documented in the [PodNest Knowledge Base](https://pn.kpdev.us). Topic index:
+Day-to-day usage, configuration, and the full API reference are documented in the [PodNest Knowledge Base](https://podnest.us). Topic index:
 
 - **Managing Sites** — creating sites, site actions, container health, cloning, domains
 - **SFTP Access** — global SFTP container, directory access, Fail2Ban integration
 - **Built-in Reverse Proxy** — how it works, SSL / Let's Encrypt, admin domain, Reverse Proxy site type
 - **Redirects** — per-site redirect rules
 - **Site Configurations** — nginx, PHP, MariaDB, Redis, Varnish, resetting a config
-- **Security Rules** — IP rules, User-Agent rules, global vs per-site, import/export
+- **Security Rules** — IP rules, User-Agent rules, country blocking, ASN blocking, ASN lookup, global vs per-site, import/export
 - **WAF** — CRS rule management, global settings, per-site overrides, exclusions, WAF log
 - **Live Logs** — per-site and global log streams
 - **WP-CLI Terminal** — browser terminal for WordPress sites

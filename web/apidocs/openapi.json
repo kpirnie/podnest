@@ -477,6 +477,54 @@
         }
       }
     },
+    "/security/asn": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Get asn",
+        "operationId": "get_security_asn",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "put": {
+        "tags": ["Security"],
+        "summary": "Update asn",
+        "operationId": "put_security_asn",
+        "responses": {
+          "200": { "description": "Success — may return {\"status\": \"confirm\", \"reason\": \"...\"} when the rule set would block the requesting connection; resend with \"confirm\": true to force", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
+          "description": "Newline-delimited AS numbers, bare or AS-prefixed: {\"whitelist\": \"AS7922\\nAS20115\", \"blacklist\": \"16509\\n14061\", \"confirm\": false}"
+        }
+      }
+    },
+    "/security/asn/lookup": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Lookup asn",
+        "operationId": "get_security_asn_lookup",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "description": "IP address or domain name to resolve.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Success — returns {\"query\", \"ip\", \"asn\", \"org\", \"country\"}; asn 0 means unresolvable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/security/ip": {
       "get": {
         "tags": [
@@ -7522,6 +7570,43 @@
           "required": false,
           "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
           "description": "Newline-delimited ISO 3166-1 alpha-2 codes: {\"whitelist\": \"US\\nCA\", \"blacklist\": \"CN\\nRU\"}"
+        }
+      }
+    },
+    "/sites/{id}/security/asn": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Get asn",
+        "operationId": "get_sites_id_security_asn",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } }
+        ]
+      },
+      "put": {
+        "tags": ["Security"],
+        "summary": "Update asn",
+        "operationId": "put_sites_id_security_asn",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
+          "description": "Newline-delimited AS numbers, bare or AS-prefixed: {\"whitelist\": \"AS7922\\nAS20115\", \"blacklist\": \"16509\\n14061\"}"
         }
       }
     },
