@@ -44,6 +44,16 @@ type CountryRule struct {
 	Code     string
 }
 
+// ASNRule represents a single autonomous system number allow or block
+// entry. ListType follows the IP/UA rule convention: 0 = blacklist,
+// 1 = whitelist.
+type ASNRule struct {
+	ID       int64
+	SiteID   *int64
+	ListType int
+	ASN      uint32
+}
+
 // GetIPRules returns all IP rules optionally scoped to a site.
 // Pass nil for siteID to retrieve global rules only.
 func GetIPRules(db *sql.DB, siteID *int64) ([]*IPRule, error) {
@@ -370,6 +380,21 @@ func ReplaceBypassRules(db *sql.DB, rules []BypassRule) error {
 	return nil
 }
 
+// AddBypassRule inserts a single bypass entry. Used by the CLI recovery
+// path; the web UI continues to use ReplaceBypassRules.
+func AddBypassRule(db *sql.DB, cidr, note string) error {
+	if _, err := db.Exec(`
+		INSERT INTO kppn_security_bypass (cidr, note) VALUES (?, ?)`,
+		cidr, note,
+	); err != nil {
+		logger.Error("AddBypassRule: insert failed: %v", err)
+		return err
+	}
+
+	logger.Debug("AddBypassRule: added %s", cidr)
+	return nil
+}
+
 // GetCountryRules returns all country rules optionally scoped to a site.
 // Pass nil for siteID to retrieve global rules only.
 func GetCountryRules(db *sql.DB, siteID *int64) ([]*CountryRule, error) {
@@ -494,6 +519,130 @@ func DeleteCountryRulesBySite(db *sql.DB, siteID int64) error {
 
 // CountryRulesByType splits a rule slice into blacklist and whitelist groups.
 func CountryRulesByType(rules []*CountryRule) (blacklist, whitelist []*CountryRule) {
+	for _, r := range rules {
+		if r.ListType == 0 {
+			blacklist = append(blacklist, r)
+		} else {
+			whitelist = append(whitelist, r)
+		}
+	}
+	return blacklist, whitelist
+}
+
+// GetASNRules returns all ASN rules optionally scoped to a site.
+// Pass nil for siteID to retrieve global rules only.
+func GetASNRules(db *sql.DB, siteID *int64) ([]*ASNRule, error) {
+
+	// build the query depending on whether we want global or per-site rules
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if siteID == nil {
+		rows, err = db.Query(`
+			SELECT id, site_id, list_type, asn
+			FROM kppn_asn_rules WHERE site_id IS NULL
+			ORDER BY list_type ASC, id ASC`)
+	} else {
+		rows, err = db.Query(`
+			SELECT id, site_id, list_type, asn
+			FROM kppn_asn_rules WHERE site_id = ?
+			ORDER BY list_type ASC, id ASC`, *siteID)
+	}
+	if err != nil {
+		logger.Error("GetASNRules: query failed: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	// scan each row into an ASNRule struct
+	var rules []*ASNRule
+	for rows.Next() {
+		r := &ASNRule{}
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.ListType, &r.ASN); err != nil {
+			logger.Error("GetASNRules: scan failed: %v", err)
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+
+	logger.Debug("GetASNRules: retrieved %d rules", len(rules))
+	return rules, rows.Err()
+}
+
+// GetAllASNRules returns every ASN rule across all sites and global
+// scope. Used to warm the proxy rule cache on startup.
+func GetAllASNRules(db *sql.DB) ([]*ASNRule, error) {
+	rows, err := db.Query(`
+		SELECT id, site_id, list_type, asn
+		FROM kppn_asn_rules ORDER BY list_type ASC, id ASC`)
+	if err != nil {
+		logger.Error("GetAllASNRules: query failed: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []*ASNRule
+	for rows.Next() {
+		r := &ASNRule{}
+		if err := rows.Scan(&r.ID, &r.SiteID, &r.ListType, &r.ASN); err != nil {
+			logger.Error("GetAllASNRules: scan failed: %v", err)
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+
+	logger.Debug("GetAllASNRules: retrieved %d rules", len(rules))
+	return rules, rows.Err()
+}
+
+// ReplaceASNRules atomically replaces all rules for the given scope
+// (global when siteID is nil, per-site otherwise) with the provided slice.
+func ReplaceASNRules(db *sql.DB, siteID *int64, rules []ASNRule) error {
+
+	// wrap in a transaction so the delete+insert is atomic
+	tx, err := db.Begin()
+	if err != nil {
+		logger.Error("ReplaceASNRules: begin tx failed: %v", err)
+		return err
+	}
+	defer tx.Rollback()
+
+	// delete existing rules for this scope
+	if siteID == nil {
+		if _, err := tx.Exec(`DELETE FROM kppn_asn_rules WHERE site_id IS NULL`); err != nil {
+			logger.Error("ReplaceASNRules: delete global failed: %v", err)
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(`DELETE FROM kppn_asn_rules WHERE site_id = ?`, *siteID); err != nil {
+			logger.Error("ReplaceASNRules: delete site %d failed: %v", *siteID, err)
+			return err
+		}
+	}
+
+	// insert the new rules
+	for _, r := range rules {
+		if _, err := tx.Exec(`
+			INSERT INTO kppn_asn_rules (site_id, list_type, asn) VALUES (?, ?, ?)`,
+			siteID, r.ListType, r.ASN,
+		); err != nil {
+			logger.Error("ReplaceASNRules: insert failed: %v", err)
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		logger.Error("ReplaceASNRules: commit failed: %v", err)
+		return err
+	}
+
+	logger.Debug("ReplaceASNRules: replaced rules for siteID=%v with %d entries", siteID, len(rules))
+	return nil
+}
+
+// ASNRulesByType splits a rule slice into blacklist and whitelist groups.
+func ASNRulesByType(rules []*ASNRule) (blacklist, whitelist []*ASNRule) {
 	for _, r := range rules {
 		if r.ListType == 0 {
 			blacklist = append(blacklist, r)

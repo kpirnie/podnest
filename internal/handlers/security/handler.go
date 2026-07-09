@@ -5,13 +5,17 @@
 package security
 
 import (
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"podnest/internal/apiutil"
 	"podnest/internal/audit"
@@ -26,6 +30,9 @@ import (
 type SecurityProxy interface {
 	WarmCaches(justTrustedProxies bool) error
 	WarmBypassCache(rules []*db.BypassRule)
+	ClientIP(r *http.Request) string
+	LookupCountry(ip string) string
+	LookupASN(ip string) (uint32, string)
 }
 
 // Handler handles IP and UA security rule management API routes.
@@ -33,6 +40,12 @@ type Handler struct {
 	DB      *sql.DB
 	Proxy   SecurityProxy
 	Resolve modules.SiteResolver
+}
+
+type securityRulesRequest struct {
+	Whitelist string `json:"whitelist"`
+	Blacklist string `json:"blacklist"`
+	Confirm   bool   `json:"confirm"`
 }
 
 // RegisterRoutes mounts security rule management routes onto api.
@@ -76,6 +89,17 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	// per-site country rules
 	api.HandleFunc("GET /sites/{id}/security/country", h.apiGetSiteCountryRules)
 	api.HandleFunc("PUT /sites/{id}/security/country", h.apiSaveSiteCountryRules)
+
+	// global ASN rules — admin only
+	api.Handle("GET /security/asn", admin(h.apiGetGlobalASNRules))
+	api.Handle("PUT /security/asn", admin(h.apiSaveGlobalASNRules))
+
+	// per-site ASN rules
+	api.HandleFunc("GET /sites/{id}/security/asn", h.apiGetSiteASNRules)
+	api.HandleFunc("PUT /sites/{id}/security/asn", h.apiSaveSiteASNRules)
+
+	// ASN lookup helper — admin only
+	api.Handle("GET /security/asn/lookup", admin(h.apiASNLookup))
 }
 
 // -- global ------------------------------------------------------------------
@@ -241,6 +265,17 @@ func (h *Handler) saveCountryRules(w http.ResponseWriter, r *http.Request, siteI
 	rules := parseCountryRules(req.Whitelist, models.RuleWhitelist)
 	rules = append(rules, parseCountryRules(req.Blacklist, models.RuleBlacklist)...)
 
+	// lockout preflight — global rules also govern the admin domain, so
+	// refuse a rule set that would block the very connection saving it
+	// unless the client explicitly confirms
+	if siteID == nil && !req.Confirm {
+		if reason := h.countryLockoutRisk(r, rules); reason != "" {
+			logger.Warn("saveCountryRules: lockout risk detected: %s", reason)
+			apiutil.JSON(w, http.StatusOK, map[string]string{"status": "confirm", "reason": reason})
+			return
+		}
+	}
+
 	prior := db.SnapshotCountryRules(h.DB, siteID)
 
 	if err := db.ReplaceCountryRules(h.DB, siteID, rules); err != nil {
@@ -320,11 +355,6 @@ func (h *Handler) apiSaveBypassRules(w http.ResponseWriter, r *http.Request) {
 }
 
 // -- shared implementations --------------------------------------------------
-
-type securityRulesRequest struct {
-	Whitelist string `json:"whitelist"`
-	Blacklist string `json:"blacklist"`
-}
 
 func (h *Handler) getIPRules(w http.ResponseWriter, siteID *int64) {
 	rules, err := db.GetIPRules(h.DB, siteID)
@@ -622,4 +652,230 @@ func parseCountryRules(raw string, listType int) []db.CountryRule {
 		out = append(out, db.CountryRule{ListType: listType, Code: line})
 	}
 	return out
+}
+
+func (h *Handler) apiGetGlobalASNRules(w http.ResponseWriter, r *http.Request) {
+	h.getASNRules(w, nil)
+}
+
+func (h *Handler) apiSaveGlobalASNRules(w http.ResponseWriter, r *http.Request) {
+	h.saveASNRules(w, r, nil)
+}
+
+func (h *Handler) apiGetSiteASNRules(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
+	if !ok {
+		return
+	}
+	h.getASNRules(w, &site.ID)
+}
+
+func (h *Handler) apiSaveSiteASNRules(w http.ResponseWriter, r *http.Request) {
+	site, ok := h.Resolve(w, r)
+	if !ok {
+		return
+	}
+	h.saveASNRules(w, r, &site.ID)
+}
+
+// getASNRules returns the whitelist and blacklist ASNs for a scope as
+// newline-joined strings, matching the IP/UA/country rule response shape.
+func (h *Handler) getASNRules(w http.ResponseWriter, siteID *int64) {
+	rules, err := db.GetASNRules(h.DB, siteID)
+	if err != nil {
+		logger.Error("getASNRules: failed to fetch: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	var wl, bl []string
+	for _, rule := range rules {
+		if rule.ListType == models.RuleWhitelist {
+			wl = append(wl, fmt.Sprintf("AS%d", rule.ASN))
+		} else {
+			bl = append(bl, fmt.Sprintf("AS%d", rule.ASN))
+		}
+	}
+
+	logger.Debug("getASNRules: siteID=%v wl=%d bl=%d", siteID, len(wl), len(bl))
+	apiutil.JSON(w, http.StatusOK, map[string]string{
+		"whitelist": strings.Join(wl, "\n"),
+		"blacklist": strings.Join(bl, "\n"),
+	})
+}
+
+// saveASNRules replaces the ASN rules for a scope from newline-delimited
+// whitelist/blacklist input, then refreshes the proxy rule cache.
+func (h *Handler) saveASNRules(w http.ResponseWriter, r *http.Request, siteID *int64) {
+	var req securityRulesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("saveASNRules: failed to decode body: %v", err)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+
+	rules := parseASNRules(req.Whitelist, models.RuleWhitelist)
+	rules = append(rules, parseASNRules(req.Blacklist, models.RuleBlacklist)...)
+
+	// lockout preflight — global rules also govern the admin domain, so
+	// refuse a rule set that would block the very connection saving it
+	// unless the client explicitly confirms
+	if siteID == nil && !req.Confirm {
+		if reason := h.asnLockoutRisk(r, rules); reason != "" {
+			logger.Warn("saveASNRules: lockout risk detected: %s", reason)
+			apiutil.JSON(w, http.StatusOK, map[string]string{"status": "confirm", "reason": reason})
+			return
+		}
+	}
+
+	prior := db.SnapshotASNRules(h.DB, siteID)
+
+	if err := db.ReplaceASNRules(h.DB, siteID, rules); err != nil {
+		logger.Error("saveASNRules: replace failed: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := h.refreshSecurityCache(); err != nil {
+		logger.Error("saveASNRules: cache refresh failed: %v", err)
+	}
+
+	logger.Debug("saveASNRules: siteID=%v saved %d rules", siteID, len(rules))
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotASNRules(h.DB, siteID)))
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// parseASNRules converts newline-delimited autonomous system numbers into
+// rule structs, skipping blanks and comment lines. Both bare numbers and
+// AS-prefixed forms (15169 / AS15169) are accepted; unparseable or zero
+// entries are logged and skipped.
+func parseASNRules(raw string, listType int) []db.ASNRule {
+	var out []db.ASNRule
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.ToUpper(strings.TrimSpace(line))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "AS")
+
+		asn, err := strconv.ParseUint(line, 10, 32)
+		if err != nil || asn == 0 {
+			logger.Warn("parseASNRules: skipping invalid ASN '%s'", line)
+			continue
+		}
+		out = append(out, db.ASNRule{ListType: listType, ASN: uint32(asn)})
+	}
+	return out
+}
+
+// asnLockoutRisk simulates the proposed global ASN rules against the
+// requesting connection, following the same blacklist-then-whitelist
+// precedence as enforcement. Returns a human-readable reason when the
+// save would block the requester, or "" when no risk is detected.
+func (h *Handler) asnLockoutRisk(r *http.Request, rules []db.ASNRule) string {
+	ip := h.Proxy.ClientIP(r)
+	if ip == "" {
+		return ""
+	}
+
+	// unknown ASN is default-allow at enforcement, so no risk
+	asn, org := h.Proxy.LookupASN(ip)
+	if asn == 0 {
+		return ""
+	}
+	if org == "" {
+		org = "unknown org"
+	}
+
+	wlSize := 0
+	wlHit := false
+	for _, rule := range rules {
+		if rule.ListType == models.RuleBlacklist && rule.ASN == asn {
+			return fmt.Sprintf("the blacklist would block your current connection (AS%d — %s)", asn, org)
+		}
+		if rule.ListType == models.RuleWhitelist {
+			wlSize++
+			if rule.ASN == asn {
+				wlHit = true
+			}
+		}
+	}
+	if wlSize > 0 && !wlHit {
+		return fmt.Sprintf("the whitelist would block your current connection (AS%d — %s is not in it)", asn, org)
+	}
+	return ""
+}
+
+// countryLockoutRisk simulates the proposed global country rules against
+// the requesting connection, following the same blacklist-then-whitelist
+// precedence as enforcement. Returns a human-readable reason when the
+// save would block the requester, or "" when no risk is detected.
+func (h *Handler) countryLockoutRisk(r *http.Request, rules []db.CountryRule) string {
+	ip := h.Proxy.ClientIP(r)
+	if ip == "" {
+		return ""
+	}
+
+	// unknown country is default-allow at enforcement, so no risk
+	code := h.Proxy.LookupCountry(ip)
+	if code == "" {
+		return ""
+	}
+
+	wlSize := 0
+	wlHit := false
+	for _, rule := range rules {
+		if rule.ListType == models.RuleBlacklist && rule.Code == code {
+			return fmt.Sprintf("the blacklist would block your current connection (%s)", code)
+		}
+		if rule.ListType == models.RuleWhitelist {
+			wlSize++
+			if rule.Code == code {
+				wlHit = true
+			}
+		}
+	}
+	if wlSize > 0 && !wlHit {
+		return fmt.Sprintf("the whitelist would block your current connection (%s is not in it)", code)
+	}
+	return ""
+}
+
+// apiASNLookup resolves an IP address or domain name to its ASN, org
+// name, and country code using the in-memory databases. Domains are
+// resolved via DNS first; the first returned address is used.
+func (h *Handler) apiASNLookup(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "q parameter is required")
+		return
+	}
+
+	// use the input directly if it parses as an IP, otherwise resolve
+	// it as a domain name with a bounded timeout
+	ipStr := q
+	if net.ParseIP(q) == nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		addrs, err := net.DefaultResolver.LookupIPAddr(ctx, q)
+		if err != nil || len(addrs) == 0 {
+			logger.Debug("apiASNLookup: resolve failed for '%s': %v", q, err)
+			apiutil.ErrorMsg(w, http.StatusNotFound, "could not resolve host")
+			return
+		}
+		ipStr = addrs[0].IP.String()
+	}
+
+	asn, org := h.Proxy.LookupASN(ipStr)
+	country := h.Proxy.LookupCountry(ipStr)
+
+	logger.Debug("apiASNLookup: %s → %s AS%d (%s) %s", q, ipStr, asn, org, country)
+	apiutil.JSON(w, http.StatusOK, map[string]any{
+		"query":   q,
+		"ip":      ipStr,
+		"asn":     asn,
+		"org":     org,
+		"country": country,
+	})
 }

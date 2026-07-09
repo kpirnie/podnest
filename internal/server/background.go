@@ -79,6 +79,15 @@ func (s *Server) geoUpdater() {
 				logger.Error("geoip: reload after update failed: %v", err)
 			}
 		}
+		if err := proxy.UpdateASNDB(s.cfg.AppPath); err != nil {
+			logger.Warn("asndb: update check failed: %v", err)
+			return
+		}
+		if s.proxy != nil {
+			if err := s.proxy.LoadASNDB(); err != nil {
+				logger.Error("asndb: reload after update failed: %v", err)
+			}
+		}
 	}
 
 	run()

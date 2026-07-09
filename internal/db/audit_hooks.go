@@ -135,3 +135,12 @@ func SnapshotBypassRules(database *sql.DB) string {
 	}
 	return snapshotJSON(rules)
 }
+
+// SnapshotASNRules fetches the current ASN rules for a scope as a JSON string.
+func SnapshotASNRules(database *sql.DB, siteID *int64) string {
+	rules, err := GetASNRules(database, siteID)
+	if err != nil {
+		return ""
+	}
+	return snapshotJSON(rules)
+}

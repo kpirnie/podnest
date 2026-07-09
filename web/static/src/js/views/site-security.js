@@ -14,9 +14,10 @@ export function renderSecurityPanel(siteId = null) {
     const uaBase  = siteId ? `/sites/${siteId}/security/ua` : `/security/ua`;
     const wafBase = siteId ? `/sites/${siteId}/waf`          : `/settings/waf`;
     const geoBase = siteId ? `/sites/${siteId}/security/country` : `/security/country`;
+    const asnBase = siteId ? `/sites/${siteId}/security/asn` : `/security/asn`;
 
     return `
-        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-waf-base="${wafBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
+        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-asn-base="${asnBase}" data-waf-base="${wafBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
 
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
@@ -131,6 +132,45 @@ export function renderSecurityPanel(siteId = null) {
                         </label>
                         <textarea class="uk-textarea kp-textarea" id="sec-geo-blacklist" rows="6"
                             placeholder="# block these countries&#10;CN&#10;RU"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="kp-card uk-padding-small uk-margin-bottom">
+                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                    <h3 class="kp-view-title">ASN Rules</h3>
+                    <div class="uk-flex uk-flex-middle" style="gap:8px">
+                        <button class="uk-button kp-btn-ghost kp-btn-sm" id="sec-asn-lookup" uk-tooltip="Look up the ASN for an IP or domain">
+                            <span uk-icon="eye"></span>
+                        </button>
+                        <div style="width:1px;align-self:stretch;background:var(--kp-border)"></div>
+                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-asn-save" uk-tooltip="Save the ASN Rules">
+                            <span uk-icon="check"></span>
+                        </button>
+                    </div>
+                </div>
+                <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                    One autonomous system number per line (e.g. <span class="kp-mono">AS15169</span>
+                    or <span class="kp-mono">15169</span>).
+                    Blacklist always wins. Whitelist is disabled when empty.
+                    Unresolvable IPs (private ranges, unknown) are always allowed.
+                </p>
+                <div class="uk-grid-small" uk-grid>
+                    <div class="uk-width-1-2@s">
+                        <label class="kp-label">
+                            <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
+                            Whitelist
+                        </label>
+                        <textarea class="uk-textarea kp-textarea" id="sec-asn-whitelist" rows="6"
+                            placeholder="# allow only these networks&#10;AS7922&#10;AS20115"></textarea>
+                    </div>
+                    <div class="uk-width-1-2@s">
+                        <label class="kp-label">
+                            <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
+                            Blacklist
+                        </label>
+                        <textarea class="uk-textarea kp-textarea" id="sec-asn-blacklist" rows="6"
+                            placeholder="# block these networks&#10;AS16509&#10;AS14061"></textarea>
                     </div>
                 </div>
             </div>
@@ -273,9 +313,10 @@ export async function loadSecurityPanel(root) {
 
     try {
         const geoBase = panel.dataset.geoBase;
-        const fetches = [api.get(ipBase), api.get(uaBase), api.get(geoBase)];
+        const asnBase = panel.dataset.asnBase;
+        const fetches = [api.get(ipBase), api.get(uaBase), api.get(geoBase), api.get(asnBase)];
         if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"), api.get("/security/bypass"));
-        const [ip, ua, geo, waf, tp, bp] = await Promise.all(fetches);
+        const [ip, ua, geo, asn, waf, tp, bp] = await Promise.all(fetches);
 
         // bail if the user navigated away while the fetch was in flight
         if (!root.querySelector("#sec-ip-whitelist")) return;
@@ -286,6 +327,8 @@ export async function loadSecurityPanel(root) {
         root.querySelector("#sec-ua-blacklist").value = ua.blacklist ?? "";
         root.querySelector("#sec-geo-whitelist").value = geo.whitelist ?? "";
         root.querySelector("#sec-geo-blacklist").value = geo.blacklist ?? "";
+        root.querySelector("#sec-asn-whitelist").value = asn.whitelist ?? "";
+        root.querySelector("#sec-asn-blacklist").value = asn.blacklist ?? "";
 
         if (waf) {
             const enabled  = root.querySelector("#sec-waf-enabled");
@@ -372,18 +415,54 @@ export function wireSecurityPanel(root) {
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
         try {
-            await api.put(geoBase, {
+            const body = {
                 whitelist: root.querySelector("#sec-geo-whitelist").value,
                 blacklist: root.querySelector("#sec-geo-blacklist").value,
-            });
+            };
+            let res = await api.put(geoBase, body);
+            if (res?.status === "confirm") {
+                await UIkit.modal.confirm(`${res.reason}. Save anyway?`);
+                res = await api.put(geoBase, { ...body, confirm: true });
+            }
             toast.success("Country rules saved");
         } catch (e) {
-            toast.error(e.message);
+            // a cancelled confirm dialog rejects with no error — stay silent
+            if (e instanceof Error) toast.error(e.message);
         }  finally {
             btn.disabled  = false;
             btn.innerHTML = orig;
         }
     });
+
+    // save ASN rules
+    root.querySelector("#sec-asn-save")?.addEventListener("click", async () => {
+        const btn  = root.querySelector("#sec-asn-save");
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            const asnBase = root.querySelector("#security-panel").dataset.asnBase;
+            const body = {
+                whitelist: root.querySelector("#sec-asn-whitelist").value,
+                blacklist: root.querySelector("#sec-asn-blacklist").value,
+            };
+            let res = await api.put(asnBase, body);
+            if (res?.status === "confirm") {
+                await UIkit.modal.confirm(`${res.reason}. Save anyway?`);
+                res = await api.put(asnBase, { ...body, confirm: true });
+            }
+            toast.success("ASN rules saved");
+        } catch (e) {
+            // a cancelled confirm dialog rejects with no error — stay silent
+            if (e instanceof Error) toast.error(e.message);
+        } finally {
+            btn.disabled  = false;
+            btn.innerHTML = orig;
+        }
+    });
+
+    // ASN lookup modal
+    root.querySelector("#sec-asn-lookup")?.addEventListener("click", () => showASNLookupModal(root));
 
     // save trusted proxy CIDRs
     root.querySelector("#sec-tp-save")?.addEventListener("click", async () => {
@@ -519,4 +598,69 @@ export function wireSecurityPanel(root) {
             e.target.value = "";
         }
     });
+}
+
+// showASNLookupModal presents the IP/domain → ASN lookup dialog, with a
+// one-click action to append the result to the blacklist textarea.
+function showASNLookupModal(root) {
+    document.getElementById("kp-asn-lookup-modal")?.remove();
+    const html = `
+        <div id="kp-asn-lookup-modal" uk-modal>
+            <div class="uk-modal-dialog kp-modal uk-modal-body">
+                <button class="uk-modal-close-default" type="button" uk-close></button>
+                <h3 class="kp-view-title">ASN Lookup</h3>
+                <div class="uk-flex uk-margin-top" style="gap:8px">
+                    <input class="uk-input kp-input" id="asn-lookup-q" type="text" placeholder="IP address or domain">
+                    <button class="uk-button kp-btn-primary kp-btn-sm" id="asn-lookup-go" uk-tooltip="Look it up">
+                        <span uk-icon="search"></span>
+                    </button>
+                </div>
+                <div id="asn-lookup-result" class="uk-margin-top"></div>
+            </div>
+        </div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
+    const modal = UIkit.modal("#kp-asn-lookup-modal");
+    modal.show();
+
+    const run = async () => {
+        const q = document.getElementById("asn-lookup-q").value.trim();
+        if (!q) return;
+        const out = document.getElementById("asn-lookup-result");
+        out.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            const res = await api.get(`/security/asn/lookup?q=${encodeURIComponent(q)}`);
+            if (!res?.asn) {
+                out.innerHTML = `<p class="kp-muted uk-text-small">No ASN found for <span class="kp-mono"></span>.</p>`;
+                out.querySelector(".kp-mono").textContent = res?.ip || q;
+                return;
+            }
+            out.innerHTML = `
+                <p class="uk-text-small">
+                    <span class="kp-mono" id="asn-lookup-ip"></span> →
+                    <span class="kp-mono">AS${res.asn}</span>
+                    <span id="asn-lookup-org"></span>
+                    ${res.country ? `<span class="kp-muted">(${res.country})</span>` : ""}
+                </p>
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="asn-lookup-add">
+                    <span uk-icon="ban"></span> Add AS${res.asn} to blacklist
+                </button>`;
+            // org and ip are set via textContent — registry-sourced strings stay text
+            out.querySelector("#asn-lookup-ip").textContent  = res.ip;
+            out.querySelector("#asn-lookup-org").textContent = res.org || "";
+            out.querySelector("#asn-lookup-add").addEventListener("click", () => {
+                const ta   = root.querySelector("#sec-asn-blacklist");
+                const line = `AS${res.asn}`;
+                if (!ta.value.split("\n").some(l => l.trim().toUpperCase() === line)) {
+                    ta.value = ta.value.trim() ? `${ta.value.replace(/\s+$/, "")}\n${line}` : line;
+                }
+                modal.hide();
+                toast.success(`${line} added to blacklist — save to apply`);
+            });
+        } catch (e) {
+            out.innerHTML = "";
+            toast.error(e.message);
+        }
+    };
+    document.getElementById("asn-lookup-go").addEventListener("click", run);
+    document.getElementById("asn-lookup-q").addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
 }

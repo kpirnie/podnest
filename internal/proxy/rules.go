@@ -32,6 +32,8 @@ type ruleSet struct {
 	uaWhitelist      []*compiledUARule
 	countryBlacklist []string
 	countryWhitelist []string
+	asnBlacklist     map[uint32]struct{}
+	asnWhitelist     map[uint32]struct{}
 }
 
 // securityCache holds the compiled global rule set and a map of per-site rule sets
@@ -72,7 +74,7 @@ func (r *compiledIPRule) matchesIP(ip net.IP) bool {
 
 // buildSecurityCache compiles all IP and UA rules from the database into
 // an in-memory securityCache ready for zero-allocation hot-path lookups.
-func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules []*db.CountryRule) securityCache {
+func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules []*db.CountryRule, asnRules []*db.ASNRule) securityCache {
 	cache := securityCache{
 		perSite: make(map[int64]ruleSet),
 	}
@@ -159,7 +161,47 @@ func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules
 		}
 	}
 
-	logger.Debug("buildSecurityCache: compiled %d IP rules, %d UA rules, and %d country rules", len(ipRules), len(uaRules), len(countryRules))
+	// compile ASN rules into the appropriate scope and list — stored as
+	// sets so hot-path matching is O(1) regardless of list size
+	for _, r := range asnRules {
+		if r.ASN == 0 {
+			// log and skip invalid entries rather than aborting the whole cache build
+			logger.Warn("buildSecurityCache: skipping invalid ASN 0")
+			continue
+		}
+
+		if r.SiteID == nil {
+			// global rule
+			if r.ListType == 0 {
+				if cache.global.asnBlacklist == nil {
+					cache.global.asnBlacklist = make(map[uint32]struct{})
+				}
+				cache.global.asnBlacklist[r.ASN] = struct{}{}
+			} else {
+				if cache.global.asnWhitelist == nil {
+					cache.global.asnWhitelist = make(map[uint32]struct{})
+				}
+				cache.global.asnWhitelist[r.ASN] = struct{}{}
+			}
+		} else {
+			// per-site rule — get or create the site's rule set
+			rs := cache.perSite[*r.SiteID]
+			if r.ListType == 0 {
+				if rs.asnBlacklist == nil {
+					rs.asnBlacklist = make(map[uint32]struct{})
+				}
+				rs.asnBlacklist[r.ASN] = struct{}{}
+			} else {
+				if rs.asnWhitelist == nil {
+					rs.asnWhitelist = make(map[uint32]struct{})
+				}
+				rs.asnWhitelist[r.ASN] = struct{}{}
+			}
+			cache.perSite[*r.SiteID] = rs
+		}
+	}
+
+	logger.Debug("buildSecurityCache: compiled %d IP rules, %d UA rules, %d country rules, and %d ASN rules", len(ipRules), len(uaRules), len(countryRules), len(asnRules))
 	return cache
 }
 
@@ -299,6 +341,66 @@ func checkCountry(code string, global, site ruleSet) bool {
 func hasCountryRules(global, site ruleSet) bool {
 	return len(global.countryBlacklist) > 0 || len(global.countryWhitelist) > 0 ||
 		len(site.countryBlacklist) > 0 || len(site.countryWhitelist) > 0
+}
+
+// checkASN evaluates a resolved autonomous system number against a rule set
+// following the same precedence as checkIP: blacklist always wins, then
+// whitelist (if non-empty) must match. A zero ASN (unknown — private IP,
+// unallocated range, or DB not loaded) is always allowed so local and
+// unresolvable traffic is never locked out. Returns false if the request
+// should be blocked.
+func checkASN(asn uint32, global, site ruleSet) bool {
+
+	// unknown ASN — default allow
+	if asn == 0 {
+		return true
+	}
+
+	// global blacklist — hard block, no override
+	if _, ok := global.asnBlacklist[asn]; ok {
+		if logger.IsDebug() {
+			logger.Debug("checkASN: blocked by global blacklist: AS%d", asn)
+		}
+		return false
+	}
+
+	// per-site blacklist — hard block, no override
+	if _, ok := site.asnBlacklist[asn]; ok {
+		if logger.IsDebug() {
+			logger.Debug("checkASN: blocked by site blacklist: AS%d", asn)
+		}
+		return false
+	}
+
+	// global whitelist — if non-empty, the ASN must appear in it
+	if len(global.asnWhitelist) > 0 {
+		if _, ok := global.asnWhitelist[asn]; !ok {
+			if logger.IsDebug() {
+				logger.Debug("checkASN: blocked by global whitelist miss: AS%d", asn)
+			}
+			return false
+		}
+	}
+
+	// per-site whitelist — if non-empty, the ASN must appear in it
+	if len(site.asnWhitelist) > 0 {
+		if _, ok := site.asnWhitelist[asn]; !ok {
+			if logger.IsDebug() {
+				logger.Debug("checkASN: blocked by site whitelist miss: AS%d", asn)
+			}
+			return false
+		}
+	}
+
+	return true
+}
+
+// hasASNRules reports whether either scope carries any ASN rules —
+// used to skip the ASN database lookup entirely on the hot path when the
+// feature is unconfigured.
+func hasASNRules(global, site ruleSet) bool {
+	return len(global.asnBlacklist) > 0 || len(global.asnWhitelist) > 0 ||
+		len(site.asnBlacklist) > 0 || len(site.asnWhitelist) > 0
 }
 
 // checkUA evaluates a user-agent string against a rule set following the same

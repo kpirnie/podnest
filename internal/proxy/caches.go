@@ -46,6 +46,12 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 		return err
 	}
 
+	// get the ASN rules
+	asnRules, err := db.GetAllASNRules(p.database)
+	if err != nil {
+		return err
+	}
+
 	// get the bypass rules
 	bypassRules, err := db.GetAllBypassRules(p.database)
 	if err != nil {
@@ -66,7 +72,7 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	if err := p.warmWAFCache(); err != nil {
 		return err
 	}
-	p.warmSecurityCache(ipRules, uaRules, countryRules)
+	p.warmSecurityCache(ipRules, uaRules, countryRules, asnRules)
 	p.warmBypassCache(bypassRules)
 	p.warmBasicAuthCache()
 	p.warmTrustedProxies(cidrs)
@@ -258,10 +264,10 @@ func (p *Proxy) warmConnections() {
 
 // WarmSecurityCache compiles all IP, UA, and country rules from the database
 // and atomically installs the result. Called once on startup and after any rule change.
-func (p *Proxy) warmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules []*db.CountryRule) {
-	cache := buildSecurityCache(ipRules, uaRules, countryRules)
+func (p *Proxy) warmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules []*db.CountryRule, asnRules []*db.ASNRule) {
+	cache := buildSecurityCache(ipRules, uaRules, countryRules, asnRules)
 	p.secCache.Store(&cache)
-	logger.Debug("proxy: security cache warmed — %d IP rules, %d UA rules, %d country rules", len(ipRules), len(uaRules), len(countryRules))
+	logger.Debug("proxy: security cache warmed — %d IP rules, %d UA rules, %d country rules, %d ASN rules", len(ipRules), len(uaRules), len(countryRules), len(asnRules))
 }
 
 // WarmTrustedProxies loads trusted proxy CIDRs from the database, compiles them

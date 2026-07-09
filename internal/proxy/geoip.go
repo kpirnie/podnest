@@ -27,6 +27,13 @@ const (
 
 	// geoDBFilename is the on-disk name of the active country database
 	geoDBFilename = "dbip-country-lite.mmdb"
+
+	// asnDBURLPattern is the DB-IP Lite ASN database download URL;
+	// the %s is the release month in YYYY-MM format (published monthly)
+	asnDBURLPattern = "https://download.db-ip.com/free/dbip-asn-lite-%s.mmdb.gz"
+
+	// asnDBFilename is the on-disk name of the active ASN database
+	asnDBFilename = "dbip-asn-lite.mmdb"
 )
 
 // geoHTTPClient is a shared HTTP client for geo database downloads
@@ -38,6 +45,19 @@ type geoRecord struct {
 	Country struct {
 		ISOCode string `maxminddb:"iso_code"`
 	} `maxminddb:"country"`
+}
+
+// asnRecord is the minimal decode target for an ASN lookup — restricting
+// the struct to just the number keeps the mmdb decode allocation-free
+type asnRecord struct {
+	ASN uint32 `maxminddb:"autonomous_system_number"`
+}
+
+// asnOrgRecord is the fuller decode target used off the hot path where the
+// organization name is wanted for display (lookups, lockout warnings)
+type asnOrgRecord struct {
+	ASN uint32 `maxminddb:"autonomous_system_number"`
+	Org string `maxminddb:"autonomous_system_organization"`
 }
 
 // GeoDir returns the path where the downloaded geo database is stored
@@ -80,7 +100,7 @@ func UpdateGeoDB(appPath string) error {
 	var lastErr error
 	for _, month := range months {
 		url := fmt.Sprintf(geoDBURLPattern, month)
-		if err := downloadGeoDB(url, geoDir); err != nil {
+		if err := downloadGeoDB(url, geoDir, geoDBFilename); err != nil {
 			lastErr = err
 			logger.Debug("geoip: %s not available: %v", month, err)
 			continue
@@ -97,10 +117,62 @@ func UpdateGeoDB(appPath string) error {
 	return fmt.Errorf("geoip: no release available: %w", lastErr)
 }
 
+// UpdateASNDB downloads the latest DB-IP Lite ASN database to
+// {appPath}/geoip/. DB-IP publishes monthly; the current month is tried
+// first, falling back to the previous month if it is not yet available.
+// Returns nil if the installed version is already current.
+func UpdateASNDB(appPath string) error {
+	geoDir := GeoDir(appPath)
+
+	// candidate release months — current first, previous as fallback
+	now := time.Now().UTC()
+	months := []string{
+		now.Format("2006-01"),
+		now.AddDate(0, -1, 0).Format("2006-01"),
+	}
+
+	// skip the download entirely if either candidate is already installed
+	versionFile := filepath.Join(geoDir, ".asn-version")
+	if current, err := os.ReadFile(versionFile); err == nil {
+		v := strings.TrimSpace(string(current))
+		for _, m := range months {
+			if v == m {
+				logger.Debug("asndb: already up to date (%s)", v)
+				return nil
+			}
+		}
+	}
+
+	// ensure the target directory exists
+	if err := os.MkdirAll(geoDir, 0750); err != nil {
+		return fmt.Errorf("asndb: mkdir %s: %w", geoDir, err)
+	}
+
+	// try each candidate month until one downloads successfully
+	var lastErr error
+	for _, month := range months {
+		url := fmt.Sprintf(asnDBURLPattern, month)
+		if err := downloadGeoDB(url, geoDir, asnDBFilename); err != nil {
+			lastErr = err
+			logger.Debug("asndb: %s not available: %v", month, err)
+			continue
+		}
+
+		// record the installed version for future skip checks
+		if err := os.WriteFile(versionFile, []byte(month), 0640); err != nil {
+			logger.Warn("asndb: version file write failed: %v", err)
+		}
+		logger.Debug("asndb: updated to %s", month)
+		return nil
+	}
+
+	return fmt.Errorf("asndb: no release available: %w", lastErr)
+}
+
 // downloadGeoDB fetches a gzipped mmdb from url, decompresses it to a
 // temporary file in geoDir, and atomically renames it into place so the
 // active database file is never observed in a partially written state.
-func downloadGeoDB(url, geoDir string) error {
+func downloadGeoDB(url, geoDir, filename string) error {
 	resp, err := geoHTTPClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
@@ -136,7 +208,7 @@ func downloadGeoDB(url, geoDir string) error {
 	}
 
 	// atomic swap into place
-	final := filepath.Join(geoDir, geoDBFilename)
+	final := filepath.Join(geoDir, filename)
 	if err := os.Rename(tmpPath, final); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("rename: %w", err)
@@ -186,4 +258,73 @@ func (p *Proxy) countryCode(ip net.IP) string {
 		return ""
 	}
 	return rec.Country.ISOCode
+}
+
+// LoadASNDB reads the on-disk ASN database fully into memory and swaps
+// it into the proxy's atomic holder. Loading via FromBytes rather than Open
+// avoids mmap page-fault jitter on the request hot path. Any previously
+// loaded reader is left for the GC once all in-flight lookups complete.
+func (p *Proxy) LoadASNDB() error {
+	path := filepath.Join(GeoDir(p.appPath), asnDBFilename)
+
+	// read the whole database into memory
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("asndb: read %s: %w", path, err)
+	}
+
+	reader, err := maxminddb.FromBytes(data)
+	if err != nil {
+		return fmt.Errorf("asndb: parse %s: %w", path, err)
+	}
+
+	// swap atomically — the hot path nil-checks the pointer, so lookups
+	// simply pass through until the first successful load completes
+	p.asnDB.Store(reader)
+	logger.Debug("asndb: database loaded (%d bytes)", len(data))
+	return nil
+}
+
+// asnNumber resolves the autonomous system number for ip.
+// Returns 0 when the database is not yet loaded, the IP is private or
+// unallocated, or the lookup fails — callers treat 0 as unknown, which
+// enforcement handles as default-allow.
+func (p *Proxy) asnNumber(ip net.IP) uint32 {
+	// nil-check the holder — lookups pass through until the first load
+	reader := p.asnDB.Load()
+	if reader == nil || ip == nil {
+		return 0
+	}
+
+	// decode only the AS number from the record
+	var rec asnRecord
+	if err := reader.Lookup(ip, &rec); err != nil {
+		return 0
+	}
+	return rec.ASN
+}
+
+// LookupCountry resolves the ISO country code for a textual IP address.
+// Exported for off-hot-path consumers (lockout preflight, admin lookups);
+// returns "" when the IP is unparseable or unresolvable.
+func (p *Proxy) LookupCountry(ipStr string) string {
+	return p.countryCode(net.ParseIP(ipStr))
+}
+
+// LookupASN resolves the AS number and organization name for a textual IP
+// address. Exported for off-hot-path consumers (lockout preflight, admin
+// lookups); returns 0, "" when the IP is unparseable or unresolvable.
+func (p *Proxy) LookupASN(ipStr string) (uint32, string) {
+	reader := p.asnDB.Load()
+	ip := net.ParseIP(ipStr)
+	if reader == nil || ip == nil {
+		return 0, ""
+	}
+
+	// decode both the number and the org name from the record
+	var rec asnOrgRecord
+	if err := reader.Lookup(ip, &rec); err != nil {
+		return 0, ""
+	}
+	return rec.ASN, rec.Org
 }

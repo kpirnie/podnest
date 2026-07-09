@@ -456,6 +456,17 @@ CREATE TABLE IF NOT EXISTS kppn_country_rules (
 CREATE INDEX IF NOT EXISTS idx_country_rules_site ON kppn_country_rules (site_id);
 CREATE INDEX IF NOT EXISTS idx_country_rules_type ON kppn_country_rules (list_type);
 
+CREATE TABLE IF NOT EXISTS kppn_asn_rules (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id   INTEGER REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    list_type INTEGER NOT NULL CHECK(list_type IN (0,1)),
+    asn       INTEGER NOT NULL CHECK(asn > 0),
+    created   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_asn_rules_site ON kppn_asn_rules (site_id);
+CREATE INDEX IF NOT EXISTS idx_asn_rules_type ON kppn_asn_rules (list_type);
+
 CREATE TABLE IF NOT EXISTS kppn_security_bypass (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     cidr    TEXT    NOT NULL,

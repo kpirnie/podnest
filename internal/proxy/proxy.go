@@ -93,6 +93,7 @@ type Proxy struct {
 	trustedProxies    atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
 	bypassNets        atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
 	geoDB             atomic.Pointer[maxminddb.Reader]             // in-memory country database; swapped atomically on refresh
+	asnDB             atomic.Pointer[maxminddb.Reader]             // in-memory ASN database; swapped atomically on refresh
 	rpCache           sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache      sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
 	redirectCache     sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
@@ -445,6 +446,19 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				dur := time.Since(start)
 				// log the block with the resolved country for stats drilldown
 				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "geo:"+code)
+				return
+			}
+		}
+
+		// enforce ASN rules — the ASN lookup is skipped entirely when no
+		// ASN rules are configured in either scope
+		if clientIP != nil && hasASNRules(sec.global, siteRules) {
+			asn := p.asnNumber(clientIP)
+			if !checkASN(asn, sec.global, siteRules) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				dur := time.Since(start)
+				// log the block with the resolved ASN for stats drilldown
+				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, fmt.Sprintf("asn:AS%d", asn))
 				return
 			}
 		}
