@@ -406,8 +406,9 @@ function renderPodTable(containers) {
 // -- drilldown ---------------------------------------------------------------
 
 // renderDrilldownTable builds the paginated, sortable drilldown table HTML
-// sortCol: 'time' | 'method' | 'status' | 'ip' — sortDesc: boolean
-function renderDrilldownTable(entries, page, sortCol, sortDesc) {
+// sortCol: 'time' | 'method' | 'site' | 'status' | 'ip' — sortDesc: boolean
+// showSite: include the Site column (global dashboard drilldown only)
+function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
     if (!entries || entries.length === 0) {
         return `<p class="kp-muted uk-text-small">No matching requests found.</p>`;
     }
@@ -418,6 +419,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
         switch (sortCol) {
             case 'time':   av = a.time;      bv = b.time;      break;
             case 'method': av = a.method;    bv = b.method;    break;
+            case 'site':   av = a.site_name; bv = b.site_name; break;
             case 'ip':     av = a.client_ip; bv = b.client_ip; break;
             default:       av = a.status;    bv = b.status;    break;
         }
@@ -437,6 +439,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
         return `
             <tr>
                 <td class="kp-stats-table-cell-mono" style="white-space:nowrap">${e.time.slice(11, 19)}</td>
+                ${showSite ? `<td class="kp-stats-table-cell-mono" style="font-size:0.8rem">${e.site_name}</td>` : ''}
                 <td class="kp-stats-table-cell-mono">${e.method}</td>
                 <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
                 <td><span class="kp-badge ${statusClass}">${e.status}</span>${e.reason ? ` <span class="kp-badge kp-badge-danger" style="font-size:0.65rem" uk-tooltip="Blocked by security rule">${e.reason}</span>` : ''}</td>
@@ -459,6 +462,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="time">Time ${sortCol==='time' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    ${showSite ? `<th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="site">Site ${sortCol==='site' ? (sortDesc ? '↓' : '↑') : '↕'}</th>` : ''}
                     <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="method">Method ${sortCol==='method' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="status">Status ${sortCol==='status' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
@@ -473,7 +477,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
 
 // openDrilldown fetches and displays the drilldown modal for a given hour and
 // status class; endpoint is the drilldown API path (per-site or global)
-export async function openDrilldown(endpoint, hour, statusClass) {
+export async function openDrilldown(endpoint, hour, statusClass, showSite = false) {
     const modal = document.getElementById('stats-drilldown-modal');
     const title = document.getElementById('stats-drilldown-title');
     const body  = document.getElementById('stats-drilldown-body');
@@ -491,7 +495,7 @@ export async function openDrilldown(endpoint, hour, statusClass) {
     let sortDesc = true;
 
     function redraw() {
-        body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc);
+        body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc, showSite);
 
         // sort column buttons
         body.querySelectorAll('th[data-dd-col]').forEach((th) => {

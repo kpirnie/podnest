@@ -204,7 +204,7 @@ export function siteCard(site, allSites = []) {
         ? (allSites.find(s => s.ID === site.ParentID) ?? null)
         : null;
     return `
-        <div class="kp-site-card" data-site-id="${site.ID}" data-status="${site.SiteStatus}" data-type="${site.SiteType}">
+        <div class="kp-site-card um-margin" data-site-id="${site.ID}" data-status="${site.SiteStatus}" data-type="${site.SiteType}">
             <div class="kp-site-card-header">
                 <div>
                     <h2 class="kp-view-title" data-action="manage" data-id="${site.ID}">${site.Name}</h2>

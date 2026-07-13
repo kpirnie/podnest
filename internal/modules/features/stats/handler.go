@@ -67,6 +67,8 @@ type CountedEntry struct {
 type DrilldownEntry struct {
 	Time     string `json:"time"`
 	Method   string `json:"method"`
+	Host     string `json:"-"`
+	SiteName string `json:"site_name,omitempty"`
 	Path     string `json:"path"`
 	Status   int    `json:"status"`
 	ClientIP string `json:"client_ip"`
@@ -412,28 +414,43 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// admins see the full log; any non-admin is scoped to their own sites
-	var domains []string
-	if user.Role != models.RoleAdmin {
-		sites, err := db.GetSitesByUser(h.DB, user.ID)
+	var (
+		domains []string
+		sites   []*models.Site
+		err     error
+	)
+	if user.Role == models.RoleAdmin {
+		sites, err = db.GetAllSites(h.DB)
+	} else {
+		sites, err = db.GetSitesByUser(h.DB, user.ID)
+	}
+	if err != nil {
+		logger.Error("stats: global drilldown — load sites: %v", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// map every registered domain to its site name so log hosts can be
+	// translated to site names in the response
+	siteNames := make(map[string]string)
+	for _, s := range sites {
+		ds, err := h.siteDomainsFor(s)
 		if err != nil {
-			logger.Error("stats: global drilldown — GetSitesByUser(%d): %v", user.ID, err)
-			apiutil.Error(w, http.StatusInternalServerError, err)
-			return
+			logger.Error("stats: global drilldown — siteDomainsFor(%d): %v", s.ID, err)
+			continue
 		}
-		for _, s := range sites {
-			ds, err := h.siteDomainsFor(s)
-			if err != nil {
-				logger.Error("stats: global drilldown — siteDomainsFor(%d): %v", s.ID, err)
-				continue
-			}
+		for _, d := range ds {
+			siteNames[d] = s.Name
+		}
+		if user.Role != models.RoleAdmin {
 			domains = append(domains, ds...)
 		}
+	}
 
-		// a manager with no domains must see zero entries, not the full log —
-		// seed a sentinel host that matches nothing so the filter stays active
-		if len(domains) == 0 {
-			domains = []string{"\x00"}
-		}
+	// a manager with no domains must see zero entries, not the full log —
+	// seed a sentinel host that matches nothing so the filter stays active
+	if user.Role != models.RoleAdmin && len(domains) == 0 {
+		domains = []string{"\x00"}
 	}
 
 	entries, err := parseDrilldown(h.AppPath+"/logs/proxy-access.log", hour, statusClass, domains)
@@ -441,6 +458,16 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 		logger.Error("stats: global drilldown parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
+	}
+
+	// translate each entry's host to its site name; unmatched hosts
+	// (admin domain, unregistered) fall back to the raw host
+	for i := range entries {
+		if name, ok := siteNames[entries[i].Host]; ok {
+			entries[i].SiteName = name
+		} else {
+			entries[i].SiteName = entries[i].Host
+		}
 	}
 
 	apiutil.JSON(w, http.StatusOK, entries)
@@ -745,6 +772,7 @@ func parseDrilldown(logPath, hour, statusClass string, domains []string) ([]Dril
 		results = append(results, DrilldownEntry{
 			Time:     ts.UTC().Format(time.RFC3339),
 			Method:   fields[1],
+			Host:     fields[2],
 			Path:     fields[3],
 			Status:   statusCode,
 			ClientIP: fields[7],

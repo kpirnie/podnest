@@ -1,37 +1,75 @@
 #!/usr/bin/env bash
 #############################################
 # PodNest — rootless under a dedicated user
-# Run as root:  bash podnest.sh
+# Run as root:  bash setup.sh <version> <user>
+# Update:       bash setup.sh update <version> <user>
+# version: latest | dev | beta
 #############################################
 set -euo pipefail
 
-# Get the user to create this under
-if [ -n "${1:-}" ]; then
-  PN_USER="$1"
-else
-  read -rp "PodNest User [podnest]: " PN_USER
-  PN_USER="${PN_USER:-podnest}"
-fi
+#############################################
+# argument handling
+# both version and user are required — prompted for
+# when not passed, and the script exits when empty
+#############################################
+
+# validate the version — must be one of: latest, dev, beta
+validate_version() {
+  case "${1:-}" in
+    latest|dev|beta) ;;
+    *) echo "ERROR: version required — must be one of: latest, dev, beta"; \
+       echo "Usage: bash setup.sh <version> <user>  |  bash setup.sh update <version> <user>"; exit 1 ;;
+  esac
+}
+
+# resolve the version — use the argument or prompt; exit when invalid/empty
+get_version() {
+  if [ -n "${1:-}" ]; then
+    PN_VERSION="$1"
+  else
+    read -rp "PodNest version (latest|dev|beta): " PN_VERSION
+  fi
+  validate_version "$PN_VERSION"
+}
+
+# resolve the user — use the argument or prompt; exit when empty
+get_user() {
+  if [ -n "${1:-}" ]; then
+    PN_USER="$1"
+  else
+    read -rp "PodNest user: " PN_USER
+  fi
+  [ -n "$PN_USER" ] || { echo "ERROR: user required"; exit 1; }
+}
 
 #############################################
-# update: pull :latest and restart the service
-# Run as root:  bash podnest-user.sh update [user]
+# update: pull :<version>, rewrite the unit's
+# image tag, and restart the service
+# Run as root:  bash setup.sh update <version> <user>
 #############################################
 if [ "${1:-}" = "update" ]; then
-  if [ -n "${2:-}" ]; then
-    PN_USER="$2"
-  else
-    read -rp "PodNest user [podnest]: " PN_USER
-    PN_USER="${PN_USER:-podnest}"
-  fi
+  get_version "${2:-}"
+  get_user "${3:-}"
   PNUID=$(id -u "$PN_USER")
   RUN="sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID"
-  $RUN podman pull ghcr.io/kpirnie/podnest:latest
+  UNIT="/home/$PN_USER/.config/systemd/user/podnest.service"
+
+  # rewrite the image tag in the installed unit so the service runs the
+  # requested version, not whatever tag it was originally set up with
+  [ -f "$UNIT" ] || { echo "ERROR: unit file missing at $UNIT"; exit 1; }
+  sed -i "s|ghcr.io/kpirnie/podnest:[^ ]*|ghcr.io/kpirnie/podnest:$PN_VERSION|" "$UNIT"
+
+  $RUN podman pull ghcr.io/kpirnie/podnest:$PN_VERSION
+  $RUN systemctl --user daemon-reload
   $RUN systemctl --user restart podnest.service
   $RUN systemctl --user status podnest.service --no-pager | head -8
   $RUN podman image prune -f
   exit 0
 fi
+
+# setup: version then user
+get_version "${1:-}"
+get_user "${2:-}"
 
 PN_DATA=/home/$PN_USER/sites        # host-side site data
 PN_PORT=9000                       # UI port
@@ -123,7 +161,7 @@ ExecStart=/usr/bin/podman run \\
     --tmpfs /tmp \\
     -e TZ=$PN_TZ \\
     -e LOG_LEVEL=INFO \\
-    ghcr.io/kpirnie/podnest:latest serve --app-path /opt/podnest --port $PN_PORT --socket /run/podman/podman.sock
+    ghcr.io/kpirnie/podnest:$PN_VERSION serve --app-path /opt/podnest --port $PN_PORT --socket /run/podman/podman.sock
 ExecStop=/usr/bin/podman stop podnest
 
 [Install]

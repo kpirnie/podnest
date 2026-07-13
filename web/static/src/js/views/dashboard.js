@@ -269,7 +269,7 @@ export async function viewDashboard(root) {
                         const rawHour = traffic.hits_per_hour[elements[0].index]?.hour;
                         if (!rawHour) return;
 
-                        openDrilldown('/stats/drilldown', rawHour, label);
+                        openDrilldown('/stats/drilldown', rawHour, label, true);
                     },
                     onHover: (evt, elements) => {
                         if (!elements || !elements.length) {
