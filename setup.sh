@@ -1,55 +1,68 @@
 #!/usr/bin/env bash
 #############################################
 # PodNest — rootless under a dedicated user
-# Run as root:  bash setup.sh <version> <user>
-# Update:       bash setup.sh update <version> <user>
-# version: latest | dev | beta
+# Run as root:  bash setup.sh --action <install|update> --version <latest|dev|beta> --user <username>
 #############################################
 set -euo pipefail
 
 #############################################
 # argument handling
-# both version and user are required — prompted for
-# when not passed, and the script exits when empty
+# all arguments are required and passed as flags —
+# the script prints usage and exits when missing/invalid
 #############################################
 
-# validate the version — must be one of: latest, dev, beta
-validate_version() {
-  case "${1:-}" in
-    latest|dev|beta) ;;
-    *) echo "ERROR: version required — must be one of: latest, dev, beta"; \
-       echo "Usage: bash setup.sh <version> <user>  |  bash setup.sh update <version> <user>"; exit 1 ;;
+# print the usage message and exit
+usage() {
+  cat <<'EOF'
+Usage: bash setup.sh --action <install|update> --version <latest|dev|beta> --user <username>
+
+  --action   what to do: install (fresh setup) or update (pull + restart)
+  --version  the PodNest image tag: latest, dev, or beta
+  --user     the dedicated user PodNest runs under
+
+Examples:
+  bash setup.sh --action install --version latest --user podnest
+  bash setup.sh --action update --version beta --user podnest
+EOF
+  exit "${1:-1}"
+}
+
+# show help when asked for, or when nothing was passed
+[ $# -eq 0 ] && usage 0
+case "${1:-}" in -h|--help|"?") usage 0 ;; esac
+
+# parse the flags
+PN_ACTION="" PN_VERSION="" PN_USER=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --action)  PN_ACTION="${2:-}";  shift 2 ;;
+    --version) PN_VERSION="${2:-}"; shift 2 ;;
+    --user)    PN_USER="${2:-}";    shift 2 ;;
+    -h|--help|"?") usage 0 ;;
+    *) echo "ERROR: unknown argument: $1"; usage ;;
   esac
-}
+done
 
-# resolve the version — use the argument or prompt; exit when invalid/empty
-get_version() {
-  if [ -n "${1:-}" ]; then
-    PN_VERSION="$1"
-  else
-    read -rp "PodNest version (latest|dev|beta): " PN_VERSION
-  fi
-  validate_version "$PN_VERSION"
-}
+# validate the action — must be one of: install, update
+case "$PN_ACTION" in
+  install|update) ;;
+  *) echo "ERROR: --action required — must be one of: install, update"; usage ;;
+esac
 
-# resolve the user — use the argument or prompt; exit when empty
-get_user() {
-  if [ -n "${1:-}" ]; then
-    PN_USER="$1"
-  else
-    read -rp "PodNest user: " PN_USER
-  fi
-  [ -n "$PN_USER" ] || { echo "ERROR: user required"; exit 1; }
-}
+# validate the version — must be one of: latest, dev, beta
+case "$PN_VERSION" in
+  latest|dev|beta) ;;
+  *) echo "ERROR: --version required — must be one of: latest, dev, beta"; usage ;;
+esac
+
+# validate the user — must not be empty
+[ -n "$PN_USER" ] || { echo "ERROR: --user required"; usage; }
 
 #############################################
 # update: pull :<version>, rewrite the unit's
 # image tag, and restart the service
-# Run as root:  bash setup.sh update <version> <user>
 #############################################
-if [ "${1:-}" = "update" ]; then
-  get_version "${2:-}"
-  get_user "${3:-}"
+if [ "$PN_ACTION" = "update" ]; then
   PNUID=$(id -u "$PN_USER")
   RUN="sudo -u $PN_USER XDG_RUNTIME_DIR=/run/user/$PNUID"
   UNIT="/home/$PN_USER/.config/systemd/user/podnest.service"
@@ -67,10 +80,7 @@ if [ "${1:-}" = "update" ]; then
   exit 0
 fi
 
-# setup: version then user
-get_version "${1:-}"
-get_user "${2:-}"
-
+# setup: install
 PN_DATA=/home/$PN_USER/sites        # host-side site data
 PN_PORT=9000                       # UI port
 PN_TZ=America/New_York
