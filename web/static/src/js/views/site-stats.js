@@ -495,6 +495,7 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
     let sortDesc = true;
 
     function redraw() {
+        console.log(showSite);
         body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc, showSite);
 
         // sort column buttons

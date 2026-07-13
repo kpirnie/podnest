@@ -161,7 +161,7 @@ export async function viewDashboard(root) {
                 </div>
 
                 <!-- recent sites -->
-                <div class="kp-view-header">
+                <div class="kp-view-header uk-margin-top">
                     <h2 class="kp-view-title" style="font-size:1.25rem">Recent Sites</h2>
                 </div>
                 <div class="">
