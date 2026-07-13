@@ -102,7 +102,7 @@ ghcr.io/kpirnie/podnest:beta
 Run the following command in shell on your server.  Replace USER with whatever username you would like to utilize.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kpirnie/podnest/main/setup.sh | sudo bash -s -- USER
+curl -fsSL https://raw.githubusercontent.com/kpirnie/podnest/main/setup.sh | sudo bash -s -- --action <install|update> --version <latest|dev|beta> --user <username>
 ```
 
 Once running, the UI is available at: `http://your-host:9000`
