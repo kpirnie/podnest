@@ -90,8 +90,8 @@ function initPillTabs(root) {
         }
     }, { capture: true });
 
-    // initialise switcher to panel 0 on load
-    UIkit.switcher(switcher).show(0);
+    // initialise switcher to the Stats panel on load (index 1 for both layouts)
+    UIkit.switcher(switcher).show(1);
 }
 
 // renderRoutesTab returns the static HTML shell for the reverse proxy routes tab

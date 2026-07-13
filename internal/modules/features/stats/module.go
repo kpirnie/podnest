@@ -48,6 +48,7 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 	// global dashboard routes
 	mux.HandleFunc("GET /stats/traffic", h.apiGlobalTraffic)
 	mux.HandleFunc("GET /stats/pod", h.apiGlobalPod)
+	mux.HandleFunc("GET /stats/drilldown", h.apiGlobalDrilldown)
 }
 
 // OnSiteCreate is a no-op; stats are computed on demand.

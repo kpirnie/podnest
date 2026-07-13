@@ -5,9 +5,9 @@
 "use strict";
 
 import { api } from '../api.js';
-import { emptyState, fmtBytes } from '../helpers.js';
+import { fmtBytes } from '../helpers.js';
 import { showCreateSiteModal } from '../modals/create-site.js';
-import { loadChartJS } from './site-stats.js';
+import { loadChartJS, openDrilldown } from './site-stats.js';
 import { siteCard } from './sites.js';
 
 // holds the active Chart instance so it can be destroyed before recreating
@@ -24,6 +24,8 @@ export async function viewDashboard(root) {
     const errored = sites.filter((s) => s.SiteStatus === 4).length;
 
     root.innerHTML = `
+
+        <!-- global counts -->
         <div class="kp-view-header">
             <h1 class="kp-view-title kp-cursor" style="font-size:2rem;">Dashboard</h1>
         </div>
@@ -118,9 +120,22 @@ export async function viewDashboard(root) {
             </div>
         </div>
 
+        <!-- drilldown modal — populated on 4xx/5xx bar click -->
+        <div id="stats-drilldown-modal" uk-modal>
+            <div class="uk-modal-dialog uk-modal-body" style="min-width:min(96vw,900px)">
+                <button class="uk-modal-close-default" type="button" uk-close></button>
+                <h3 class="kp-view-title uk-margin-small-bottom" id="stats-drilldown-title">Request Detail</h3>
+                <div id="stats-drilldown-body">
+                    <div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- global pod aggregate + top sites -->
         <div class="uk-grid-small uk-child-width-1-1 uk-child-width-1-2@m uk-margin-medium-bottom" uk-grid>
             <div>
+
+                <!-- resource usage -->
                 <div class="kp-view-header">
                     <h2 class="kp-view-title" style="font-size:1.25rem">Resource Usage</h2>
                 </div>
@@ -144,8 +159,22 @@ export async function viewDashboard(root) {
                         </div>
                     </div></div>
                 </div>
+
+                <!-- recent sites -->
+                <div class="kp-view-header">
+                    <h2 class="kp-view-title" style="font-size:1.25rem">Recent Sites</h2>
+                </div>
+                <div class="">
+                    ${sites.length === 0 ? 
+                        emptyState("world", "No sites yet") : 
+                        sites.slice(-3).reverse().map(s => siteCard(s, sites)).join("")
+                    }
+                </div>
+
             </div>
             <div>
+
+                <!-- top traffic sites -->
                 <div class="kp-view-header">
                     <h2 class="kp-view-title" style="font-size:1.25rem">Top Sites by Traffic</h2>
                 </div>
@@ -172,15 +201,7 @@ export async function viewDashboard(root) {
                 </div>
             </div>
         </div>
-        <div class="kp-view-header">
-            <h2 class="kp-view-title" style="font-size:1.25rem">Recent Sites</h2>
-        </div>
-        <div class="kp-site-grid">
-            ${sites.length === 0 ? 
-                emptyState("world", "No sites yet") : 
-                sites.slice(-3).reverse().map(s => siteCard(s, sites)).join("")
-            }
-        </div>`;
+        `;
 
     // render hits-per-hour chart once Chart.js is ready
     if (traffic?.hits_per_hour?.length) {
@@ -236,6 +257,28 @@ export async function viewDashboard(root) {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    onClick: (evt, elements) => {
+                        if (!elements || !elements.length) return;
+
+                        // only handle 4xx and 5xx dataset clicks
+                        const datasetIndex = elements[0].datasetIndex;
+                        const label = _dashChart.data.datasets[datasetIndex].label;
+                        if (label !== '4xx' && label !== '5xx') return;
+
+                        // get raw RFC3339 hour straight from the traffic payload
+                        const rawHour = traffic.hits_per_hour[elements[0].index]?.hour;
+                        if (!rawHour) return;
+
+                        openDrilldown('/stats/drilldown', rawHour, label);
+                    },
+                    onHover: (evt, elements) => {
+                        if (!elements || !elements.length) {
+                            evt.native.target.style.cursor = 'default';
+                            return;
+                        }
+                        const label = _dashChart.data.datasets[elements[0].datasetIndex].label;
+                        evt.native.target.style.cursor = (label === '4xx' || label === '5xx') ? 'pointer' : 'default';
+                    },
                     plugins: {
                         legend: {
                             display: true,

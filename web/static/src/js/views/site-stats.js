@@ -248,7 +248,7 @@ async function loadStatsTraffic(siteId) {
                     const rawHour = panel._hitsPerHour[barIndex]?.hour;
                     if (!rawHour) return;
 
-                    openDrilldown(siteId, rawHour, label);
+                    openDrilldown(`/sites/${siteId}/stats/drilldown`, rawHour, label);
                 },
                 onHover: (evt, elements) => {
                     if (!elements || !elements.length) {
@@ -471,8 +471,9 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc) {
         ${pager}`;
 }
 
-// openDrilldown fetches and displays the drilldown modal for a given hour and status class
-async function openDrilldown(siteId, hour, statusClass) {
+// openDrilldown fetches and displays the drilldown modal for a given hour and
+// status class; endpoint is the drilldown API path (per-site or global)
+export async function openDrilldown(endpoint, hour, statusClass) {
     const modal = document.getElementById('stats-drilldown-modal');
     const title = document.getElementById('stats-drilldown-title');
     const body  = document.getElementById('stats-drilldown-body');
@@ -517,7 +518,7 @@ async function openDrilldown(siteId, hour, statusClass) {
     }
 
     try {
-        entries = await api.get(`/sites/${siteId}/stats/drilldown?hour=${encodeURIComponent(hour)}&status=${statusClass}`);
+        entries = await api.get(`${endpoint}?hour=${encodeURIComponent(hour)}&status=${statusClass}`);
     } catch (err) {
         body.innerHTML = `<p class="kp-muted uk-text-small">Failed to load: ${escapeHtml(err.message)}</p>`;
         return;
