@@ -615,10 +615,22 @@ func importSecurityCSV(r *http.Request) ([][]string, error) {
 	return records, nil
 }
 
+// stripInlineComment removes a trailing "#"-style comment from a rule line and
+// trims the remainder. The marker only counts at the start of the line or when
+// preceded by whitespace, so a "#" embedded mid-token is left alone.
+func stripInlineComment(line string) string {
+	for i := 0; i < len(line); i++ {
+		if line[i] == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
+			return strings.TrimSpace(line[:i])
+		}
+	}
+	return line
+}
+
 func parseIPRules(raw string, listType int) []db.IPRule {
 	var out []db.IPRule
 	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
+		line = stripInlineComment(strings.TrimSpace(line))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -630,7 +642,7 @@ func parseIPRules(raw string, listType int) []db.IPRule {
 func parseUARules(raw string, listType int) []db.UARule {
 	var out []db.UARule
 	for _, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
+		line = stripInlineComment(strings.TrimSpace(line))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -645,7 +657,7 @@ func parseUARules(raw string, listType int) []db.UARule {
 func parseCountryRules(raw string, listType int) []db.CountryRule {
 	var out []db.CountryRule
 	for _, line := range strings.Split(raw, "\n") {
-		line = strings.ToUpper(strings.TrimSpace(line))
+		line = strings.ToUpper(stripInlineComment(strings.TrimSpace(line)))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -752,7 +764,7 @@ func (h *Handler) saveASNRules(w http.ResponseWriter, r *http.Request, siteID *i
 func parseASNRules(raw string, listType int) []db.ASNRule {
 	var out []db.ASNRule
 	for _, line := range strings.Split(raw, "\n") {
-		line = strings.ToUpper(strings.TrimSpace(line))
+		line = strings.ToUpper(stripInlineComment(strings.TrimSpace(line)))
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}

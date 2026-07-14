@@ -42,6 +42,16 @@ type securityCache struct {
 	perSite map[int64]ruleSet
 }
 
+// matches reports whether the request UA matches this rule. The special
+// pattern <blank> matches an empty or whitespace-only user-agent, which a
+// plain substring match can never do.
+func (r *compiledUARule) matches(uaLower string) bool {
+	if r.pattern == "<blank>" {
+		return uaLower == ""
+	}
+	return strings.Contains(uaLower, r.pattern)
+}
+
 // compileIPRule parses a CIDR string or bare IP into a compiledIPRule.
 // Bare IPs (no mask) are stored as host addresses for exact matching.
 func compileIPRule(cidr string) (*compiledIPRule, error) {
@@ -409,11 +419,11 @@ func hasASNRules(global, site ruleSet) bool {
 func checkUA(ua string, global, site ruleSet) bool {
 
 	// lowercase once for all comparisons in this request
-	uaLower := strings.ToLower(ua)
+	uaLower := strings.ToLower(strings.TrimSpace(ua))
 
 	// global blacklist — hard block, no override
 	for _, r := range global.uaBlacklist {
-		if strings.Contains(uaLower, r.pattern) {
+		if r.matches(uaLower) {
 			if logger.IsDebug() {
 				logger.Debug("checkUA: blocked by global blacklist pattern '%s'", r.pattern)
 			}
@@ -423,7 +433,7 @@ func checkUA(ua string, global, site ruleSet) bool {
 
 	// per-site blacklist — hard block, no override
 	for _, r := range site.uaBlacklist {
-		if strings.Contains(uaLower, r.pattern) {
+		if r.matches(uaLower) {
 			if logger.IsDebug() {
 				logger.Debug("checkUA: blocked by site blacklist pattern '%s'", r.pattern)
 			}
@@ -435,7 +445,7 @@ func checkUA(ua string, global, site ruleSet) bool {
 	if len(global.uaWhitelist) > 0 {
 		allowed := false
 		for _, r := range global.uaWhitelist {
-			if strings.Contains(uaLower, r.pattern) {
+			if r.matches(uaLower) {
 				allowed = true
 				break
 			}
@@ -452,7 +462,7 @@ func checkUA(ua string, global, site ruleSet) bool {
 	if len(site.uaWhitelist) > 0 {
 		allowed := false
 		for _, r := range site.uaWhitelist {
-			if strings.Contains(uaLower, r.pattern) {
+			if r.matches(uaLower) {
 				allowed = true
 				break
 			}

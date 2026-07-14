@@ -297,7 +297,7 @@ func (p *Proxy) Start() error {
 	// fire up the HTTP/3 listener on :443 (UDP) for QUIC support
 	go func() {
 		logger.Debug("proxy HTTP/3 listener starting on :443 (UDP)")
-		if err := p.http3Srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		if err := p.http3Srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("proxy HTTP/3 listener: %v", err)
 		}
 	}()
@@ -335,54 +335,24 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 // structured access log regardless of outcome.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
 
-	// convert clientIP to string once — net.IP.String() allocates a new string on
-	// every call; caching here avoids up to 6 redundant allocations per request
-	clientIPStr := "<unknown>"
-	if clientIP != nil {
-		clientIPStr = clientIP.String()
+	// resolve the client IP once — string form is cached to avoid redundant allocations
+	clientIP, clientIPStr := p.resolveClientIP(r)
+
+	// normalize the host for routing and admin domain checks
+	host := normalizeHost(r)
+
+	// enforce global security rules before any host matching
+	if p.enforceGlobalSecurity(w, r, clientIP, clientIPStr, start) {
+		return
 	}
 
-	// extract the host without port for routing and admin domain checks; the port is not relevant since
-	host := r.Host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-
-	// match hosts case-insensitively against stored (lowercased) domains
-	host = strings.ToLower(host)
-
-	// check if the request is for the admin domain before any cache lookups
-	p.adminMu.RLock()
-	adminDomain := p.adminDomain
-	p.adminMu.RUnlock()
-
-	var (
-		port   int
-		siteID int64
-		rpPool *UpstreamPool
-		entry  domainEntry
-	)
-
-	// route admin domain traffic to the admin port, otherwise look up the domain in the cache
-	if adminDomain != "" && host == adminDomain {
-		port = p.adminPort
-	} else {
-
-		// look up the domain in the cache — if not found, return 404
-		var ok bool
-		entry, ok = p.lookupEntry(host)
-
-		if !ok || (entry.port == 0 && entry.pool == nil) {
-			http.Error(w, "domain not registered", http.StatusNotFound)
-			dur := time.Since(start)
-			p.writeAccessLog(r, http.StatusNotFound, 0, start, dur, clientIPStr, 0, "")
-			return
-		}
-		port = entry.port
-		siteID = entry.siteID
-		rpPool = entry.pool
+	// route the host — if not registered anywhere, return 404
+	entry, port, siteID, rpPool, ok := p.routeHost(host)
+	if !ok {
+		http.Error(w, "domain not registered", http.StatusNotFound)
+		p.writeAccessLog(r, http.StatusNotFound, 0, start, time.Since(start), clientIPStr, 0, "")
+		return
 	}
 
 	// resolve site name for per-site log routing — looked up once and reused
@@ -404,90 +374,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// load the compiled security cache — single atomic load, no lock
-	sec := p.secCache.Load()
-
-	// retrieve the per-site rule set when we have a known site ID
-	siteRules := ruleSet{}
-	if siteID > 0 {
-		if rs, ok := sec.perSite[siteID]; ok {
-			siteRules = rs
-		}
-	}
-
-	// bypass list — matching IPs skip all IP, UA, and WAF enforcement
-	bypassed := clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load())
-	if !bypassed {
-
-		// enforce IP rules — blacklist always beats whitelist
-		if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			dur := time.Since(start)
-			// log the block with a distinct reason token for stats drilldown
-			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "ip")
-			return
-		}
-
-		// enforce UA rules — blacklist always beats whitelist
-		if !checkUA(r.UserAgent(), sec.global, siteRules) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			dur := time.Since(start)
-			// log the block with a distinct reason token for stats drilldown
-			p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "ua")
-			return
-		}
-
-		// enforce country rules — geo lookup is skipped entirely when no
-		// country rules are configured in either scope
-		if clientIP != nil && hasCountryRules(sec.global, siteRules) {
-			code := p.countryCode(clientIP)
-			if !checkCountry(code, sec.global, siteRules) {
-				http.Error(w, "forbidden", http.StatusForbidden)
-				dur := time.Since(start)
-				// log the block with the resolved country for stats drilldown
-				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "geo:"+code)
-				return
-			}
-		}
-
-		// enforce ASN rules — the ASN lookup is skipped entirely when no
-		// ASN rules are configured in either scope
-		if clientIP != nil && hasASNRules(sec.global, siteRules) {
-			asn := p.asnNumber(clientIP)
-			if !checkASN(asn, sec.global, siteRules) {
-				http.Error(w, "forbidden", http.StatusForbidden)
-				dur := time.Since(start)
-				// log the block with the resolved ASN for stats drilldown
-				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, fmt.Sprintf("asn:AS%d", asn))
-				return
-			}
-		}
-
-		// resolve the WAF engine once — used for both the debug log and enforcement
-		// to avoid calling resolveWAFEngine twice on every WAF-enabled request
-		var wafEngine *WAFEngine
-		if siteID > 0 {
-			wafEngine = p.resolveWAFEngine(siteID)
-		}
-
-		// guard the debug log behind IsDebug() so resolveWAFEngine is not called
-		// purely for log formatting when debug logging is disabled
-		if logger.IsDebug() {
-			logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), wafEngine != nil)
-		}
-
-		// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
-		if wafEngine != nil {
-			if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
-				// WAF wrote the 403; record it in the access log for Fail2Ban
-				dur := time.Since(start)
-				// log the block with a distinct reason token for stats drilldown;
-				// the triggering rule ID is already recorded in waf.log by writeWAFLog
-				p.writeAccessLog(r, http.StatusForbidden, 0, start, dur, clientIPStr, siteID, siteName, "waf")
-				return
-			}
-		}
-
+	// enforce the combined global and per-site security rules plus the WAF
+	if p.enforceSiteSecurity(w, r, clientIP, clientIPStr, start, siteID, siteName) {
+		return
 	}
 
 	// wrap the writer to capture status + byte count for the access log
@@ -495,7 +384,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// advertise HTTP/3 support — only on routed requests, not on proxy-level error
 	// responses (404 domain-not-found, 403 IP/UA/WAF blocks already returned above)
-	sw.Header().Set("Alt-Svc", `h3=":443"; ma=86400`)
+	sw.Header().Set(`Alt-Svc`, `h3=":443"; ma=86400`)
 
 	// reverse proxy sites — try first upstream directly for streaming compatibility,
 	// then cascade through remaining upstreams with buffered retry on failure
@@ -533,6 +422,183 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// container-based sites — route to the container's port via cached reverse proxy
 	p.siteProxy(sw, r, port)
 	p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+}
+
+// resolveClientIP extracts the real client IP from the request and caches its
+// string form — net.IP.String() allocates a new string on every call, so
+// converting once here avoids redundant allocations per request.
+func (p *Proxy) resolveClientIP(r *http.Request) (net.IP, string) {
+	ip := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
+	ipStr := "<unknown>"
+	if ip != nil {
+		ipStr = ip.String()
+	}
+	return ip, ipStr
+}
+
+// normalizeHost strips any port from the request host and lowercases it so
+// routing matches case-insensitively against stored (lowercased) domains.
+func normalizeHost(r *http.Request) string {
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.ToLower(host)
+}
+
+// blockRequest writes the 403 and records the block in the access log with a
+// distinct reason token for stats drilldown.
+func (p *Proxy) blockRequest(w http.ResponseWriter, r *http.Request, clientIPStr string, start time.Time, siteID int64, siteName, reason string) {
+	http.Error(w, "forbidden", http.StatusForbidden)
+	p.writeAccessLog(r, http.StatusForbidden, 0, start, time.Since(start), clientIPStr, siteID, siteName, reason)
+}
+
+// enforceGlobalSecurity applies the global IP, UA, country, and ASN rules
+// before any host matching — unmatched hosts and probe traffic must not slip
+// past the blacklists just because no site claims the domain. Per-site rules
+// still run after routing. Bypass-listed IPs skip enforcement entirely.
+// Returns true when the request was blocked and handled.
+func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, clientIP net.IP, clientIPStr string, start time.Time) bool {
+
+	// bypass list — matching IPs skip all enforcement
+	if clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load()) {
+		return false
+	}
+
+	sec := p.secCache.Load()
+
+	// enforce global IP rules
+	if clientIP != nil && !checkIP(clientIP, sec.global, ruleSet{}) {
+		p.blockRequest(w, r, clientIPStr, start, 0, "", "ip")
+		return true
+	}
+
+	// enforce global UA rules
+	if !checkUA(r.UserAgent(), sec.global, ruleSet{}) {
+		p.blockRequest(w, r, clientIPStr, start, 0, "", "ua")
+		return true
+	}
+
+	// enforce global country rules — geo lookup skipped when unconfigured
+	if clientIP != nil && hasCountryRules(sec.global, ruleSet{}) {
+		code := p.countryCode(clientIP)
+		if !checkCountry(code, sec.global, ruleSet{}) {
+			p.blockRequest(w, r, clientIPStr, start, 0, "", "geo:"+code)
+			return true
+		}
+	}
+
+	// enforce global ASN rules — ASN lookup skipped when unconfigured
+	if clientIP != nil && hasASNRules(sec.global, ruleSet{}) {
+		asn := p.asnNumber(clientIP)
+		if !checkASN(asn, sec.global, ruleSet{}) {
+			p.blockRequest(w, r, clientIPStr, start, 0, "", fmt.Sprintf("asn:AS%d", asn))
+			return true
+		}
+	}
+
+	return false
+}
+
+// enforceSiteSecurity applies the combined global and per-site IP, UA,
+// country, and ASN rules plus the WAF to a routed request. Bypass-listed IPs
+// skip all enforcement. Returns true when the request was blocked and handled.
+func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clientIP net.IP, clientIPStr string, start time.Time, siteID int64, siteName string) bool {
+
+	// bypass list — matching IPs skip all IP, UA, and WAF enforcement
+	if clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load()) {
+		return false
+	}
+
+	// load the compiled security cache — single atomic load, no lock
+	sec := p.secCache.Load()
+
+	// retrieve the per-site rule set when we have a known site ID
+	siteRules := ruleSet{}
+	if siteID > 0 {
+		if rs, ok := sec.perSite[siteID]; ok {
+			siteRules = rs
+		}
+	}
+
+	// enforce IP rules — blacklist always beats whitelist
+	if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
+		p.blockRequest(w, r, clientIPStr, start, siteID, siteName, "ip")
+		return true
+	}
+
+	// enforce UA rules — blacklist always beats whitelist
+	if !checkUA(r.UserAgent(), sec.global, siteRules) {
+		p.blockRequest(w, r, clientIPStr, start, siteID, siteName, "ua")
+		return true
+	}
+
+	// enforce country rules — geo lookup is skipped entirely when no
+	// country rules are configured in either scope
+	if clientIP != nil && hasCountryRules(sec.global, siteRules) {
+		code := p.countryCode(clientIP)
+		if !checkCountry(code, sec.global, siteRules) {
+			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, "geo:"+code)
+			return true
+		}
+	}
+
+	// enforce ASN rules — the ASN lookup is skipped entirely when no
+	// ASN rules are configured in either scope
+	if clientIP != nil && hasASNRules(sec.global, siteRules) {
+		asn := p.asnNumber(clientIP)
+		if !checkASN(asn, sec.global, siteRules) {
+			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, fmt.Sprintf("asn:AS%d", asn))
+			return true
+		}
+	}
+
+	// resolve the WAF engine once — used for both the debug log and enforcement
+	// to avoid calling resolveWAFEngine twice on every WAF-enabled request
+	var wafEngine *WAFEngine
+	if siteID > 0 {
+		wafEngine = p.resolveWAFEngine(siteID)
+	}
+
+	// guard the debug log behind IsDebug() so resolveWAFEngine is not called
+	// purely for log formatting when debug logging is disabled
+	if logger.IsDebug() {
+		logger.Debug("WAF check: siteID=%d enabled=%v engine=%v", siteID, p.wafEnabled.Load(), wafEngine != nil)
+	}
+
+	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
+	if wafEngine != nil {
+		if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
+			// WAF wrote the 403; record it in the access log for Fail2Ban
+			// the triggering rule ID is already recorded in waf.log by writeWAFLog
+			p.writeAccessLog(r, http.StatusForbidden, 0, start, time.Since(start), clientIPStr, siteID, siteName, "waf")
+			return true
+		}
+	}
+
+	return false
+}
+
+// routeHost resolves a normalized host to its routing target — the admin
+// domain routes to the admin port, registered domains resolve through the
+// cache. ok is false when the host is not registered anywhere.
+func (p *Proxy) routeHost(host string) (entry domainEntry, port int, siteID int64, rpPool *UpstreamPool, ok bool) {
+
+	// check if the request is for the admin domain before any cache lookups
+	p.adminMu.RLock()
+	adminDomain := p.adminDomain
+	p.adminMu.RUnlock()
+
+	if adminDomain != "" && host == adminDomain {
+		return domainEntry{}, p.adminPort, 0, nil, true
+	}
+
+	// look up the domain in the cache
+	entry, found := p.lookupEntry(host)
+	if !found || (entry.port == 0 && entry.pool == nil) {
+		return domainEntry{}, 0, 0, nil, false
+	}
+	return entry, entry.port, entry.siteID, entry.pool, true
 }
 
 // hostPolicy restricts certificate issuance to registered domains only.
