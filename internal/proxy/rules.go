@@ -421,6 +421,12 @@ func checkUA(ua string, global, site ruleSet) bool {
 	// lowercase once for all comparisons in this request
 	uaLower := strings.ToLower(strings.TrimSpace(ua))
 
+	// empty, whitespace-only, or control-character-only user-agents are never
+	// legitimate — hard block unconditionally, before any rule evaluation
+	if strings.TrimFunc(uaLower, func(r rune) bool { return r <= ' ' || r == 0x7f }) == "" {
+		return false
+	}
+
 	// global blacklist — hard block, no override
 	for _, r := range global.uaBlacklist {
 		if r.matches(uaLower) {
