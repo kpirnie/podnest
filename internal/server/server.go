@@ -115,8 +115,12 @@ func (s *Server) Start() error {
 		logger.Warn("orphan cleanup: %v", err)
 	}
 
-	// restore pods that were running before the last shutdown or host reboot
-	go s.startupRestore()
+	// restore pods that were running before the last shutdown or host reboot,
+	// then start the status checker so it cannot flip restorable sites to stopped first
+	go func() {
+		s.startupRestore()
+		s.syncPodStatuses()
+	}()
 
 	// background session cleanup
 	go s.sessionReaper()
@@ -135,9 +139,6 @@ func (s *Server) Start() error {
 
 	// monitor host resource usage and throttle offending pods when threshold is breached
 	go s.resourceWatcher()
-
-	// fire up the status checker
-	go s.syncPodStatuses()
 
 	// check for and auto-fix mariadb-upgrade requirement on all DB sites
 	go s.mariadbUpgradeChecker()

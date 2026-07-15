@@ -225,8 +225,14 @@ func (s *Server) startupRestore() {
 		return
 	}
 
+	// loop over all sites and attempt to start any that were running at last shutdown
 	for _, site := range sites {
 		if site.SiteStatus != models.StatusRunning {
+			continue
+		}
+
+		// pod-less site types (reverse proxies) have nothing to restore
+		if !modules.TypeModule(site.SiteType).HasPod() {
 			continue
 		}
 
