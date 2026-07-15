@@ -663,12 +663,25 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// requirePod rejects pod actions for site types that do not provision a pod (reverse proxies).
+func requirePod(w http.ResponseWriter, site *models.Site) bool {
+	if !modules.TypeModule(site.SiteType).HasPod() {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "site type has no pod")
+		return false
+	}
+	return true
+}
+
 // apiSiteStart handles the starting of a site's pod, ensuring it reaches a running state and warming proxy caches for optimal performance.
 func (h *Handler) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 
 	// resolve the site from the request path and ensure the user has access to it
 	site, ok := h.ResolveSite(w, r)
 	if !ok {
+		return
+	}
+
+	if !requirePod(w, site) {
 		return
 	}
 
@@ -704,6 +717,9 @@ func (h *Handler) apiSiteStop(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !requirePod(w, site) {
+		return
+	}
 	if err := h.Podman.StopPod(r.Context(), podman.PodName(site.Name)); err != nil {
 		logger.Error("failed to stop pod for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -719,6 +735,10 @@ func (h *Handler) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 	// resolve the site from the request path and ensure the user has access to it
 	site, ok := h.ResolveSite(w, r)
 	if !ok {
+		return
+	}
+
+	if !requirePod(w, site) {
 		return
 	}
 
@@ -809,6 +829,10 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	// resolve the site from the request path and ensure the user has access to it
 	site, ok := h.ResolveSite(w, r)
 	if !ok {
+		return
+	}
+
+	if !requirePod(w, site) {
 		return
 	}
 

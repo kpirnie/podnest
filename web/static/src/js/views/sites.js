@@ -101,7 +101,7 @@ function siteRow(site, allSites = []) {
         : null;
 
     return `
-        <tr data-site-id="${site.ID}" data-status="${site.SiteStatus}" data-type="${site.SiteType}">
+        <tr data-site-id="${site.ID}" data-status="${!isRP ? site.SiteStatus : ""}" data-type="${site.SiteType}">
             <!-- row checkbox -->
             <td class="uk-table-shrink">
                 <input class="uk-checkbox kp-site-row-check" type="checkbox"
@@ -204,7 +204,7 @@ export function siteCard(site, allSites = []) {
         ? (allSites.find(s => s.ID === site.ParentID) ?? null)
         : null;
     return `
-        <div class="kp-site-card uk-margin" data-site-id="${site.ID}" data-status="${site.SiteStatus}" data-type="${site.SiteType}">
+        <div class="kp-site-card uk-margin" data-site-id="${site.ID}" data-status="${!isRP ? site.SiteStatus : ""}" data-type="${site.SiteType}">
             <div class="kp-site-card-header">
                 <div>
                     <h2 class="kp-view-title" data-action="manage" data-id="${site.ID}">${site.Name}</h2>
@@ -335,7 +335,7 @@ function wireBulkSelection() {
     ["bulk-start","bulk-stop","bulk-restart","bulk-flush","bulk-recreate"].forEach(action => {
         const btnId = action.replace("bulk-","");
         document.getElementById(action)?.addEventListener("click", () => {
-            const ids = getChecked().map(cb => cb.dataset.siteId);
+            const ids = getChecked().filter(cb => cb.dataset.siteType !== "6").map(cb => cb.dataset.siteId);
             document.dispatchEvent(new CustomEvent("kp:bulk-action", {
                 detail: { action: btnId, ids }
             }));
@@ -358,7 +358,7 @@ function wireBulkSelection() {
         document.getElementById(`bulk-mobile-${action}`)?.addEventListener("click", (e) => {
             e.preventDefault();
             mobileDropdown.hidden = true;
-            const ids = getChecked().map(cb => cb.dataset.siteId);
+            const ids = getChecked().filter(cb => cb.dataset.siteType !== "6").map(cb => cb.dataset.siteId);
             document.dispatchEvent(new CustomEvent("kp:bulk-action", {
                 detail: { action, ids }
             }));

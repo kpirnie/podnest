@@ -181,6 +181,7 @@ func (s *Server) permissionReaper() {
 			return
 		}
 
+		// loop over all sites and ensure ownership and permissions are correct
 		for _, site := range sites {
 			siteDir := s.sitesBase() + "/" + site.Name
 			sftpUID := sftp.UIDForSite(site.ID)

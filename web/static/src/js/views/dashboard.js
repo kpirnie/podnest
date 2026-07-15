@@ -19,9 +19,10 @@ export async function viewDashboard(root) {
         api.get("/stats/traffic").catch(() => null),
         api.get("/stats/pod").catch(() => null),
     ]);
-    const running = sites.filter((s) => s.SiteStatus === 1).length;
-    const stopped = sites.filter((s) => s.SiteStatus === 2).length;
-    const errored = sites.filter((s) => s.SiteStatus === 4).length;
+    
+    const running = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 1).length;
+    const proxies = sites.filter((s) => s.SiteType === 6).length;
+    const errored = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 4).length;
 
     root.innerHTML = `
 
@@ -56,10 +57,10 @@ export async function viewDashboard(root) {
                 <div class="kp-stat-card">
                     <div class="uk-flex uk-flex-between">
                         <div>
-                            <div class="kp-stat-value" style="color:var(--kp-text-dim)">${stopped}</div>
-                            <div class="kp-stat-label">Stopped</div>
+                            <div class="kp-stat-value" style="color:var(--kp-cyan)">${proxies}</div>
+                            <div class="kp-stat-label">Proxies</div>
                         </div>
-                        <span style="color:var(--kp-text-dim)" uk-icon="icon: ban; ratio: 1.75"></span>
+                        <span style="color:var(--kp-cyan)" uk-icon="icon: link; ratio: 1.75"></span>
                     </div>
                 </div>
             </div>

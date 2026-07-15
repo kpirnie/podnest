@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,14 +19,15 @@ var AppVersion = "dev"
 // ghRepo is the GitHub repository to check for releases
 const ghRepo = "kpirnie/podnest"
 
-// ghReleaseURL is the GitHub API endpoint for the latest release
-const ghReleaseURL = "https://api.github.com/repos/" + ghRepo + "/releases/latest"
+// ghTagsURL is the GitHub API endpoint for the newest repository tag — releases
+// are never published for this repo, tags are the single source of truth
+const ghTagsURL = "https://api.github.com/repos/" + ghRepo + "/tags?per_page=1"
 
-// ReleaseURL is the human-facing releases page for the latest release
-const ReleaseURL = "https://github.com/" + ghRepo + "/releases/latest"
+// ReleaseURL is the human-facing tags page showing the latest version
+const ReleaseURL = "https://github.com/" + ghRepo + "/tags"
 
 // UpdateURL is the direct link to the update instructions
-const UpdateURL = "https://github.com/" + ghRepo + "/blob/main/UPDATE.md"
+const UpdateURL = "https://podnest.us/support/instructions/updating/"
 
 // cache holds the result of the last GitHub API check to avoid hammering the API
 var cache struct {
@@ -36,11 +38,6 @@ var cache struct {
 
 // cacheTTL is how long we cache the latest release tag before re-checking
 const cacheTTL = 12 * time.Hour
-
-// ghRelease is the subset of the GitHub releases API response we care about
-type ghRelease struct {
-	TagName string `json:"tag_name"`
-}
 
 // CheckLatest queries the GitHub releases API (with caching) and returns the
 // latest tag and whether it differs from the running AppVersion.
@@ -57,21 +54,21 @@ func CheckLatest() (latest string, updateAvailable bool) {
 
 	// return cached result if it is still fresh
 	if cache.latest != "" && time.Since(cache.checkedAt) < cacheTTL {
-		return cache.latest, cache.latest != AppVersion
+		return cache.latest, versionsDiffer(cache.latest, AppVersion)
 	}
 
 	// fetch the latest release from GitHub
 	tag, err := fetchLatestTag()
 	if err != nil {
 		// on failure, return stale cache if we have it, otherwise silently skip
-		return cache.latest, cache.latest != "" && cache.latest != AppVersion
+		return cache.latest, cache.latest != "" && versionsDiffer(cache.latest, AppVersion)
 	}
 
 	// store the result in the cache
 	cache.latest = tag
 	cache.checkedAt = time.Now()
 
-	return tag, tag != AppVersion
+	return tag, versionsDiffer(tag, AppVersion)
 }
 
 // fetchLatestTag performs the HTTP request to the GitHub releases API and
@@ -79,7 +76,7 @@ func CheckLatest() (latest string, updateAvailable bool) {
 func fetchLatestTag() (string, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	req, err := http.NewRequest(http.MethodGet, ghReleaseURL, nil)
+	req, err := http.NewRequest(http.MethodGet, ghTagsURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("version: failed to build request: %w", err)
 	}
@@ -98,14 +95,21 @@ func fetchLatestTag() (string, error) {
 		return "", fmt.Errorf("version: GitHub API returned %d", resp.StatusCode)
 	}
 
-	var rel ghRelease
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	var tags []struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
 		return "", fmt.Errorf("version: failed to decode response: %w", err)
 	}
 
-	if rel.TagName == "" {
-		return "", fmt.Errorf("version: empty tag_name in response")
+	if len(tags) == 0 || tags[0].Name == "" {
+		return "", fmt.Errorf("version: no tags found")
 	}
 
-	return rel.TagName, nil
+	return tags[0].Name, nil
+}
+
+// versionsDiffer compares two version strings, tolerating a v prefix mismatch
+func versionsDiffer(a, b string) bool {
+	return strings.TrimPrefix(a, "v") != strings.TrimPrefix(b, "v")
 }

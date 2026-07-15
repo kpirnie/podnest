@@ -458,7 +458,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
         </div>` : '';
 
     return `
-        <div class="kp-table-wrap">
+        <div class="kp-table-wrap uk-overflow-auto">
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="time">Time ${sortCol==='time' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
