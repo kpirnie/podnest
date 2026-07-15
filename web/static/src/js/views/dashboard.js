@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { fmtBytes } from '../helpers.js';
+import { escapeHtml, fmtBytes } from '../helpers.js';
 import { showCreateSiteModal } from '../modals/create-site.js';
 import { loadChartJS, openDrilldown } from './site-stats.js';
 import { siteCard } from './sites.js';
@@ -190,7 +190,7 @@ export async function viewDashboard(root) {
                                 ? `<tr><td colspan="2" class="kp-muted uk-text-small">No traffic data</td></tr>`
                                 : (traffic?.top_sites ?? []).map((s) => `
                                     <tr>
-                                        <td class="kp-mono" style="font-size:0.8rem">${s.name}</td>
+                                        <td class="kp-mono" style="font-size:0.8rem">${escapeHtml(s.name)}</td>
                                         <td style="text-align:right;color:var(--kp-cyan);
                                             font-family:'JetBrains Mono',monospace;font-size:0.8rem">
                                             ${s.count.toLocaleString()}

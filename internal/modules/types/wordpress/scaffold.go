@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"podnest/internal/config"
 	"podnest/internal/logger"
@@ -220,7 +221,8 @@ require_once ABSPATH . 'wp-settings.php';
 // downloadWordPress fetches the latest WordPress release from wordpress.org and
 // extracts it directly into htmlDir, stripping the top-level "wordpress/" prefix.
 func DownloadWordPress(htmlDir string, siteUID int) error {
-	resp, err := http.Get("https://wordpress.org/latest.tar.gz")
+	dlClient := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := dlClient.Get("https://wordpress.org/latest.tar.gz")
 	if err != nil {
 		return fmt.Errorf("downloading WordPress: %w", err)
 	}
@@ -246,7 +248,12 @@ func DownloadWordPress(htmlDir string, siteUID int) error {
 		if name == "" {
 			continue
 		}
-		target := filepath.Join(htmlDir, filepath.Clean(name))
+		target := filepath.Join(htmlDir, filepath.Clean("/"+name))
+
+		// guard against path traversal via crafted entry names
+		if target != htmlDir && !strings.HasPrefix(target, htmlDir+string(os.PathSeparator)) {
+			continue
+		}
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:

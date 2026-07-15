@@ -306,7 +306,7 @@ async function loadStatsTraffic(siteId) {
             ? `<tr><td colspan="2" class="kp-muted uk-text-small">No data</td></tr>`
             : (data.top_ips ?? []).map((e) => `
                 <tr>
-                    <td class="kp-stats-table-cell-mono">${e.name}</td>
+                    <td class="kp-stats-table-cell-mono">${escapeHtml(e.name)}</td>
                     <td class="kp-stats-table-cell-count">${e.count.toLocaleString()}</td>
                 </tr>`).join('');
     }
@@ -318,7 +318,7 @@ async function loadStatsTraffic(siteId) {
             ? `<tr><td colspan="2" class="kp-muted uk-text-small">No data</td></tr>`
             : (data.top_uas ?? []).map((e) => `
                 <tr>
-                    <td class="kp-stats-ua-cell" title="${e.name}">${e.name}</td>
+                    <td class="kp-stats-ua-cell" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}</td>
                     <td class="kp-stats-table-cell-count">${e.count.toLocaleString()}</td>
                 </tr>`).join('');
     }
@@ -433,17 +433,18 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
     const slice      = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
     const rows = slice.map((e) => {
-        // show full UA — CSS handles wrapping in the cell
-        const uaShort = e.ua;
+        // show full UA — CSS handles wrapping in the cell; all log-derived
+        // values are escaped since they are attacker-controlled request data
+        const uaShort = escapeHtml(e.ua);
         const statusClass = e.status >= 500 ? 'kp-badge-danger' : 'kp-badge-warning';
         return `
             <tr>
                 <td class="kp-stats-table-cell-mono" style="white-space:nowrap">${e.time.slice(11, 19)}</td>
-                ${showSite ? `<td class="kp-stats-table-cell-mono" style="font-size:0.8rem">${e.site_name}</td>` : ''}
-                <td class="kp-stats-table-cell-mono">${e.method}</td>
-                <td style="word-break:break-all;font-size:0.8rem">${e.path}</td>
-                <td><span class="kp-badge ${statusClass}">${e.status}</span>${e.reason ? ` <span class="kp-badge kp-badge-danger" style="font-size:0.65rem" uk-tooltip="Blocked by security rule">${e.reason}</span>` : ''}</td>
-                <td class="kp-stats-table-cell-mono">${e.client_ip}</td>
+                ${showSite ? `<td class="kp-stats-table-cell-mono" style="font-size:0.8rem">${escapeHtml(e.site_name)}</td>` : ''}
+                <td class="kp-stats-table-cell-mono">${escapeHtml(e.method)}</td>
+                <td style="word-break:break-all;font-size:0.8rem">${escapeHtml(e.path)}</td>
+                <td><span class="kp-badge ${statusClass}">${e.status}</span>${e.reason ? ` <span class="kp-badge kp-badge-danger" style="font-size:0.65rem" uk-tooltip="Blocked by security rule">${escapeHtml(e.reason)}</span>` : ''}</td>
+                <td class="kp-stats-table-cell-mono">${escapeHtml(e.client_ip)}</td>
                 <td class="kp-dd-ua-cell">${uaShort}</td>
             </tr>`;
     }).join('');
