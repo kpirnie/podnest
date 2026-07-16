@@ -3,3 +3,5 @@ node_modules/
 package.json
 package-lock.json
 postcss.config.js
+bootstrap.sh
+cmd/pdnctl

@@ -16,7 +16,7 @@ A hardened, high-performance web hosting pod manager built on Podman. Provision 
 
 ---
 
-[Overview](#overview) · [Requirements](#requirements) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [License](#license) · [Support](#support)
+[Overview](#overview) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [License](#license) · [Support](#support)
 
 ---
 
@@ -79,9 +79,45 @@ systemctl --user start podman.socket
 
 ---
 
+## Host Install (pdnctl)
+
+`pdnctl` is the host-side manager for PodNest — the **recommended** way to get an instance running. It installs PodNest as a rootless container under a dedicated user, handles updates and channel switching, and wraps the service lifecycle. All the rootless prerequisites (dedicated user, subuid/subgid ranges, unprivileged port floor, lingering, the Podman socket) are handled for you.
+
+Install it with one command as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kpirnie/podnest/main/bootstrap.sh | sudo bash
+```
+
+Then set up PodNest. Replace USER with whatever username you would like to utilize, and select a version:
+
+```bash
+pdnctl install --user USER --version latest|dev|beta
+```
+
+The timezone is pulled from the host, site data lives at `/home/<user>/sites`, and the install details are stored in `/etc/podnest/install.json` — every command after `install` needs zero flags.
+
+Once running, the UI is available at: `http://your-host:9000`
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `pdnctl install --user <name> --version <latest\|dev\|beta>` | Fresh rootless setup under a dedicated user |
+| `pdnctl update` | Pull the newest image on the current channel and restart |
+| `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
+| `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
+| `pdnctl status` | Show the install summary and service status |
+| `pdnctl uninstall` | Remove PodNest — keeps the user and site data |
+| `pdnctl uninstall --purge` | Remove PodNest, the dedicated user, and all site data |
+
+All `pdnctl` commands must be run as root.
+
+---
+
 ## Running as a Container
 
-This is the **recommended** way to run PodNest. A pre-built image is published to the GitHub Container Registry — no compilation required.
+Prefer to deploy and manage the container yourself instead of using `pdnctl`? A pre-built image is published to the GitHub Container Registry — no compilation required.
 
 ### Available Image Tags
 
@@ -96,16 +132,6 @@ ghcr.io/kpirnie/podnest:latest
 ghcr.io/kpirnie/podnest:dev
 ghcr.io/kpirnie/podnest:beta
 ```
-
-### Quick Start
-
-Run the following command in shell on your server.  Replace USER with whatever username you would like to utilize.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kpirnie/podnest/main/setup.sh | sudo bash -s -- --action <install|update> --version <latest|dev|beta> --user <username>
-```
-
-Once running, the UI is available at: `http://your-host:9000`
 
 ### Docker Compose
 

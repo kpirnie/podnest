@@ -52,3 +52,34 @@ jobs:
             VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release-pdnctl:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build pdnctl binaries
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -ldflags="-s -w -X podnest/internal/version.AppVersion=${{ github.ref_name }}" \
+            -o pdnctl-linux-amd64 ./cmd/pdnctl/
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+            -ldflags="-s -w -X podnest/internal/version.AppVersion=${{ github.ref_name }}" \
+            -o pdnctl-linux-arm64 ./cmd/pdnctl/
+
+      - name: Create release and attach binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pdnctl-linux-amd64
+            pdnctl-linux-arm64
