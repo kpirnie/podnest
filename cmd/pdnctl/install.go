@@ -54,11 +54,15 @@ func run(name string, args ...string) error {
 	return c.Run()
 }
 
-// userRun executes a command as the podnest user with the runtime dir set —
-// the Go equivalent of setup.sh's: sudo -u $USER XDG_RUNTIME_DIR=/run/user/$UID
+// userRun executes a command as the podnest user with the runtime dir set
 func userRun(uname string, uid int, args ...string) error {
 	full := append([]string{"-u", uname, fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid)}, args...)
-	return run("sudo", full...)
+	c := exec.Command("sudo", full...)
+	// run from / — the invoking cwd may not be accessible to the podnest user
+	c.Dir = "/tmp"
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return c.Run()
 }
 
 // detectTZ pulls the timezone from the host, falling back to UTC with a warning
