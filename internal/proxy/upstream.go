@@ -162,6 +162,15 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool) 
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
 
+			// SetURL joins the upstream path onto the inbound path, so a root
+			// request against a path-bearing upstream picks up a spurious
+			// trailing slash (/my_epg/epg.xml + / = /my_epg/epg.xml/) — restore
+			// the upstream path verbatim in that case
+			if req.In.URL.Path == "/" && target.Path != "" && target.Path != "/" {
+				req.Out.URL.Path = target.Path
+				req.Out.URL.RawPath = target.RawPath
+			}
+
 			// passHost forwards the incoming domain as Host; otherwise use the upstream's own hostname
 			if passHost {
 				req.Out.Host = req.In.Host
@@ -197,6 +206,7 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool) 
 			if clientIP := req.In.Header.Get("X-Real-IP"); clientIP != "" {
 				req.Out.Header.Set("X-Real-IP", clientIP)
 			}
+
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("upstream: reverse proxy error for target '%s': %v", target.Host, err)
