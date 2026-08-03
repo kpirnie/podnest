@@ -94,6 +94,7 @@ type Proxy struct {
 	bypassNets        atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
 	geoDB             atomic.Pointer[maxminddb.Reader]             // in-memory country database; swapped atomically on refresh
 	asnDB             atomic.Pointer[maxminddb.Reader]             // in-memory ASN database; swapped atomically on refresh
+	dropFeed          atomic.Pointer[dropFeed]                     // Spamhaus DROP lists; swapped atomically on refresh
 	rpCache           sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
 	rpProxyCache      sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
 	redirectCache     sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
@@ -127,6 +128,8 @@ type Config struct {
 
 // New creates and configures the proxy but does not start listeners
 func New(cfg Config) *Proxy {
+
+	// initialize the proxy with its dependencies and default transports
 	p := &Proxy{
 		database:    cfg.DB,
 		hostGateway: cfg.HostGateway,
@@ -204,6 +207,10 @@ func New(cfg Config) *Proxy {
 	// seed an initial empty trusted proxy list so Load() never returns nil
 	emptyProxies := make([]*net.IPNet, 0)
 	p.trustedProxies.Store(&emptyProxies)
+
+	// seed an empty DROP feed so Load() never returns nil before the lists load
+	emptyDrop := dropFeed{asns: make(map[uint32]struct{})}
+	p.dropFeed.Store(&emptyDrop)
 
 	// open or create the structured proxy access log for Fail2Ban to watch
 	logDir := cfg.CertDir + "/../logs"
@@ -468,9 +475,11 @@ func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, cl
 	sec := p.secCache.Load()
 
 	// enforce global IP rules
-	if clientIP != nil && !checkIP(clientIP, sec.global, ruleSet{}) {
-		p.blockRequest(w, r, clientIPStr, start, 0, "", "ip")
-		return true
+	if clientIP != nil {
+		if ok, reason := checkIP(clientIP, sec.global, ruleSet{}, p.dropFeed.Load()); !ok {
+			p.blockRequest(w, r, clientIPStr, start, 0, "", reason)
+			return true
+		}
 	}
 
 	// enforce global UA rules
@@ -489,10 +498,10 @@ func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, cl
 	}
 
 	// enforce global ASN rules — ASN lookup skipped when unconfigured
-	if clientIP != nil && hasASNRules(sec.global, ruleSet{}) {
+	if clientIP != nil && hasASNRules(sec.global, ruleSet{}, p.dropFeed.Load()) {
 		asn := p.asnNumber(clientIP)
-		if !checkASN(asn, sec.global, ruleSet{}) {
-			p.blockRequest(w, r, clientIPStr, start, 0, "", fmt.Sprintf("asn:AS%d", asn))
+		if ok, reason := checkASN(asn, sec.global, ruleSet{}, p.dropFeed.Load()); !ok {
+			p.blockRequest(w, r, clientIPStr, start, 0, "", fmt.Sprintf("%s:AS%d", reason, asn))
 			return true
 		}
 	}
@@ -521,10 +530,12 @@ func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clie
 		}
 	}
 
-	// enforce IP rules — blacklist always beats whitelist
-	if clientIP != nil && !checkIP(clientIP, sec.global, siteRules) {
-		p.blockRequest(w, r, clientIPStr, start, siteID, siteName, "ip")
-		return true
+	// enforce IP rules — whitelist match wins, otherwise blacklists decide
+	if clientIP != nil {
+		if ok, reason := checkIP(clientIP, sec.global, siteRules, p.dropFeed.Load()); !ok {
+			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, reason)
+			return true
+		}
 	}
 
 	// enforce UA rules — blacklist always beats whitelist
@@ -544,11 +555,11 @@ func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clie
 	}
 
 	// enforce ASN rules — the ASN lookup is skipped entirely when no
-	// ASN rules are configured in either scope
-	if clientIP != nil && hasASNRules(sec.global, siteRules) {
+	// ASN rules are configured in either scope and the feed carries none
+	if clientIP != nil && hasASNRules(sec.global, siteRules, p.dropFeed.Load()) {
 		asn := p.asnNumber(clientIP)
-		if !checkASN(asn, sec.global, siteRules) {
-			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, fmt.Sprintf("asn:AS%d", asn))
+		if ok, reason := checkASN(asn, sec.global, siteRules, p.dropFeed.Load()); !ok {
+			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, fmt.Sprintf("%s:AS%d", reason, asn))
 			return true
 		}
 	}
@@ -786,9 +797,11 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 		sec := p.secCache.Load()
 
 		// enforce global IP rules — no per-site rules apply to the panel
-		if clientIP != nil && !checkIP(clientIP, sec.global, ruleSet{}) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
+		if clientIP != nil {
+			if ok, _ := checkIP(clientIP, sec.global, ruleSet{}, p.dropFeed.Load()); !ok {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 		}
 
 		// enforce global UA rules

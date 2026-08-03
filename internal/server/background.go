@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,6 +96,38 @@ func (s *Server) geoUpdater() {
 	defer ticker.Stop()
 	for range ticker.C {
 		run()
+	}
+}
+
+// dropUpdater keeps the Spamhaus DROP feed current. The cached lists are
+// loaded from disk first so the feed is live before any network call; a fetch
+// only happens when a list is missing or older than a day. Spamhaus permits
+// one fetch per list per day and firewalls abusers, so the ticker is jittered
+// to keep a fleet of installs from hitting them in lockstep.
+func (s *Server) dropUpdater() {
+	if s.proxy == nil {
+		return
+	}
+
+	if s.proxy.LoadSpamhausDrop() {
+		logger.Debug("drop: cached lists are current — skipping fetch")
+	} else if err := proxy.UpdateSpamhausDrop(s.cfg.AppPath); err != nil {
+		logger.Warn("drop: initial update failed: %v", err)
+	} else {
+		s.proxy.LoadSpamhausDrop()
+	}
+
+	for {
+		jitter := time.Duration(rand.Int63n(int64(2 * time.Hour)))
+		timer := time.NewTimer(24*time.Hour + jitter)
+		<-timer.C
+		timer.Stop()
+
+		if err := proxy.UpdateSpamhausDrop(s.cfg.AppPath); err != nil {
+			logger.Warn("drop: update check failed: %v", err)
+			continue
+		}
+		s.proxy.LoadSpamhausDrop()
 	}
 }
 

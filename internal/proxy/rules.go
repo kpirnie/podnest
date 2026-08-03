@@ -215,64 +215,71 @@ func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules
 	return cache
 }
 
-// checkIP evaluates a client IP against a rule set following the precedence:
-// blacklist always wins, then whitelist (if non-empty) must match.
-// Returns false if the request should be blocked.
-func checkIP(ip net.IP, global, site ruleSet) bool {
+// checkIP evaluates a client IP against a rule set. IP whitelists are the one
+// exception to blacklist supremacy: a whitelist match in either scope allows
+// the request outright, ahead of both blacklists and the Spamhaus DROP feed.
+// A non-empty whitelist the IP does not match still blocks. Returns false and
+// the log attribution token when the request should be blocked.
+func checkIP(ip net.IP, global, site ruleSet, feed *dropFeed) (bool, string) {
 
-	// global blacklist — hard block, no override
+	// per-site whitelist — a match allows outright, ahead of every blacklist
+	for _, r := range site.ipWhitelist {
+		if r.matchesIP(ip) {
+			if logger.IsDebug() {
+				logger.Debug("checkIP: allowed by site whitelist: %s", ip)
+			}
+			return true, ""
+		}
+	}
+
+	// global whitelist — a match allows outright, ahead of every blacklist
+	for _, r := range global.ipWhitelist {
+		if r.matchesIP(ip) {
+			if logger.IsDebug() {
+				logger.Debug("checkIP: allowed by global whitelist: %s", ip)
+			}
+			return true, ""
+		}
+	}
+
+	// a non-empty whitelist in either scope is a filter — no match means block
+	if len(site.ipWhitelist) > 0 || len(global.ipWhitelist) > 0 {
+		if logger.IsDebug() {
+			logger.Debug("checkIP: blocked by whitelist miss: %s", ip)
+		}
+		return false, "ip"
+	}
+
+	// global blacklist — hard block
 	for _, r := range global.ipBlacklist {
 		if r.matchesIP(ip) {
 			if logger.IsDebug() {
 				logger.Debug("checkIP: blocked by global blacklist: %s", ip)
 			}
-			return false
+			return false, "ip"
 		}
 	}
 
-	// per-site blacklist — hard block, no override
+	// Spamhaus DROP — an extension of the global blacklist, attributed
+	// separately so feed hits are distinguishable from operator rules
+	if feed.matchesIP(ip) {
+		if logger.IsDebug() {
+			logger.Debug("checkIP: blocked by spamhaus drop: %s", ip)
+		}
+		return false, dropBlockReason
+	}
+
+	// per-site blacklist — hard block
 	for _, r := range site.ipBlacklist {
 		if r.matchesIP(ip) {
 			if logger.IsDebug() {
 				logger.Debug("checkIP: blocked by site blacklist: %s", ip)
 			}
-			return false
+			return false, "ip"
 		}
 	}
 
-	// global whitelist — if non-empty, IP must appear in it
-	if len(global.ipWhitelist) > 0 {
-		allowed := false
-		for _, r := range global.ipWhitelist {
-			if r.matchesIP(ip) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			if logger.IsDebug() {
-				logger.Debug("checkIP: blocked by site whitelist miss: %s", ip)
-			}
-			return false
-		}
-	}
-
-	// per-site whitelist — if non-empty, IP must appear in it
-	if len(site.ipWhitelist) > 0 {
-		allowed := false
-		for _, r := range site.ipWhitelist {
-			if r.matchesIP(ip) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			logger.Debug("checkIP: blocked by site whitelist miss: %s", ip)
-			return false
-		}
-	}
-
-	return true
+	return true, ""
 }
 
 // checkCountry evaluates a resolved ISO country code against a rule set
@@ -353,17 +360,17 @@ func hasCountryRules(global, site ruleSet) bool {
 		len(site.countryBlacklist) > 0 || len(site.countryWhitelist) > 0
 }
 
-// checkASN evaluates a resolved autonomous system number against a rule set
-// following the same precedence as checkIP: blacklist always wins, then
-// whitelist (if non-empty) must match. A zero ASN (unknown — private IP,
-// unallocated range, or DB not loaded) is always allowed so local and
-// unresolvable traffic is never locked out. Returns false if the request
-// should be blocked.
-func checkASN(asn uint32, global, site ruleSet) bool {
+// checkASN evaluates a resolved autonomous system number against a rule set.
+// Blacklists win: global, then the Spamhaus ASN-DROP feed as an extension of
+// it, then per-site, before any whitelist filtering. A zero ASN (unknown —
+// private IP, unallocated range, or DB not loaded) is always allowed so local
+// and unresolvable traffic is never locked out. Returns false and the log
+// attribution token when the request should be blocked.
+func checkASN(asn uint32, global, site ruleSet, feed *dropFeed) (bool, string) {
 
 	// unknown ASN — default allow
 	if asn == 0 {
-		return true
+		return true, ""
 	}
 
 	// global blacklist — hard block, no override
@@ -371,7 +378,15 @@ func checkASN(asn uint32, global, site ruleSet) bool {
 		if logger.IsDebug() {
 			logger.Debug("checkASN: blocked by global blacklist: AS%d", asn)
 		}
-		return false
+		return false, "asn"
+	}
+
+	// Spamhaus ASN-DROP — attributed separately from operator rules
+	if feed.matchesASN(asn) {
+		if logger.IsDebug() {
+			logger.Debug("checkASN: blocked by spamhaus drop: AS%d", asn)
+		}
+		return false, dropBlockReason
 	}
 
 	// per-site blacklist — hard block, no override
@@ -379,7 +394,7 @@ func checkASN(asn uint32, global, site ruleSet) bool {
 		if logger.IsDebug() {
 			logger.Debug("checkASN: blocked by site blacklist: AS%d", asn)
 		}
-		return false
+		return false, "asn"
 	}
 
 	// global whitelist — if non-empty, the ASN must appear in it
@@ -388,7 +403,7 @@ func checkASN(asn uint32, global, site ruleSet) bool {
 			if logger.IsDebug() {
 				logger.Debug("checkASN: blocked by global whitelist miss: AS%d", asn)
 			}
-			return false
+			return false, "asn"
 		}
 	}
 
@@ -398,19 +413,20 @@ func checkASN(asn uint32, global, site ruleSet) bool {
 			if logger.IsDebug() {
 				logger.Debug("checkASN: blocked by site whitelist miss: AS%d", asn)
 			}
-			return false
+			return false, "asn"
 		}
 	}
 
-	return true
+	return true, ""
 }
 
-// hasASNRules reports whether either scope carries any ASN rules —
-// used to skip the ASN database lookup entirely on the hot path when the
-// feature is unconfigured.
-func hasASNRules(global, site ruleSet) bool {
+// hasASNRules reports whether either scope carries any ASN rules, or the DROP
+// feed carries any ASNs — used to skip the ASN database lookup entirely on the
+// hot path when nothing would consult it.
+func hasASNRules(global, site ruleSet, feed *dropFeed) bool {
 	return len(global.asnBlacklist) > 0 || len(global.asnWhitelist) > 0 ||
-		len(site.asnBlacklist) > 0 || len(site.asnWhitelist) > 0
+		len(site.asnBlacklist) > 0 || len(site.asnWhitelist) > 0 ||
+		(feed != nil && len(feed.asns) > 0)
 }
 
 // checkUA evaluates a user-agent string against a rule set following the same

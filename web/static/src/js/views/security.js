@@ -16,7 +16,8 @@ export async function viewSecurity(root) {
         </div>
         <p class="kp-muted uk-text-small uk-margin-bottom">
             Global rules apply to all sites before per-site rules are evaluated.
-            Blacklist always wins — a blacklisted entry cannot be overridden by any whitelist.
+            Blacklist always wins — except for IP rules, where a whitelist match
+            in either scope allows the request outright.
         </p>
         ${renderSecurityPanel(null)}`;
 

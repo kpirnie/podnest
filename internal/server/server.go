@@ -175,6 +175,9 @@ func (s *Server) Start() error {
 	// nightly GEO-IP rule update — runs immediately on startup then every 24 hours
 	go s.geoUpdater()
 
+	// Spamhaus DROP feed — loads from disk on startup, refreshes daily
+	go s.dropUpdater()
+
 	// try to grab a cert
 	if adminDomain != "" {
 		px.ObtainCert(adminDomain)

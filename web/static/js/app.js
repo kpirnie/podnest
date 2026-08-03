@@ -867,6 +867,15 @@
         `,a?.hits_per_hour?.length){await bt();let l=document.getElementById("dash-traffic-chart");l&&window.Chart&&(N&&(N.destroy(),N=null),N=new window.Chart(l,{type:"bar",data:{labels:a.hits_per_hour.map(o=>new Date(o.hour).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})),datasets:[{label:"2xx",data:a.hits_per_hour.map(o=>o["2xx"]),backgroundColor:"rgba(39,174,96,0.75)",borderColor:"rgba(39,174,96,1)",borderWidth:1,borderRadius:3},{label:"3xx",data:a.hits_per_hour.map(o=>o["3xx"]),backgroundColor:"rgba(43,142,255,0.75)",borderColor:"rgba(43,142,255,1)",borderWidth:1,borderRadius:3},{label:"4xx",data:a.hits_per_hour.map(o=>o["4xx"]),backgroundColor:"rgba(255,171,0,0.75)",borderColor:"rgba(255,171,0,1)",borderWidth:1,borderRadius:3},{label:"5xx",data:a.hits_per_hour.map(o=>o["5xx"]),backgroundColor:"rgba(235,59,90,0.75)",borderColor:"rgba(235,59,90,1)",borderWidth:1,borderRadius:3}]},options:{responsive:!0,maintainAspectRatio:!1,onClick:(o,d)=>{if(!d||!d.length)return;let u=d[0].datasetIndex,b=N.data.datasets[u].label;if(b!=="4xx"&&b!=="5xx")return;let k=a.hits_per_hour[d[0].index]?.hour;k&&gt("/stats/drilldown",k,b,!0)},onHover:(o,d)=>{if(!d||!d.length){o.native.target.style.cursor="default";return}let u=N.data.datasets[d[0].datasetIndex].label;o.native.target.style.cursor=u==="4xx"||u==="5xx"?"pointer":"default"},plugins:{legend:{display:!0,labels:{color:"#6b8cae",font:{size:11}},onHover:o=>{o.native.target.style.cursor="pointer"},onLeave:o=>{o.native.target.style.cursor="default"}},tooltip:{mode:"index",backgroundColor:"#0c1530",borderColor:"#1a2a4a",borderWidth:1,titleColor:"#dde8f5",bodyColor:"#6b8cae"}},scales:{x:{stacked:!0,ticks:{color:"#6b8cae",font:{size:10},maxRotation:45},grid:{color:"rgba(26,42,74,0.6)"}},y:{stacked:!0,ticks:{color:"#6b8cae",font:{size:10}},grid:{color:"rgba(26,42,74,0.6)"},beginAtZero:!0}}}}))}document.getElementById("dash-new-site")?.addEventListener("click",()=>it())}function V(t=null){let e=t?`/sites/${t}/security/ip`:"/security/ip",a=t?`/sites/${t}/security/ua`:"/security/ua",s=t?`/sites/${t}/waf`:"/settings/waf",i=t?`/sites/${t}/security/country`:"/security/country",n=t?`/sites/${t}/security/asn`:"/security/asn";return`
         <div id="security-panel" data-ip-base="${e}" data-ua-base="${a}" data-geo-base="${i}" data-asn-base="${n}" data-waf-base="${s}" ${t?`data-site-id="${t}"`:""}>
 
+            <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                <span uk-icon="icon: warning; ratio: 0.75"></span>
+                The Spamhaus DROP lists are enforced alongside these rules on every
+                request. Whitelist an IP here to allow it through regardless.
+                <a href="https://www.spamhaus.org/blocklists/do-not-route-or-peer/" target="_blank" rel="noopener">
+                    About Spamhaus DROP
+                </a>
+            </p>
+
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">IP Rules</h3>
@@ -886,8 +895,8 @@
                 <p class="kp-muted uk-text-small uk-margin-small-bottom">
                     One IP address or CIDR block per line (e.g. <span class="kp-mono">1.2.3.4</span>
                     or <span class="kp-mono">10.0.0.0/8</span>).
-                    Blacklist always wins \u2014 a blacklisted IP cannot be whitelisted.
-                    Whitelist is disabled when empty.
+                    A whitelisted IP is allowed outright, ahead of both the global and
+                    per-site blacklists. Whitelist is disabled when empty.
                 </p>
                 <div class="uk-grid-small" uk-grid>
                     <div class="uk-width-1-2@s">
@@ -1175,7 +1184,8 @@ ${o}`:o),a.hide(),c.success(`${o} added to blacklist \u2014 save to apply`)})}ca
         </div>
         <p class="kp-muted uk-text-small uk-margin-bottom">
             Global rules apply to all sites before per-site rules are evaluated.
-            Blacklist always wins \u2014 a blacklisted entry cannot be overridden by any whitelist.
+            Blacklist always wins \u2014 except for IP rules, where a whitelist match
+            in either scope allows the request outright.
         </p>
         ${V(null)}`,lt(t),B(t)}function De(t){switch(t){case"valid":case"self-signed":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function Ht(t){let e=document.getElementById("admin-domain-ssl");if(!(!e||!t))try{let a=await m.get(`/ssl-status?domain=${encodeURIComponent(t)}`);e.outerHTML=De(a.status)}catch{}}async function Ft(t){if(!q()){t.innerHTML=_("Access denied");return}let[e,a,s,i,n,r]=await Promise.all([m.get("/settings"),m.get("/settings/backup"),m.get("/settings/waf"),m.get("/settings/trusted-proxies"),m.get("/settings/notifications"),m.get("/settings/resources")]);t.innerHTML=`
     <div class="kp-view-header">

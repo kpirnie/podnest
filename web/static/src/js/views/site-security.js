@@ -19,6 +19,15 @@ export function renderSecurityPanel(siteId = null) {
     return `
         <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-asn-base="${asnBase}" data-waf-base="${wafBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
 
+            <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                <span uk-icon="icon: warning; ratio: 0.75"></span>
+                The Spamhaus DROP lists are enforced alongside these rules on every
+                request. Whitelist an IP here to allow it through regardless.
+                <a href="https://www.spamhaus.org/blocklists/do-not-route-or-peer/" target="_blank" rel="noopener">
+                    About Spamhaus DROP
+                </a>
+            </p>
+
             <div class="kp-card uk-padding-small uk-margin-bottom">
                 <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                     <h3 class="kp-view-title">IP Rules</h3>
@@ -38,8 +47,8 @@ export function renderSecurityPanel(siteId = null) {
                 <p class="kp-muted uk-text-small uk-margin-small-bottom">
                     One IP address or CIDR block per line (e.g. <span class="kp-mono">1.2.3.4</span>
                     or <span class="kp-mono">10.0.0.0/8</span>).
-                    Blacklist always wins — a blacklisted IP cannot be whitelisted.
-                    Whitelist is disabled when empty.
+                    A whitelisted IP is allowed outright, ahead of both the global and
+                    per-site blacklists. Whitelist is disabled when empty.
                 </p>
                 <div class="uk-grid-small" uk-grid>
                     <div class="uk-width-1-2@s">
