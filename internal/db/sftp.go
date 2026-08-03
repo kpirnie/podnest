@@ -45,6 +45,29 @@ func GetSFTPCredBySite(db *sql.DB, siteID int64) (*models.SFTPCred, error) {
 	return c, nil
 }
 
+// ListSFTPCreds retrieves every SFTP credential record
+func ListSFTPCreds(db *sql.DB) ([]*models.SFTPCred, error) {
+	rows, err := db.Query(`
+		SELECT id, site_id, username, password, uid, created, updated
+		FROM kppn_sftp_creds ORDER BY site_id`)
+	if err != nil {
+		logger.Error("ListSFTPCreds: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*models.SFTPCred
+	for rows.Next() {
+		c := &models.SFTPCred{}
+		if err := rows.Scan(&c.ID, &c.SiteID, &c.Username, &c.Password, &c.UID, &c.Created, &c.Updated); err != nil {
+			logger.Error("ListSFTPCreds scan: %v", err)
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // UpdateSFTPPassword updates the stored password for an SFTP credential
 func UpdateSFTPPassword(db *sql.DB, siteID int64, password string) error {
 	now := time.Now().UTC()

@@ -377,6 +377,10 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.SFTP.AddUser(r.Context(), site.Name, sftpPass, sftp.UIDForSite(site.ID)); err != nil {
 		logger.Error("failed to add SFTP user for site %d: %v", site.ID, err)
+		_ = db.DeleteSFTPCred(h.DB, site.ID)
+		_ = db.DeleteSite(h.DB, site.ID)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
 	}
 
 	// seed default configuration values for the site based on its type and handle any errors during configuration

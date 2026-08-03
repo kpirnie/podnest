@@ -6,10 +6,12 @@ package sftp
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
 
+	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/podman"
@@ -25,19 +27,20 @@ const (
 // Manager manages the global SFTP container
 type Manager struct {
 	client      *podman.Client
+	db          *sql.DB
 	appPath     string
 	hostAppPath string
 }
 
-// New returns an SFTP manager bound to the given podman client and app paths
-func New(client *podman.Client, appPath, hostAppPath string) *Manager {
+// New returns an SFTP manager bound to the given podman client, database, and app paths
+func New(client *podman.Client, database *sql.DB, appPath, hostAppPath string) *Manager {
 	h := hostAppPath
 	if h == "" {
 		h = appPath
 	}
 
 	// make sure we have the SFTP manager config
-	return &Manager{client: client, appPath: appPath, hostAppPath: h}
+	return &Manager{client: client, db: database, appPath: appPath, hostAppPath: h}
 }
 
 // SetHostAppPath updates the host-side app path after server detection
@@ -54,6 +57,12 @@ func UIDForSite(siteID int64) int { return sftpUIDBase + int(siteID) }
 // Ensure makes sure the global SFTP container exists and is running.
 // If the container exists but is stopped or crashed, it attempts to start it.
 func (m *Manager) Ensure(ctx context.Context) error {
+
+	// users.conf is derived state — rebuild it from the credential table so a
+	// lost or truncated file cannot orphan every site's SFTP login
+	if err := m.reconcileUsersConf(); err != nil {
+		logger.Error("SFTP: users.conf reconcile failed: %v", err)
+	}
 
 	// if already running nothing to do
 	running, err := m.client.ContainerIsRunning(ctx, GlobalContainerName)
@@ -102,11 +111,26 @@ func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid in
 
 	// apply the user to the running container via exec — no restart needed
 	gid := uid
+
+	// account creation must succeed — a partial user is an unusable login
 	for _, cmd := range [][]string{
 		{"addgroup", "-g", fmt.Sprintf("%d", gid), fmt.Sprintf("sftp-%s", siteName)},
-		{"adduser", "-D", "-u", fmt.Sprintf("%d", uid), "-G", fmt.Sprintf("sftp-%s", siteName), "-G", "sftpusers", "-h", "/home/" + siteName, "-s", "/usr/lib/openssh/sftp-server", siteName},
+		{"adduser", "-D", "-u", fmt.Sprintf("%d", uid), "-G", "sftpusers", "-h", "/home/" + siteName, "-s", "/usr/lib/openssh/sftp-server", siteName},
 		{"sh", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", siteName, password)},
-		// chroot root (/home/sitename) stays root:root — only chown the content subdirs
+	} {
+		if err := m.exec(ctx, cmd); err != nil {
+			logger.Error("sftp AddUser exec %v failed: %v", cmd, err)
+			return fmt.Errorf("sftp add user %s: %w", siteName, err)
+		}
+	}
+
+	// ownership fixups — the site directories may not be scaffolded yet, so
+	// these are advisory and re-asserted on the next add
+	for _, cmd := range [][]string{
+		// chroot root (/home/sitename) must be root-owned and not group/world
+		// writable or sshd refuses the session after a successful auth
+		{"chown", "0:0", "/home/" + siteName},
+		{"chmod", "0755", "/home/" + siteName},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/html"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/php-fpm"},
 		{"chown", "-R", fmt.Sprintf("%d:%d", uid, uid), "/home/" + siteName + "/redis"},
@@ -248,14 +272,15 @@ func (m *Manager) create(ctx context.Context) error {
 	return nil
 }
 
-// exec runs a command inside the global SFTP container detached
+// exec runs a command inside the running SFTP container and waits for it to
+// finish, returning an error when the command exits non-zero
 func (m *Manager) exec(ctx context.Context, cmd []string) error {
 
 	// create the exec instance inside the running container
 	spec := map[string]any{
-		"AttachStdout": false,
-		"AttachStderr": false,
-		"Detach":       true,
+		"AttachStdout": true,
+		"AttachStderr": true,
+		"Detach":       false,
 		"Cmd":          cmd,
 	}
 	var execResp struct {
@@ -266,10 +291,24 @@ func (m *Manager) exec(ctx context.Context, cmd []string) error {
 		return err
 	}
 
-	// start the exec instance detached — fire and forget
-	if err := m.client.PostJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
+	// start the exec instance and block until the command completes
+	if err := m.client.PostJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": false}, nil); err != nil {
 		logger.Error("failed to start exec instance for cmd %v: %v", cmd, err)
 		return err
+	}
+
+	// inspect the finished exec instance for its exit code
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	if err := m.client.GetJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err != nil {
+		logger.Error("failed to inspect exec instance for cmd %v: %v", cmd, err)
+		return err
+	}
+	if inspect.ExitCode != 0 {
+		logger.Error("exec %v exited %d", cmd, inspect.ExitCode)
+		return fmt.Errorf("exec %v exited %d", cmd, inspect.ExitCode)
 	}
 
 	logger.Debug("exec'd in SFTP container: %v", cmd)
@@ -352,5 +391,32 @@ func (m *Manager) updateUsersConf(username, newPassword string) error {
 	}
 
 	logger.Debug("updated password in users.conf for user %s", username)
+	return nil
+}
+
+// reconcileUsersConf rewrites users.conf from the credential table, preserving
+// the placeholder entry that owns the sftpusers group
+func (m *Manager) reconcileUsersConf() error {
+	if m.db == nil {
+		return nil
+	}
+
+	creds, err := db.ListSFTPCreds(m.db)
+	if err != nil {
+		return err
+	}
+
+	var b strings.Builder
+	b.WriteString("# podnest managed sftp users\nplaceholder:placeholder:9999\n")
+	for _, c := range creds {
+		fmt.Fprintf(&b, "%s:%s:%d\n", c.Username, c.Password, c.UID)
+	}
+
+	if err := os.WriteFile(m.appPath+"/sftp/users.conf", []byte(b.String()), 0600); err != nil {
+		logger.Error("failed to rewrite users.conf: %v", err)
+		return err
+	}
+
+	logger.Debug("users.conf reconciled with %d users", len(creds))
 	return nil
 }

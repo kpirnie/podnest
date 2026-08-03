@@ -97,7 +97,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// create the sftp server
-	sftpMgr := sftpmanager.New(podman.New(podmanSock), appPath, "")
+	sftpMgr := sftpmanager.New(podman.New(podmanSock), database, appPath, "")
 
 	// create the fail2ban manager
 	f2bMgr := fail2ban.New(podman.New(podmanSock), appPath, "")
