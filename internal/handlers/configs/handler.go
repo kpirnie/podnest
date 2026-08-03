@@ -32,6 +32,8 @@ type ConfigPodman interface {
 	KillContainer(ctx context.Context, name, signal string) error
 	RestartContainer(ctx context.Context, name string) error
 	ReloadVarnish(ctx context.Context, name string) error
+	ContainerExists(ctx context.Context, name string) (bool, error)
+	RemoveContainer(ctx context.Context, name string) error
 }
 
 // Handler handles site configuration management API routes.
@@ -418,12 +420,23 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		if err := fileutil.WriteFile(siteDir+"/nginx/conf.d/site.conf", site_, 0644); err != nil {
 			return err
 		}
-		if err := h.Podman.ReloadVarnish(context.Background(), podman.ContainerName(site.Name, "varnish")); err != nil {
-			logger.Warn("varnish VCL reload after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		if vEnabled {
+			if err := h.Podman.ReloadVarnish(context.Background(), podman.ContainerName(site.Name, "varnish")); err != nil {
+				logger.Warn("varnish VCL reload after config save failed for site %d (pod may be stopped): %v", site.ID, err)
+			}
+		} else {
+			name := podman.ContainerName(site.Name, "varnish")
+			if exists, _ := h.Podman.ContainerExists(context.Background(), name); exists {
+				if err := h.Podman.RemoveContainer(context.Background(), name); err != nil {
+					logger.Error("failed to remove varnish container for site %d after disable: %v", site.ID, err)
+					return err
+				}
+			}
 		}
-		if err := h.Podman.KillContainer(context.Background(), podman.ContainerName(site.Name, "nginx"), "HUP"); err != nil {
-			logger.Warn("nginx reload after varnish config save failed for site %d (pod may be stopped): %v", site.ID, err)
+		if err := h.Podman.RestartContainer(context.Background(), podman.ContainerName(site.Name, "nginx")); err != nil {
+			logger.Warn("nginx restart after varnish config save failed for site %d (pod may be stopped): %v", site.ID, err)
 		}
+
 		return nil
 	}
 

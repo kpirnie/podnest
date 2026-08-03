@@ -108,6 +108,8 @@ type TabDescriptor struct {
 type PodmanClient interface {
 	CreatePod(ctx context.Context, name string, site *models.Site) (string, error)
 	CreateContainer(ctx context.Context, cfg ContainerConfig) error
+	ContainerExists(ctx context.Context, name string) (bool, error)
+	RemoveContainer(ctx context.Context, name string) error
 	StartContainer(ctx context.Context, name string) error
 	PullImage(ctx context.Context, image string) error
 	RemovePod(ctx context.Context, name string) error

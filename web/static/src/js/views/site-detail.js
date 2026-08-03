@@ -279,6 +279,10 @@ export async function viewSiteDetail(root, { id }) {
     const isRP    = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5].includes(site.SiteType);
 
+    // reset the shared listener abort before the waf/routes wiring attaches
+    if (_rpWireAbort) _rpWireAbort.abort();
+    _rpWireAbort = new AbortController();
+
     root.innerHTML = `
         <div class="kp-view-header">
             <div class="uk-flex uk-flex-middle" style="gap:12px">
@@ -399,9 +403,6 @@ export async function viewSiteDetail(root, { id }) {
     wireSecurityPanel(root);
     loadSecurityPanel(root);
     wireLogsTab(root, id);
-    // reset the shared listener abort before the waf/routes wiring attaches
-    if (_rpWireAbort) _rpWireAbort.abort();
-    _rpWireAbort = new AbortController();
     wireWAFTab(root, id, _rpWireAbort.signal);
     loadWAFTab(id);
 
@@ -474,7 +475,7 @@ export async function viewSiteDetail(root, { id }) {
     });
 
     // wire up everything
-    wireConfigTabs(root, id);
+    wireConfigTabs(root, id, _rpWireAbort.signal);
     wireDomainActions(root, id);
     if (site.SiteType === 1) wireWPCLITab(root, id);
     wireOverviewTab(root, id, site);

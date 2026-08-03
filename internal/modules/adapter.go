@@ -70,6 +70,16 @@ func (a *PodmanClientAdapter) StartContainer(ctx context.Context, name string) e
 	return a.Client.StartContainer(ctx, name)
 }
 
+// ContainerExists delegates to the underlying podman client.
+func (a *PodmanClientAdapter) ContainerExists(ctx context.Context, name string) (bool, error) {
+	return a.Client.ContainerExists(ctx, name)
+}
+
+// RemoveContainer delegates to the underlying podman client.
+func (a *PodmanClientAdapter) RemoveContainer(ctx context.Context, name string) error {
+	return a.Client.RemoveContainer(ctx, name)
+}
+
 // PullImage delegates to the underlying podman client.
 func (a *PodmanClientAdapter) PullImage(ctx context.Context, image string) error {
 	return a.Client.PullImage(ctx, image)

@@ -14,8 +14,15 @@ import (
 // CreateVarnishContainer creates and starts the Varnish container for a site pod.
 func CreateVarnish(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, podName string) error {
 
-	// if we aren't configured to utilize varnish, then dump out
+	// if we aren't configured to utilize varnish, tear down any container left
+	// over from a previous enable so it cannot hold :80 in the pod netns
 	if cfg.Configs[models.ConfigVarnish]["enabled"] != "true" {
+		name := modules.ContainerName(cfg.Site.Name, "varnish")
+		if exists, _ := client.ContainerExists(ctx, name); exists {
+			if err := client.RemoveContainer(ctx, name); err != nil {
+				return fmt.Errorf("remove disabled varnish: %w", err)
+			}
+		}
 		return nil
 	}
 

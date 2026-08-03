@@ -102,20 +102,20 @@ function configRow(k = "", v = "") {
     </div>`;
 }
 
-export function wireConfigTabs(root, siteId) {
+export function wireConfigTabs(root, siteId, signal) {
     root.addEventListener("click", (e) => {
         if (e.target.closest(".cfg-add-row")) {
             const btn  = e.target.closest(".cfg-add-row");
             const grid = root.querySelector(`.cfg-rows[data-type="${btn.dataset.type}"]`);
             grid.insertAdjacentHTML("beforeend", configRow());
         }
-    });
+    }, { signal });
 
     root.addEventListener("click", (e) => {
         if (e.target.closest(".cfg-del-row")) {
             e.target.closest(".kp-config-row").remove();
         }
-    });
+    }, { signal });
 
     root.addEventListener("click", async (e) => {
         const btn = e.target.closest(".cfg-save");
@@ -137,7 +137,7 @@ export function wireConfigTabs(root, siteId) {
             await api.put(`/sites/${site}/configs/${type}`, body);
             toast.success(`${configLabels[type]} config saved`);
         } catch (e) { toast.error(e.message); }
-    });
+    }, { signal });
 
     root.addEventListener("click", async (e) => {
         const btn = e.target.closest(".cfg-reset");
@@ -151,7 +151,7 @@ export function wireConfigTabs(root, siteId) {
             grid.innerHTML = Object.entries(defaults).map(([k, v]) => configRow(k, v)).join("");
             toast.success(`${configLabels[type]} reset to defaults`);
         } catch (e) { toast.error(e.message); }
-    });
+    }, { signal });
 
     // handle csv import file selection
     root.addEventListener("change", async (e) => {
@@ -179,5 +179,5 @@ export function wireConfigTabs(root, siteId) {
             // reset so the same file can be re-selected if needed
             input.value = "";
         }
-    });
+    }, { signal });
 }
