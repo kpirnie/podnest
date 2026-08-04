@@ -287,7 +287,7 @@ There is also a `security` command for recovering panel access when a security r
 ./podnest security --bypass 203.0.113.7 --app-path /opt/podnest
 ```
 
-`--bypass` accepts an IP or CIDR and adds it to the security bypass list (skipping all IP/UA/country/ASN/WAF checks). Restart the podnest service for it to take effect.
+`--bypass` accepts an IP or CIDR and adds it to the security bypass list (skipping all IP/UA/country/ASN/WAF checks, including Spamhaus DROP). Restart the podnest service for it to take effect.
 
 ---
 
@@ -329,6 +329,10 @@ Once PodNest is running with a persistent volume, the following structure is cre
 │   ├── etc-ssh/
 │   │   └── sshd_config.d/
 │   ├── logs/           # SFTP access logs — watched by Fail2Ban
+├── spamhaus/           # Cached Spamhaus DROP lists — refreshed every 24 hours
+│   ├── drop_v4.json
+│   ├── drop_v6.json
+│   └── asndrop.json
 │   └── users.conf      # SFTP user accounts — managed automatically
 └── sites/
     └── <site-name>/
@@ -366,7 +370,7 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 - **Built-in Reverse Proxy** — how it works, SSL / Let's Encrypt, admin domain, Reverse Proxy site type
 - **Redirects** — per-site redirect rules
 - **Site Configurations** — nginx, PHP, MariaDB, Redis, Varnish, resetting a config
-- **Security Rules** — IP rules, User-Agent rules, country blocking, ASN blocking, ASN lookup, global vs per-site, import/export
+- **Security Rules** — IP rules, User-Agent rules, country blocking, ASN blocking, ASN lookup, Spamhaus DROP, global vs per-site, import/export
 - **WAF** — CRS rule management, global settings, per-site overrides, exclusions, WAF log
 - **Live Logs** — per-site and global log streams
 - **WP-CLI Terminal** — browser terminal for WordPress sites
