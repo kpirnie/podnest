@@ -5,9 +5,8 @@
 package proxy
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -84,71 +83,30 @@ func (p *UpstreamPool) Targets() []*url.URL {
 	return out
 }
 
-// tryUpstreamDirect proxies directly to w without buffering — used for the first
-// upstream attempt so streaming/chunked responses pass through immediately.
-// Returns true if the upstream was reachable (no dial/transport error).
-func tryUpstreamDirect(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
-	failed := false
+// errUpstreamStatus signals ModifyResponse rejected the upstream's status code
+// so the cascade can fall through to the next target.
+var errUpstreamStatus = errors.New("upstream returned failover status")
+
+// tryUpstream proxies to w with no buffering — ModifyResponse inspects the status
+// before any bytes reach the client, so a rejected upstream can fall through to
+// the next while an accepted one streams straight through.
+// Returns true if the response was committed to the client.
+func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
+	committed := false
 	rp := newReverseProxy(target.URL, transport, target.PassHost)
+	rp.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode >= 400 {
+			return errUpstreamStatus
+		}
+		committed = true
+		return nil
+	}
 	rp.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
 		logger.Debug("upstream: target '%s' unavailable: %v", target.URL.Host, err)
-		failed = true
 	}
 	rp.ServeHTTP(w, r)
-	return !failed
+	return committed
 }
-
-// tryUpstream buffers the upstream response before committing to w — used for
-// retry attempts only so we can fall through to the next upstream on failure.
-func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
-	var bodyBytes []byte
-	if r.Body != nil {
-		var err error
-		bodyBytes, err = io.ReadAll(r.Body)
-		if err != nil {
-			logger.Error("upstream: failed to read request body for retry: %v", err)
-			return false
-		}
-		r.Body.Close()
-		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	}
-
-	rec := &responseRecorder{header: make(http.Header), code: 200}
-	failed := false
-	rp := newReverseProxy(target.URL, transport, target.PassHost)
-	rp.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
-		logger.Debug("upstream: target '%s' unavailable: %v", target.URL.Host, err)
-		failed = true
-	}
-	rp.ServeHTTP(rec, r)
-
-	if failed || rec.code >= 500 {
-		if bodyBytes != nil {
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-		}
-		return false
-	}
-
-	for k, vals := range rec.header {
-		for _, v := range vals {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(rec.code)
-	w.Write(rec.body.Bytes())
-	return true
-}
-
-// responseRecorder captures an upstream response for inspection before committing to the client.
-type responseRecorder struct {
-	header http.Header
-	code   int
-	body   bytes.Buffer
-}
-
-func (r *responseRecorder) Header() http.Header         { return r.header }
-func (r *responseRecorder) WriteHeader(code int)        { r.code = code }
-func (r *responseRecorder) Write(b []byte) (int, error) { return r.body.Write(b) }
 
 // newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
 // transport is the shared pool passed in from Proxy.rpTransport — not created here —

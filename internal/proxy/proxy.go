@@ -393,14 +393,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// responses (404 domain-not-found, 403 IP/UA/WAF blocks already returned above)
 	sw.Header().Set(`Alt-Svc`, `h3=":443"; ma=86400`)
 
-	// reverse proxy sites — try first upstream directly for streaming compatibility,
-	// then cascade through remaining upstreams with buffered retry on failure
+	// reverse proxy sites — cascade through the pool, first response that isn't
+	// a transport error or >= 400 streams through unbuffered
 	if rpPool != nil {
 		startIdx := rpPool.NextIndex()
 
-		// first attempt — direct passthrough, no buffering
+		// first attempt
 		first := rpPool.At(startIdx)
-		if tryUpstreamDirect(sw, r, first, p.rpTransportForTarget(first)) {
+		if tryUpstream(sw, r, first, p.rpTransportForTarget(first)) {
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
