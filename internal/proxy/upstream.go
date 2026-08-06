@@ -91,9 +91,10 @@ var errUpstreamStatus = errors.New("upstream returned failover status")
 // before any bytes reach the client, so a rejected upstream can fall through to
 // the next while an accepted one streams straight through.
 // Returns true if the response was committed to the client.
-func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport) bool {
+func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport, clientIPFor func(*http.Request) string) bool {
+
 	committed := false
-	rp := newReverseProxy(target.URL, transport, target.PassHost)
+	rp := newReverseProxy(target.URL, transport, target.PassHost, clientIPFor)
 	rp.ModifyResponse = func(resp *http.Response) error {
 		if resp.StatusCode >= 400 {
 			return errUpstreamStatus
@@ -111,7 +112,7 @@ func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, 
 // newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
 // transport is the shared pool passed in from Proxy.rpTransport — not created here —
 // so idle connections are reused across all RP upstream sites rather than siloed per-URL.
-func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool) *httputil.ReverseProxy {
+func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool, clientIPFor func(*http.Request) string) *httputil.ReverseProxy {
 
 	// return the proxy
 	return &httputil.ReverseProxy{
@@ -160,9 +161,13 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool) 
 				req.Out.Header.Set("Connection", "Upgrade")
 			}
 
-			// forward the real client IP when already set by a trusted upstream proxy
-			if clientIP := req.In.Header.Get("X-Real-IP"); clientIP != "" {
+			// set the client IP from the value already resolved against the trusted
+			// proxy ranges — passing the inbound header through would let any client
+			// dictate what the upstream app sees
+			if clientIP := clientIPFor(req.In); clientIP != "" {
 				req.Out.Header.Set("X-Real-IP", clientIP)
+			} else {
+				req.Out.Header.Del("X-Real-IP")
 			}
 
 		},

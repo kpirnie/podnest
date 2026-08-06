@@ -400,13 +400,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// first attempt
 		first := rpPool.At(startIdx)
-		if tryUpstream(sw, r, first, p.rpTransportForTarget(first)) {
+		if tryUpstream(sw, r, first, p.rpTransportForTarget(first), p.realClientIP) {
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
 
 		// a verified upstream may have a newly-broken cert — flip it back and retry once unverified
-		if p.markTLSUnverified(first) && tryUpstream(sw, r, first, p.rpTransport) {
+		if p.markTLSUnverified(first) && tryUpstream(sw, r, first, p.rpTransport, p.realClientIP) {
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
@@ -414,7 +414,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// first upstream failed — try remaining upstreams with buffered recorder
 		for i := 1; i < rpPool.Len(); i++ {
 			target := rpPool.At(startIdx + i)
-			if tryUpstream(sw, r, target, p.rpTransportForTarget(target)) {
+			if tryUpstream(sw, r, target, p.rpTransportForTarget(target), p.realClientIP) {
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 				return
 			}
@@ -441,6 +441,17 @@ func (p *Proxy) resolveClientIP(r *http.Request) (net.IP, string) {
 		ipStr = ip.String()
 	}
 	return ip, ipStr
+}
+
+// realClientIP returns the trusted-proxy-resolved client IP for use as X-Real-IP,
+// or an empty string when it cannot be determined so the header is dropped rather
+// than forwarded with a placeholder.
+func (p *Proxy) realClientIP(r *http.Request) string {
+	ip, ipStr := p.resolveClientIP(r)
+	if ip == nil {
+		return ""
+	}
+	return ipStr
 }
 
 // normalizeHost strips any port from the request host and lowercases it so
@@ -735,7 +746,8 @@ func (p *Proxy) getOrCreateRPProxy(target *url.URL, passHost bool) *httputil.Rev
 	if rp, ok := p.rpProxyCache.Load(key); ok {
 		return rp.(*httputil.ReverseProxy)
 	}
-	rp := newReverseProxy(target, p.rpTransport, passHost)
+
+	rp := newReverseProxy(target, p.rpTransport, passHost, p.realClientIP)
 	actual, _ := p.rpProxyCache.LoadOrStore(key, rp)
 	return actual.(*httputil.ReverseProxy)
 }
