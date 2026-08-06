@@ -806,6 +806,14 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 			clientIPStr = clientIP.String()
 		}
 
+		// the bypass list is the break-glass path for an admin whose IP has landed
+		// in a global blacklist or the DROP feed — without this the panel, and so
+		// the login page, stays unreachable no matter what CIDR is bypassed
+		if clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load()) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		sec := p.secCache.Load()
 
 		// enforce global IP rules — no per-site rules apply to the panel

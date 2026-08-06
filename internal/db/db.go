@@ -37,6 +37,21 @@ func Open(path string) (*sql.DB, error) {
 		return nil, err
 	}
 
+	// force a ping so the file and its WAL siblings exist before we chmod them —
+	// sql.Open is lazy and creates nothing on its own
+	if err := db.Ping(); err != nil {
+		logger.Error("failed to reach sqlite: %v", err)
+		return nil, err
+	}
+
+	// the umask decides the mode otherwise, which typically leaves the DB
+	// world-readable; the -wal and -shm siblings carry the same rows
+	for _, f := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(f, 0600); err != nil && !os.IsNotExist(err) {
+			logger.Warn("failed to set mode on %s: %v", f, err)
+		}
+	}
+
 	// SQLite under WAL allows many concurrent readers with a single writer; the
 	// DSN's busy_timeout=5000 lets writers serialize gracefully instead of
 	// erroring. Allow concurrent connections rather than funnelling every query
@@ -75,7 +90,12 @@ func Migrate(db *sql.DB) error {
 
 	// apply column migrations to add new columns without breaking existing data
 	logger.Debug("database schema ensured")
-	return migrateColumns(db)
+	if err := migrateColumns(db); err != nil {
+		return err
+	}
+
+	// purge pre-hash bearer tokens
+	return migrateTokenHashing(db)
 }
 
 // migrateColumns adds new columns and removes obsolete ones without breaking existing data
@@ -128,6 +148,41 @@ func migrateColumns(db *sql.DB) error {
 	}
 
 	logger.Debug("column migrations applied")
+	return nil
+}
+
+// migrateTokenHashing drops every bearer token stored before hashing was
+// introduced. The raw values cannot be converted in place — the stored form is
+// now a hash of a value the DB never holds — so existing sessions are discarded
+// once, forcing a single re-login. Guarded by a settings flag rather than run
+// from the migrations slice, which would wipe live sessions on every boot.
+func migrateTokenHashing(db *sql.DB) error {
+
+	// skip when the one-time purge has already run
+	if done, err := GetSetting(db, "schema_token_hash"); err == nil && done == "1" {
+		return nil
+	}
+
+	// clear every table whose key column now holds a hash
+	for _, stmt := range []string{
+		`DELETE FROM kppn_sessions`,
+		`DELETE FROM kppn_pma_sessions`,
+		`DELETE FROM kppn_pma_tokens`,
+		`DELETE FROM kppn_totp_pending`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			logger.Error("token hash migration failed: %v", err)
+			return err
+		}
+	}
+
+	// record completion so this never runs again
+	if err := SetSetting(db, "schema_token_hash", "1"); err != nil {
+		logger.Error("failed to record token hash migration: %v", err)
+		return err
+	}
+
+	logger.Debug("purged pre-hash bearer tokens")
 	return nil
 }
 
@@ -539,8 +594,6 @@ CREATE TABLE IF NOT EXISTS kppn_waf_site_overrides (
     exclusions TEXT    NOT NULL DEFAULT '',
     updated    DATETIME
 );
-
-CREATE INDEX IF NOT EXISTS idx_waf_site_overrides_site ON kppn_waf_site_overrides (site_id);
 
 CREATE INDEX IF NOT EXISTS idx_waf_site_overrides_site ON kppn_waf_site_overrides (site_id);
 

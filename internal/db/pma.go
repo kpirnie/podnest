@@ -17,7 +17,7 @@ func CreatePMAToken(db *sql.DB, token string, siteID, userID int64, ttl time.Dur
 	_, err := db.Exec(`
 		INSERT INTO kppn_pma_tokens (token, site_id, user_id, expires_at)
 		VALUES (?, ?, ?, ?)`,
-		token, siteID, userID, time.Now().UTC().Add(ttl),
+		hashToken(token), siteID, userID, time.Now().UTC().Add(ttl),
 	)
 	if err != nil {
 		logger.Error("Failed to create PMA token: %v", err)
@@ -41,12 +41,12 @@ func ConsumePMAToken(db *sql.DB, token string) (int64, int64, error) {
 	err := db.QueryRow(`
 		DELETE FROM kppn_pma_tokens
 		WHERE token = ? AND expires_at > datetime('now')
-		RETURNING site_id, user_id`, token,
+		RETURNING site_id, user_id`, hashToken(token),
 	).Scan(&siteID, &userID)
 
 	// if no rows, treat as invalid token (0); if other error, return it
 	if err == sql.ErrNoRows {
-		logger.Error("PMA token not found or expired: %s", token)
+		logger.Error("PMA token not found or expired")
 		return 0, 0, nil
 	}
 	if err != nil {
@@ -66,7 +66,7 @@ func CreatePMASession(db *sql.DB, token string, siteID, userID int64, ttl time.D
 	_, err := db.Exec(`
 		INSERT INTO kppn_pma_sessions (token, site_id, user_id, expires_at)
 		VALUES (?, ?, ?, ?)`,
-		token, siteID, userID, time.Now().UTC().Add(ttl),
+		hashToken(token), siteID, userID, time.Now().UTC().Add(ttl),
 	)
 	if err != nil {
 		logger.Error("Failed to create PMA session: %v", err)
@@ -91,7 +91,7 @@ func ValidatePMASession(db *sql.DB, token string, siteID int64) (int64, bool, er
 	err := db.QueryRow(`
 		SELECT user_id FROM kppn_pma_sessions
 		WHERE token = ? AND site_id = ? AND expires_at > datetime('now')`,
-		token, siteID,
+		hashToken(token), siteID,
 	).Scan(&userID)
 	if err == sql.ErrNoRows {
 		return 0, false, nil

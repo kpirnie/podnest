@@ -19,7 +19,7 @@ func CreateSession(db *sql.DB, s *models.Session) error {
 	_, err := db.Exec(`
     INSERT INTO kppn_sessions (id, uid, expires_at, csrf_token)
     VALUES (?, ?, ?, ?)`,
-		s.ID, s.UID, s.ExpiresAt.UTC(), s.CSRFToken,
+		hashToken(s.ID), s.UID, s.ExpiresAt.UTC(), s.CSRFToken,
 	)
 	if err != nil {
 		logger.Error("Failed to create session: %v", err)
@@ -38,14 +38,18 @@ func GetSession(db *sql.DB, id string) (*models.Session, error) {
 
 	// query the database for a session matching the provided ID that has not yet expired
 	err := db.QueryRow(`
-		SELECT id, uid, expires_at, csrf_token
+		SELECT uid, expires_at, csrf_token
 		FROM kppn_sessions
-		WHERE id = ? AND expires_at > datetime('now')`, id,
-	).Scan(&s.ID, &s.UID, &s.ExpiresAt, &s.CSRFToken)
+		WHERE id = ? AND expires_at > datetime('now')`, hashToken(id),
+	).Scan(&s.UID, &s.ExpiresAt, &s.CSRFToken)
+
+	// carry the raw token back rather than the stored hash, so callers that
+	// round-trip s.ID into ExtendSession or DeleteSession hash it once, not twice
+	s.ID = id
 
 	// handle the case where no session was found or it has expired
 	if err == sql.ErrNoRows {
-		logger.Debug("session not found or expired: %s", id)
+		logger.Debug("session not found or expired")
 		return nil, nil
 	}
 	if err != nil {
@@ -62,14 +66,14 @@ func GetSession(db *sql.DB, id string) (*models.Session, error) {
 func DeleteSession(db *sql.DB, id string) error {
 
 	// execute a delete statement to remove the session with the specified ID from the database
-	_, err := db.Exec(`DELETE FROM kppn_sessions WHERE id = ?`, id)
+	_, err := db.Exec(`DELETE FROM kppn_sessions WHERE id = ?`, hashToken(id))
 	if err != nil {
 		logger.Error("Failed to delete session: %v", err)
 		return err
 	}
 
 	// log the successful deletion of the session for debugging purposes
-	logger.Debug("Deleted session with ID %s", id)
+	logger.Debug("Deleted session")
 	return err
 }
 
@@ -109,7 +113,7 @@ func ExtendSession(db *sql.DB, id string, duration time.Duration) error {
 	// execute an update statement to set the expiry time of the session with the specified ID to the current time plus the provided duration
 	_, err := db.Exec(`
 		UPDATE kppn_sessions SET expires_at = ? WHERE id = ?`,
-		time.Now().UTC().Add(duration), id,
+		time.Now().UTC().Add(duration), hashToken(id),
 	)
 	if err != nil {
 		logger.Error("Failed to extend session: %v", err)
@@ -117,6 +121,6 @@ func ExtendSession(db *sql.DB, id string, duration time.Duration) error {
 	}
 
 	// log the successful extension of the session for debugging purposes
-	logger.Debug("Extended session: ID %s", id)
+	logger.Debug("Extended session")
 	return err
 }

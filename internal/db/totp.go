@@ -19,7 +19,7 @@ import (
 func CreateTOTPPending(db *sql.DB, token string, uid int64, ttl time.Duration) error {
 	expires := time.Now().UTC().Add(ttl)
 	_, err := db.Exec(`INSERT INTO kppn_totp_pending (token, uid, expires_at) VALUES (?, ?, ?)`,
-		token, uid, expires)
+		hashToken(token), uid, expires)
 	if err != nil {
 		logger.Error("CreateTOTPPending: failed for uid %d: %v", uid, err)
 	}
@@ -29,8 +29,11 @@ func CreateTOTPPending(db *sql.DB, token string, uid int64, ttl time.Duration) e
 // GetTOTPPending retrieves a non-expired pending token.
 func GetTOTPPending(db *sql.DB, token string) (*models.TOTPPending, error) {
 	p := &models.TOTPPending{}
-	err := db.QueryRow(`SELECT token, uid, expires_at FROM kppn_totp_pending WHERE token=? AND expires_at > datetime('now')`,
-		token).Scan(&p.Token, &p.UID, &p.ExpiresAt)
+	err := db.QueryRow(`SELECT uid, expires_at FROM kppn_totp_pending WHERE token=? AND expires_at > datetime('now')`,
+		hashToken(token)).Scan(&p.UID, &p.ExpiresAt)
+
+	// hand back the raw token, not the stored hash
+	p.Token = token
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -43,7 +46,7 @@ func GetTOTPPending(db *sql.DB, token string) (*models.TOTPPending, error) {
 
 // DeleteTOTPPending removes a pending token after use.
 func DeleteTOTPPending(db *sql.DB, token string) error {
-	_, err := db.Exec(`DELETE FROM kppn_totp_pending WHERE token=?`, token)
+	_, err := db.Exec(`DELETE FROM kppn_totp_pending WHERE token=?`, hashToken(token))
 	if err != nil {
 		logger.Error("DeleteTOTPPending: %v", err)
 	}
