@@ -17,8 +17,7 @@ import (
 )
 
 // sensitiveKeys matches JSON key names whose values must be masked before persistence.
-// Sourced from the same pattern used in internal/logger/logger.go.
-var sensitiveKeys = regexp.MustCompile(`(?i)^(password|pass|passwd|pwd|secret|token|key)$`)
+var sensitiveKeys = regexp.MustCompile(`(?i)(^|[_\-.])(password|pass|passwd|pwd|secret|token|key)([_\-.]|$)`)
 
 // sensitiveRegex is the fallback pattern for non-JSON bodies — same regex as the logger.
 var sensitiveRegex = regexp.MustCompile(`(?i)(password|pass|passwd|pwd|secret|token|key)([=:\s"]+)([^\s"&,]+)`)
@@ -93,13 +92,7 @@ func MaskString(s string) string {
 		return masked
 	}
 	// fallback: regex replacement on raw string
-	return sensitiveRegex.ReplaceAllStringFunc(s, func(match string) string {
-		sub := sensitiveRegex.FindStringSubmatch(match)
-		if len(sub) < 4 {
-			return match
-		}
-		return sub[1] + sub[2] + "*****"
-	})
+	return maskLeafString(s)
 }
 
 // maskJSON unmarshals a JSON string, redacts values for sensitive keys at any
@@ -138,6 +131,11 @@ func maskValue(v interface{}) interface{} {
 			out[i] = maskValue(item)
 		}
 		return out
+	case string:
+		// a non-JSON request body arrives as a string leaf under "body", which
+		// makes maskJSON succeed and short-circuit the fallback in MaskString —
+		// run the pattern here so form and CSV bodies are not stored in the clear
+		return maskLeafString(val)
 	default:
 		return val
 	}
@@ -150,4 +148,16 @@ func RecordWithState(e models.AuditEntry, priorState, newState string) {
 	e.PriorState = priorState
 	e.NewState = newState
 	Record(e)
+}
+
+// maskLeafString applies the fallback pattern to a single string value.
+// Shared by MaskString and the string case in maskValue.
+func maskLeafString(s string) string {
+	return sensitiveRegex.ReplaceAllStringFunc(s, func(match string) string {
+		sub := sensitiveRegex.FindStringSubmatch(match)
+		if len(sub) < 4 {
+			return match
+		}
+		return sub[1] + sub[2] + "*****"
+	})
 }
