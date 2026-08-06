@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -60,8 +61,10 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/logs", h.apiSiteLogs)
 	api.HandleFunc("GET /sites/{id}/logs/waf", h.apiSiteWAFLog)
 	api.HandleFunc("GET /sites/{id}/logs/proxy", h.apiSiteProxyLog)
-	api.HandleFunc("GET /logs/proxy", h.apiGlobalProxyLog)
-	api.HandleFunc("GET /logs/waf", h.apiGlobalWAFLog)
+
+	// global logs carry every tenant's hosts, paths, client IPs, and user agents — admin only
+	api.Handle("GET /logs/proxy", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalProxyLog)))
+	api.Handle("GET /logs/waf", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalWAFLog)))
 }
 
 func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {

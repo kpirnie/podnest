@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"podnest/internal/auth"
 	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/podman"
@@ -45,10 +46,10 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 	mux.HandleFunc("GET /sites/{id}/stats/disk", h.apiSiteDisk)
 	mux.HandleFunc("GET /sites/{id}/stats/drilldown", h.apiSiteDrilldown)
 
-	// global dashboard routes
-	mux.HandleFunc("GET /stats/traffic", h.apiGlobalTraffic)
-	mux.HandleFunc("GET /stats/pod", h.apiGlobalPod)
-	mux.HandleFunc("GET /stats/drilldown", h.apiGlobalDrilldown)
+	// global dashboard routes — aggregate every tenant's traffic and pod usage, admin only
+	mux.Handle("GET /stats/traffic", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalTraffic)))
+	mux.Handle("GET /stats/pod", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalPod)))
+	mux.Handle("GET /stats/drilldown", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalDrilldown)))
 }
 
 // OnSiteCreate is a no-op; stats are computed on demand.

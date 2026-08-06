@@ -85,7 +85,8 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /sites/{id}/flush", h.apiSiteFlush)
 	api.HandleFunc("GET /sites/{id}/status", h.apiSiteStatus)
 	api.HandleFunc("POST /sites/{id}/recreate", h.apiSiteRecreate)
-	api.HandleFunc("POST /sites/prune-images", h.apiPruneImages)
+	// image pruning is system-wide, not scoped to a single site — admin only
+	api.Handle("POST /sites/prune-images", auth.RequireAPIAdmin(http.HandlerFunc(h.apiPruneImages)))
 	api.HandleFunc("POST /sites/{id}/clone", h.apiSiteClone)
 }
 
