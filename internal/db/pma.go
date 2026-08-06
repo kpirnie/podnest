@@ -36,10 +36,12 @@ func ConsumePMAToken(db *sql.DB, token string) (int64, int64, error) {
 	// hold the site id and user id
 	var siteID, userID int64
 
-	// query for the token and check expiration; if valid, return the site and user IDs
+	// delete and return in one statement so a token can only be consumed once,
+	// even when two requests arrive with the same token concurrently
 	err := db.QueryRow(`
-		SELECT site_id, user_id FROM kppn_pma_tokens
-		WHERE token = ? AND expires_at > datetime('now')`, token,
+		DELETE FROM kppn_pma_tokens
+		WHERE token = ? AND expires_at > datetime('now')
+		RETURNING site_id, user_id`, token,
 	).Scan(&siteID, &userID)
 
 	// if no rows, treat as invalid token (0); if other error, return it
@@ -51,9 +53,6 @@ func ConsumePMAToken(db *sql.DB, token string) (int64, int64, error) {
 		logger.Error("Error consuming PMA token: %v", err)
 		return 0, 0, err
 	}
-
-	// delete the token immediately to prevent reuse; ignore errors since we already have the site ID
-	_, _ = db.Exec(`DELETE FROM kppn_pma_tokens WHERE token = ?`, token)
 
 	// return the site and user IDs
 	logger.Debug("Consumed PMA token for site ID %d", siteID)
@@ -79,25 +78,51 @@ func CreatePMASession(db *sql.DB, token string, siteID, userID int64, ttl time.D
 	return err
 }
 
-// ValidatePMASession reports whether a session token is valid for the given site
-func ValidatePMASession(db *sql.DB, token string, siteID int64) (bool, error) {
+// ValidatePMASession reports whether a session token is valid for the given site,
+// returning the ID of the user the session was issued to. The caller must still
+// confirm that user exists and may access the site — the 2 hour cookie outlives
+// deletion, demotion, and site reassignment on its own.
+func ValidatePMASession(db *sql.DB, token string, siteID int64) (int64, bool, error) {
 
-	// hold the match count
-	var n int
+	// hold the issuing user id
+	var userID int64
 
 	// query for the session, matching the site and checking expiration
 	err := db.QueryRow(`
-		SELECT COUNT(1) FROM kppn_pma_sessions
+		SELECT user_id FROM kppn_pma_sessions
 		WHERE token = ? AND site_id = ? AND expires_at > datetime('now')`,
 		token, siteID,
-	).Scan(&n)
+	).Scan(&userID)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
 	if err != nil {
 		logger.Error("Error validating PMA session: %v", err)
-		return false, err
+		return 0, false, err
 	}
 
-	// return whether a valid session was found
-	return n > 0, nil
+	// return the issuing user
+	return userID, true, nil
+}
+
+// DeletePMASessionsByUser removes every PMA session issued to a user — called on
+// logout, password change, and user deletion so the PMA cookie dies with the
+// app session rather than outliving it.
+func DeletePMASessionsByUser(db *sql.DB, uid int64) error {
+
+	// drop the sessions and any unredeemed tokens belonging to the user
+	if _, err := db.Exec(`DELETE FROM kppn_pma_sessions WHERE user_id = ?`, uid); err != nil {
+		logger.Error("Failed to delete PMA sessions for user %d: %v", uid, err)
+		return err
+	}
+	if _, err := db.Exec(`DELETE FROM kppn_pma_tokens WHERE user_id = ?`, uid); err != nil {
+		logger.Error("Failed to delete PMA tokens for user %d: %v", uid, err)
+		return err
+	}
+
+	// log the cleanup action
+	logger.Debug("Deleted PMA sessions and tokens for user %d", uid)
+	return nil
 }
 
 // DeleteExpiredPMASessions purges all expired sessions — called by the server reaper

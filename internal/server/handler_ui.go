@@ -331,6 +331,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		if user, err := auth.SessionUser(s.cfg.DB, sessionID); err == nil && user != nil {
 			uid = &user.ID
 			username = user.UName
+
+			// the PMA cookie is independent of the app session — drop it too
+			_ = db.DeletePMASessionsByUser(s.cfg.DB, user.ID)
 		}
 		if err := auth.Logout(s.cfg.DB, sessionID); err != nil {
 			logger.Error("failed to delete session on logout: %v", err)

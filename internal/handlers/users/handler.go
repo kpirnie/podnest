@@ -267,6 +267,7 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		logger.Debug("invalidating all sessions for user %d after password change", target.ID)
 		_ = db.DeleteUserSessions(h.DB, target.ID)
+		_ = db.DeletePMASessionsByUser(h.DB, target.ID)
 
 		// the TOTP secret is encrypted with a key derived from the old password — force re-enrollment
 		if target.TOTPEnabled {
@@ -296,6 +297,8 @@ func (h *Handler) apiDeleteUser(w http.ResponseWriter, r *http.Request) {
 	// capture user state before deletion for the audit trail
 	*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotAny(target), ""))
 
+	_ = db.DeleteUserSessions(h.DB, target.ID)
+	_ = db.DeletePMASessionsByUser(h.DB, target.ID)
 	if err := db.DeleteUser(h.DB, target.ID); err != nil {
 		logger.Error("failed to delete user %d: %v", target.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)

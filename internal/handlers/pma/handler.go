@@ -20,6 +20,7 @@ import (
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/models"
 	"podnest/internal/modules"
 )
 
@@ -150,7 +151,7 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	valid, err := db.ValidatePMASession(h.DB, cookie.Value, id)
+	userID, valid, err := db.ValidatePMASession(h.DB, cookie.Value, id)
 	if err != nil {
 		logger.Error("failed to validate PMA session for site %d: %v", id, err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -166,6 +167,21 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 	if err != nil || site == nil || site.PMAPort == 0 {
 		logger.Error("site %d not found or has no PMA port: %v", id, err)
 		http.Error(w, "site not found", http.StatusNotFound)
+		return
+	}
+
+	// re-check the issuing user on every request — the cookie is good for two
+	// hours and would otherwise survive the user being deleted or demoted, or
+	// the site being reassigned to someone else
+	user, err := db.GetUserByID(h.DB, userID)
+	if err != nil {
+		logger.Error("failed to load PMA session user %d for site %d: %v", userID, id, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if user == nil || (user.Role != models.RoleAdmin && site.UID != user.ID) {
+		logger.Error("PMA session user %d no longer permitted for site %d", userID, id)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
