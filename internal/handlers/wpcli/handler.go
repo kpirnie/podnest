@@ -18,6 +18,7 @@ import (
 	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/podman"
+	"podnest/internal/sftp"
 
 	"github.com/gorilla/websocket"
 )
@@ -102,11 +103,13 @@ func (h *Handler) apiWPCLI(w http.ResponseWriter, r *http.Request) {
 
 	containerName := podman.ContainerName(site.Name, "php")
 
+	// the command reaches sh -c intact, so this exec runs as the site UID rather
+	// than root — matching cron's execute(), which runs wp the same way
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Detach":       false,
-		"User":         "0",
+		"User":         fmt.Sprintf("%d", sftp.UIDForSite(site.ID)),
 		"Cmd": []string{
 			"sh", "-c",
 			fmt.Sprintf("%s --path=/var/www/html --no-color --allow-root %s", wpcliContainerPath, cmd),
