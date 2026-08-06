@@ -38,7 +38,7 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 		session, user, err := SessionAndUser(database, sessionID)
 		if err != nil || user == nil {
 			logger.Error("the session cookie is invalid: %v", err)
-			ClearSessionCookie(w)
+			ClearSessionCookie(w, r)
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}

@@ -353,6 +353,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Details:  `{"event":"logout"}`,
 	})
 
-	auth.ClearSessionCookie(w)
+	auth.ClearSessionCookie(w, r)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

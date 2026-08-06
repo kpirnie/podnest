@@ -308,8 +308,10 @@ func SetSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) 
 	logger.Debug("set the login session cookie")
 }
 
-// ClearSessionCookie expires the session cookie
-func ClearSessionCookie(w http.ResponseWriter) {
+// ClearSessionCookie expires the session cookie. The attributes must mirror
+// SetSessionCookie — a browser on plain HTTP discards a Secure clearing cookie,
+// which leaves the original cookie in place and the logout ineffective.
+func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 
 	// Expire the session cookie
 	http.SetCookie(w, &http.Cookie{
@@ -317,11 +319,10 @@ func ClearSessionCookie(w http.ResponseWriter) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
-
 	logger.Debug("cleared the login session cookie")
 }
 
