@@ -49,8 +49,8 @@ func GenerateBackupCodes(n int) ([]string, error) {
 	return codes, nil
 }
 
-// totpCode computes the TOTP 6-digit code for a given secret and time.
-func totpCode(secret string, t time.Time) (string, error) {
+// totpCode computes the TOTP 6-digit code for a given secret and counter.
+func totpCode(secret string, counter uint64) (string, error) {
 	upper := strings.ToUpper(strings.TrimSpace(secret))
 
 	// Try without padding first, then with padding as fallback
@@ -62,8 +62,7 @@ func totpCode(secret string, t time.Time) (string, error) {
 		}
 	}
 
-	// TOTP code is based on the number of 30-second intervals since Unix epoch
-	counter := uint64(t.Unix()) / 30
+	// the counter is the number of 30-second intervals since the Unix epoch
 	var buf [8]byte
 	binary.BigEndian.PutUint64(buf[:], counter)
 
@@ -83,19 +82,21 @@ func totpCode(secret string, t time.Time) (string, error) {
 	return fmt.Sprintf("%06d", code%1_000_000), nil
 }
 
-// VerifyTOTP checks the user-supplied code against the current ±1 TOTP windows.
-func VerifyTOTP(secret, userCode string) bool {
-	now := time.Now()
-	for _, delta := range []time.Duration{-30 * time.Second, 0, 30 * time.Second} {
-		expected, err := totpCode(secret, now.Add(delta))
+// VerifyTOTP checks the user-supplied code against the current ±1 TOTP windows
+// and returns the counter of the matched window. The caller must reject a counter
+// it has already accepted for this user
+func VerifyTOTP(secret, userCode string) (uint64, bool) {
+	current := uint64(time.Now().Unix()) / 30
+	for _, counter := range []uint64{current - 1, current, current + 1} {
+		expected, err := totpCode(secret, counter)
 		if err != nil {
-			return false
+			return 0, false
 		}
 		if hmac.Equal([]byte(expected), []byte(userCode)) {
-			return true
+			return counter, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 // TOTPProvisioningURI returns the otpauth:// URI for authenticator apps.

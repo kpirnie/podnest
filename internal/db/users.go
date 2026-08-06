@@ -237,3 +237,29 @@ func DisableTOTP(db *sql.DB, id int64) error {
 	}
 	return err
 }
+
+// ConsumeTOTPCounter records counter as used for a user, returning false when
+// that counter or a later one has already been accepted. The comparison and the
+// write are a single statement so two concurrent submissions of the same code
+// cannot both succeed.
+func ConsumeTOTPCounter(db *sql.DB, uid int64, counter uint64) bool {
+
+	// only advance the stored counter — a replayed code carries one we already have
+	res, err := db.Exec(`
+		UPDATE kppn_users SET totp_last_counter = ?
+		WHERE id = ? AND totp_last_counter < ?`,
+		counter, uid, counter,
+	)
+	if err != nil {
+		logger.Error("Failed to consume TOTP counter for user %d: %v", uid, err)
+		return false
+	}
+
+	// exactly one row means this counter had not been used yet
+	n, err := res.RowsAffected()
+	if err != nil {
+		logger.Error("Failed to read TOTP counter result for user %d: %v", uid, err)
+		return false
+	}
+	return n == 1
+}

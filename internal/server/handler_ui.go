@@ -246,7 +246,12 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if !auth.VerifyTOTP(secret, code) {
+		counter, valid := auth.VerifyTOTP(secret, code)
+		if valid && !db.ConsumeTOTPCounter(s.cfg.DB, user.ID, counter) {
+			logger.Warn("replayed TOTP code for user %d", user.ID)
+			valid = false
+		}
+		if !valid {
 
 			// fall back to backup codes
 			used, _ := db.UseBackupCode(s.cfg.DB, user.ID, code)

@@ -373,7 +373,12 @@ func (h *Handler) apiTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !auth.VerifyTOTP(secret, req.Code) {
+	counter, valid := auth.VerifyTOTP(secret, req.Code)
+	if valid && !db.ConsumeTOTPCounter(h.DB, target.ID, counter) {
+		logger.Warn("apiTOTPConfirm: replayed TOTP code for user %d", target.ID)
+		valid = false
+	}
+	if !valid {
 		apiutil.ErrorMsg(w, http.StatusUnprocessableEntity, "invalid TOTP code")
 		return
 	}
