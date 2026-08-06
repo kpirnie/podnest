@@ -84,7 +84,7 @@ func RequireAdmin(next http.Handler) http.Handler {
 			return
 		}
 
-		logger.Debug("admin user: %v", user)
+		logger.Debug("admin user: %s", user.UName)
 
 		// If the user is an admin, call the next handler.
 		next.ServeHTTP(w, r)

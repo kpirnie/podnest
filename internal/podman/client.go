@@ -100,8 +100,8 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 			return err
 		}
 
-		// log the request body for debugging
-		logger.Debug("POST %s with body: %s", path, string(b))
+		// container create specs carry DB_ROOT_PASS, DB_PASS, and REDIS_PASS as env values
+		logger.DebugSafe("POST %s with body: %s", path, string(b))
 		r = strings.NewReader(string(b))
 	}
 
@@ -148,7 +148,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 		}
 
 		// log the raw response body for debugging
-		logger.Debug("POST %s response body: %s", path, string(b))
+		logger.DebugSafe("POST %s response body: %s", path, string(b))
 		return json.Unmarshal(b, out)
 	}
 

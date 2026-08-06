@@ -335,7 +335,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		if err := auth.Logout(s.cfg.DB, sessionID); err != nil {
 			logger.Error("failed to delete session on logout: %v", err)
 		}
-		logger.Debug("session %s logged out", sessionID)
+		logger.Debug("user %s logged out", username)
 	}
 
 	// record the logout event

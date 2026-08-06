@@ -221,7 +221,7 @@ func TOTPPendingFromRequest(r *http.Request) string {
 // Logout deletes the session record
 func Logout(database *sql.DB, sessionID string) error {
 
-	logger.Debug("User logged out: %s", sessionID)
+	logger.Debug("User logged out")
 
 	// Delete the session from the database
 	return db.DeleteSession(database, sessionID)
@@ -266,14 +266,14 @@ func SessionUser(database *sql.DB, sessionID string) (*models.User, error) {
 		return nil, err
 	}
 	if session == nil {
-		logger.Debug("session not found: %s", sessionID)
+		logger.Debug("session not found")
 		return nil, errors.New("session not found")
 	}
 
 	// Check if the session is expired
 	maybeExtendSession(database, session)
 
-	logger.Debug("retrieved session: %v", session)
+	logger.Debug("retrieved session for user %d, expires %s", session.UID, session.ExpiresAt.Format(time.RFC3339))
 
 	// Retrieve the user associated with the session
 	return db.GetUserByID(database, session.UID)
