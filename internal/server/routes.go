@@ -155,7 +155,7 @@ func (s *Server) routes() http.Handler {
 	securityHandler.RegisterRoutes(api)
 
 	// ssl status
-	sslHandler := &ssl.Handler{}
+	sslHandler := &ssl.Handler{DB: s.cfg.DB}
 	sslHandler.RegisterRoutes(api)
 
 	// audit log — admin-only read endpoint

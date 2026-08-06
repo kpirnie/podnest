@@ -7,12 +7,16 @@ package ssl
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"net"
 	"net/http"
 	"time"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/auth"
+	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/models"
 )
 
 const (
@@ -22,7 +26,9 @@ const (
 )
 
 // Handler handles SSL status API routes.
-type Handler struct{}
+type Handler struct {
+	DB *sql.DB
+}
 
 // RegisterRoutes mounts SSL status routes onto api.
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
@@ -37,7 +43,16 @@ func (h *Handler) apiSSLStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the check dials arbitrary hosts from inside the network and distinguishes
+	// refused from TLS-present, so the target must be a domain this caller owns
+	if !h.callerOwnsDomain(r, domain) {
+		logger.Error("apiSSLStatus: domain '%s' not permitted for caller", domain)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
 	status := checkSSL(domain)
+
 	logger.Debug("apiSSLStatus: %s => %s", domain, status)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": status})
 }
@@ -73,4 +88,41 @@ func checkSSL(domain string) string {
 
 	logger.Debug("checkSSL: self-signed cert detected for %s", domain)
 	return statusSelfSigned
+}
+
+// callerOwnsDomain reports whether the authenticated caller may probe domain.
+// Admins may probe the configured admin domain and any registered domain;
+// everyone else is limited to domains attached to a site they own.
+func (h *Handler) callerOwnsDomain(r *http.Request, domain string) bool {
+
+	// resolve the caller from the request context
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return false
+	}
+
+	// the admin domain has no kppn_domains row — admins only
+	if adminDomain, err := db.GetSetting(h.DB, "admin_domain"); err == nil && adminDomain != "" && adminDomain == domain {
+		return user.Role == models.RoleAdmin
+	}
+
+	// the domain must be registered, which confines dialing to hosts already proxied
+	d, err := db.GetDomainByValue(h.DB, domain)
+	if err != nil {
+		logger.Error("callerOwnsDomain: lookup '%s': %v", domain, err)
+		return false
+	}
+	if d == nil {
+		return false
+	}
+	if user.Role == models.RoleAdmin {
+		return true
+	}
+
+	// non-admins are limited to their own sites
+	site, err := db.GetSiteByID(h.DB, d.SiteID)
+	if err != nil || site == nil {
+		return false
+	}
+	return site.UID == user.ID
 }
