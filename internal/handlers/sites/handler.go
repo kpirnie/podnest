@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -281,7 +280,13 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "name and port are required")
 		return
 	}
-	req.Name = strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9_\-]`).ReplaceAllString(req.Name, "-"))
+	name, err := NormalizeSiteName(req.Name)
+	if err != nil {
+		logger.Error("invalid site name for creation: %v", err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site name")
+		return
+	}
+	req.Name = name
 	if req.PHPVersion == 0 {
 		req.PHPVersion = 3
 	}
@@ -532,7 +537,28 @@ func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 
 	// update the site's properties based on the request payload, only modifying fields that are provided
 	if req.Name != "" {
-		site.Name = req.Name
+		name, err := NormalizeSiteName(req.Name)
+		if err != nil {
+			logger.Error("invalid site name for update on site %d: %v", site.ID, err)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site name")
+			return
+		}
+
+		// a rename must not collide with another site's directory, pod, or logs
+		if name != site.Name {
+			existing, err := db.GetSiteByName(h.DB, name)
+			if err != nil {
+				logger.Error("failed to check site name uniqueness for '%s': %v", name, err)
+				apiutil.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+			if existing != nil {
+				logger.Error("site name '%s' already exists", name)
+				apiutil.ErrorMsg(w, http.StatusConflict, "site name already exists")
+				return
+			}
+		}
+		site.Name = name
 	}
 	if req.PHPVersion != 0 {
 		site.PHPVersion = req.PHPVersion
@@ -1007,12 +1033,14 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// sanitize the requested clone name by converting it to lowercase and replacing any non-alphanumeric characters with hyphens, ensuring a valid site name format
-	req.Name = strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9_\-]`).ReplaceAllString(req.Name, "-"))
-	if req.Name == "" {
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "clone name is required")
+	// normalize and validate the requested clone name before it reaches any filesystem path, podman object name, or shell command string
+	name, err := NormalizeSiteName(req.Name)
+	if err != nil {
+		logger.Error("apiSiteClone: invalid clone name: %v", err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid clone name")
 		return
 	}
+	req.Name = name
 
 	// check if a site with the requested clone name already exists in the database, returning a conflict response if it does
 	existing, err := db.GetSiteByName(h.DB, req.Name)

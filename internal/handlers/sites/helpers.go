@@ -16,8 +16,34 @@ import (
 	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/podman"
+	"regexp"
+	"strings"
 	"time"
 )
+
+// siteNameStrip matches every character not permitted in a site name.
+var siteNameStrip = regexp.MustCompile(`[^a-z0-9_\-]`)
+
+// siteNameValid matches a fully normalized, acceptable site name.
+var siteNameValid = regexp.MustCompile(`^[a-z0-9][a-z0-9_\-]{0,62}$`)
+
+// NormalizeSiteName lowercases a requested site name, replaces disallowed
+// characters with hyphens, and validates the result.
+func NormalizeSiteName(name string) (string, error) {
+
+	// normalize case and strip surrounding whitespace before filtering
+	clean := siteNameStrip.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-")
+
+	// reject rather than silently mangle — a leading hyphen would read as a
+	// flag in podman and shell argument positions, and an empty or over-long
+	// name has no valid pod or directory to map to
+	if !siteNameValid.MatchString(clean) {
+		return "", fmt.Errorf("NormalizeSiteName: invalid site name %q", name)
+	}
+
+	// return the safe name
+	return clean, nil
+}
 
 // cloneDatabase copies the database from the source site to the clone site.
 func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) error {
