@@ -46,6 +46,21 @@ type overlayFS struct {
 	embedded fs.FS // embedded coraza-coreruleset — fallback only
 }
 
+// siteExclusionDirectives are the Sec* directives a site owner may enter in the
+// per-site exclusions field. buildDirectives passes Sec* lines through verbatim,
+// and per-site routes are owner-gated rather than admin-gated, so anything not
+// listed here would let an owner reconfigure the engine for their own site —
+// SecRuleEngine Off being the obvious one. The global scope stays unrestricted.
+var siteExclusionDirectives = map[string]bool{
+	"secruleremovebyid":         true,
+	"secruleremovebymsg":        true,
+	"secruleremovebytag":        true,
+	"secruleremovebyrequesturi": true,
+	"secruleupdatetargetbyid":   true,
+	"secruleupdatetargetbytag":  true,
+	"secruleupdateactionbyid":   true,
+}
+
 // Open implements fs.FS. It first tries to open the file from the local FS, and if that fails it falls back to the embedded FS.
 func (o overlayFS) Open(name string) (fs.File, error) {
 	if logger.IsDebug() {
@@ -422,4 +437,28 @@ SecRuleEngine DetectionOnly
 			WithDirectives(directives),
 	)
 	return err == nil
+}
+
+// ValidateSiteExclusions checks a per-site exclusions blob and returns an error
+// naming the first line that carries a directive outside the allowlist.
+func ValidateSiteExclusions(exclusions string) error {
+	for _, line := range strings.Split(exclusions, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, "Sec") {
+			continue
+		}
+
+		// the directive is the leading token; the rest is its argument
+		directive := line
+		if i := strings.IndexAny(line, " \t"); i > 0 {
+			directive = line[:i]
+		}
+		if !siteExclusionDirectives[strings.ToLower(directive)] {
+			return fmt.Errorf("directive %q is not permitted in per-site exclusions", directive)
+		}
+	}
+	return nil
 }

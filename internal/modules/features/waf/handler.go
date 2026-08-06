@@ -102,6 +102,11 @@ func (m Module) apiUpdateWAFSiteOverride(w http.ResponseWriter, r *http.Request,
 		apiutil.Error(w, http.StatusBadRequest, err)
 		return
 	}
+	if err := proxy.ValidateSiteExclusions(req.Exclusions); err != nil {
+		logger.Error("apiUpdateWAFSiteOverride: siteID=%d rejected exclusions: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	override := db.WAFSiteOverride{
 		SiteID:     site.ID,
 		Override:   req.Override,
@@ -282,6 +287,11 @@ func (m Module) apiImportWAFSiteOverride(w http.ResponseWriter, r *http.Request,
 	if err := json.NewDecoder(io.LimitReader(f, 1<<20)).Decode(&payload); err != nil {
 		logger.Error("apiImportWAFSiteOverride: decode: siteID=%d %v", site.ID, err)
 		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := proxy.ValidateSiteExclusions(payload.Exclusions); err != nil {
+		logger.Error("apiImportWAFSiteOverride: siteID=%d rejected exclusions: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := db.SaveWAFSiteOverride(m.DB, db.WAFSiteOverride{
