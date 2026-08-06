@@ -689,13 +689,18 @@ func (s *Server) mariadbUpgradeChecker() {
 
 			dbContainer := podman.ContainerName(site.Name, "db")
 
+			// base env for both execs — password is passed by name only, never in argv
+			podEnv := append(os.Environ(), "CONTAINER_HOST=unix://"+s.cfg.PodmanSock)
+
 			// probe for the mismatch — SHOW FUNCTION STATUS triggers the error
 			probeCmd := exec.CommandContext(ctx, "podman",
-				"exec", dbContainer,
-				"mariadb", "-uroot", "-p"+rootPass,
+				"exec", "-e", "MYSQL_PWD", dbContainer,
+				"mariadb", "-uroot",
 				"-e", "SHOW FUNCTION STATUS LIMIT 1;",
 			)
-			probeCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+s.cfg.PodmanSock)
+
+			// capped append forces a new backing array so probe/upgrade envs don't alias
+			probeCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
 			probeOut, probeErr := probeCmd.CombinedOutput()
 			if probeErr == nil {
 				continue // no mismatch
@@ -706,10 +711,10 @@ func (s *Server) mariadbUpgradeChecker() {
 
 			logger.Warn("mariadbUpgradeChecker: mysql.proc mismatch on site %s — running mariadb-upgrade", site.Name)
 			upgradeCmd := exec.CommandContext(ctx, "podman",
-				"exec", dbContainer,
-				"mariadb-upgrade", "-uroot", "-p"+rootPass,
+				"exec", "-e", "MYSQL_PWD", dbContainer,
+				"mariadb-upgrade", "-uroot",
 			)
-			upgradeCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+s.cfg.PodmanSock)
+			upgradeCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
 			if out, err := upgradeCmd.CombinedOutput(); err != nil {
 				logger.Error("mariadbUpgradeChecker: mariadb-upgrade failed for site %s: %v — %s", site.Name, err, string(out))
 			} else {

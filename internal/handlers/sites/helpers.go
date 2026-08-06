@@ -189,14 +189,19 @@ func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 	// get the name of the DB container for the site
 	dbContainer := modules.ContainerName(site.Name, "db")
 
+	// base env for the podman exec — password is passed by name only, never in argv
+	podEnv := append(os.Environ(), "CONTAINER_HOST=unix://"+h.PodmanSock)
+
 	// retry for up to 2 minutes — the DB is usually still initializing right after the pod comes up
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
 		cmd := exec.CommandContext(ctx, "podman",
-			"exec", "--user=mysql", dbContainer,
-			"mariadb-upgrade", "-uroot", "-p"+rootPass,
+			"exec", "--user=mysql", "-e", "MYSQL_PWD", dbContainer,
+			"mariadb-upgrade", "-uroot",
 		)
-		cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+h.PodmanSock)
+
+		// capped append forces a new backing array so the loop's envs don't alias
+		cmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
 		out, err := cmd.CombinedOutput()
 		if err == nil {
 			break
