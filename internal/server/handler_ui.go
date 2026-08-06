@@ -5,6 +5,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"net/http"
 
 	"podnest/internal/audit"
@@ -327,13 +328,31 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 // handleLogout clears the session and redirects to login
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
-	sessionID := auth.SessionFromRequest(r)
+	// registered on the bare mux, so the CSRF check RequireAuth performs for
+	// state-changing requests does not run here — do it explicitly
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
+	sessionID := auth.SessionFromRequest(r)
 	// resolve identity before the session is deleted
 	var uid *int64
 	username := ""
 	if sessionID != "" {
-		if user, err := auth.SessionUser(s.cfg.DB, sessionID); err == nil && user != nil {
+
+		// the token must match the one bound to this session
+		session, user, err := auth.SessionAndUser(s.cfg.DB, sessionID)
+		if err != nil || session == nil {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(session.CSRFToken)) != 1 {
+			logger.Error("CSRF token mismatch on logout")
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if user != nil {
 			uid = &user.ID
 			username = user.UName
 

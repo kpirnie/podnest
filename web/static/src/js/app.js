@@ -257,6 +257,24 @@ window.addEventListener("hashchange", () => {
     });
 })();
 
+/* -- logout ---------------------------------------------------------------- */
+(() => {
+    const links = document.querySelectorAll(".kp-logout-link");
+    if (!links.length) return;
+
+    // logout is a state change — POST it with the CSRF token rather than a GET link
+    links.forEach(el => {
+        el.addEventListener("click", async e => {
+            e.preventDefault();
+            await fetch("/logout", {
+                method: "POST",
+                headers: { "X-CSRF-Token": window.KP?.csrf ?? "" },
+            });
+            window.location.href = "/login";
+        });
+    });
+})();
+
 /* -- boot ------------------------------------------------------------------ */
 const { view: initialView, params: initialParams } = parseHash();
 router.go(initialView, initialParams);
