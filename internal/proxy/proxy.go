@@ -88,7 +88,7 @@ type Proxy struct {
 	secCache          atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
 	wafEnabled        atomic.Bool                                  // true when global WAF is on
 	wafEngine         atomic.Pointer[WAFEngine]                    // global compiled engine
-	wafSiteEngines    sync.Map                                     // int64(siteID) → *WAFEngine
+	wafSiteEngines    atomic.Pointer[map[int64]*WAFEngine]         // siteID → compiled engine; swapped whole so no request sees a half-built set	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
 	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
 	trustedProxies    atomic.Pointer[ipTable]                      // compiled trusted proxy ranges; swapped atomically on refresh
 	bypassNets        atomic.Pointer[ipTable]                      // compiled bypass IP rules; swapped atomically on change
@@ -799,16 +799,20 @@ func (p *Proxy) resolveWAFEngine(siteID int64) *WAFEngine {
 		return nil
 	case db.WAFOverrideOn:
 		// site-specific engine if compiled, otherwise fall back to global
-		if e, ok := p.wafSiteEngines.Load(siteID); ok {
-			return e.(*WAFEngine)
+		if m := p.wafSiteEngines.Load(); m != nil {
+			if e, ok := (*m)[siteID]; ok {
+				return e
+			}
 		}
 		return p.wafEngine.Load()
 	default: // WAFOverrideInherit — respect global enabled state
 		if !p.wafEnabled.Load() {
 			return nil
 		}
-		if e, ok := p.wafSiteEngines.Load(siteID); ok {
-			return e.(*WAFEngine)
+		if m := p.wafSiteEngines.Load(); m != nil {
+			if e, ok := (*m)[siteID]; ok {
+				return e
+			}
 		}
 		return p.wafEngine.Load()
 	}

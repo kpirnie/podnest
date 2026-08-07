@@ -323,16 +323,12 @@ func (p *Proxy) warmWAFCache() error {
 		return err
 	}
 
-	// clear any previously compiled site engines
-	p.wafSiteEngines.Range(func(k, _ any) bool {
-		p.wafSiteEngines.Delete(k)
-		return true
-	})
-
-	// if WAF is disabled, clear the global engine and overrides and return
+	// if WAF is disabled, clear the global engine, site engines, and overrides
 	if !settings.Enabled {
 		p.wafEnabled.Store(false)
 		p.wafEngine.Store(nil)
+		emptyEngines := make(map[int64]*WAFEngine)
+		p.wafSiteEngines.Store(&emptyEngines)
 		empty := make(map[int64]db.WAFSiteOverride)
 		p.wafOverrides.Store(&empty)
 		logger.Debug("proxy: WAF disabled")
@@ -342,18 +338,35 @@ func (p *Proxy) warmWAFCache() error {
 	// prefer locally downloaded CRS rules over the embedded coraza-coreruleset;
 	// fall back to the embedded ruleset only when no local install is present
 	crsDir := ""
+	crsVersion := "embedded"
 	localCRS := CRSDir(p.appPath)
-	if _, err := os.Stat(filepath.Join(localCRS, ".version")); err == nil {
+	if v, err := os.ReadFile(filepath.Join(localCRS, ".version")); err == nil {
 		crsDir = localCRS
-		logger.Debug("proxy: using local CRS rules from %s", crsDir)
+		crsVersion = strings.TrimSpace(string(v))
+		logger.Debug("proxy: using local CRS rules from %s (%s)", crsDir, crsVersion)
 	} else {
 		logger.Warn("proxy: local CRS not found, falling back to embedded coraza-coreruleset")
 	}
 
+	// the previously compiled engines — anything whose inputs are unchanged is
+	// carried over rather than recompiled, since a full CRS compile per site is
+	// the dominant cost of a settings change
+	prevGlobal := p.wafEngine.Load()
+	prevSites := map[int64]*WAFEngine{}
+	if m := p.wafSiteEngines.Load(); m != nil {
+		prevSites = *m
+	}
+
 	// build the global engine — no plugins loaded at the global level
-	engine, err := NewWAFEngine(settings, "", crsDir, nil)
-	if err != nil {
-		return err
+	globalFP := wafFingerprint(settings, "", crsDir, crsVersion, nil)
+	var engine *WAFEngine
+	if prevGlobal != nil && prevGlobal.fp == globalFP {
+		engine = prevGlobal.reuse(settings)
+	} else {
+		engine, err = NewWAFEngine(settings, "", crsDir, nil, globalFP)
+		if err != nil {
+			return err
+		}
 	}
 
 	// fetch per-site overrides and plugin selections for cache warming
@@ -373,26 +386,41 @@ func (p *Proxy) warmWAFCache() error {
 	// build a map of siteID→override for atomic installation; build site engines
 	// for any site that has additional exclusions or plugins to apply
 	overrideMap := make(map[int64]db.WAFSiteOverride, len(siteOverrides))
+	siteEngines := make(map[int64]*WAFEngine)
+	reused := 0
 	for _, o := range siteOverrides {
 		overrideMap[o.SiteID] = o
 		plugins := sitePlugins[o.SiteID] // nil when no plugins selected
+
 		// build a site engine when there are additional exclusions or plugins to apply
 		needsSiteEngine := strings.TrimSpace(o.Exclusions) != "" || len(plugins) > 0
-		if needsSiteEngine && o.Override != db.WAFOverrideOff {
-			siteEngine, err := NewWAFEngine(settings, o.Exclusions, crsDir, plugins)
-			if err != nil {
-				logger.Error("proxy: WAF site engine build failed siteID=%d: %v", o.SiteID, err)
-				continue
-			}
-			p.wafSiteEngines.Store(o.SiteID, siteEngine)
+		if !needsSiteEngine || o.Override == db.WAFOverrideOff {
+			continue
 		}
+
+		fp := wafFingerprint(settings, o.Exclusions, crsDir, crsVersion, plugins)
+		if prev, ok := prevSites[o.SiteID]; ok && prev.fp == fp {
+			siteEngines[o.SiteID] = prev.reuse(settings)
+			reused++
+			continue
+		}
+
+		siteEngine, err := NewWAFEngine(settings, o.Exclusions, crsDir, plugins, fp)
+		if err != nil {
+			logger.Error("proxy: WAF site engine build failed siteID=%d: %v", o.SiteID, err)
+			continue
+		}
+		siteEngines[o.SiteID] = siteEngine
 	}
 
-	// atomically install the global engine and the site override map
+	// atomically install the global engine, site engines, and the override map —
+	// the site set is swapped whole, so no request is served by the global engine
+	// while its own engine is still being built
 	p.wafEngine.Store(engine)
+	p.wafSiteEngines.Store(&siteEngines)
 	p.wafOverrides.Store(&overrideMap)
 	p.wafEnabled.Store(true)
-	logger.Debug("proxy: WAF cache warmed — %d site overrides", len(siteOverrides))
+	logger.Debug("proxy: WAF cache warmed — %d site overrides, %d engines (%d reused)", len(siteOverrides), len(siteEngines), reused)
 	return nil
 }
 

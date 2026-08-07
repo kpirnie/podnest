@@ -7,6 +7,8 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -32,8 +34,9 @@ var pluginSuffixes = []string{"-config.conf", "-before.conf", "-after.conf"}
 // WAFEngine wraps a compiled Coraza WAF instance and its active operational settings.
 type WAFEngine struct {
 	waf  coraza.WAF
-	mode int  // db.WAFModeDetect or db.WAFModePrevent
-	log  bool // whether audit logging is enabled
+	mode int    // db.WAFModeDetect or db.WAFModePrevent
+	log  bool   // whether audit logging is enabled
+	fp   string // fingerprint of the inputs that produced the compiled ruleset
 }
 
 // overlayFS gives local CRS files priority over the embedded coreruleset.
@@ -123,7 +126,7 @@ func (o overlayFS) Open(name string) (fs.File, error) {
 // plugins is the list of plugin names to load (e.g. "wordpress-rule-exclusions");
 // pass nil for the global engine. All three file types for each plugin are
 // included in the correct order: config → before → CRS rules → after.
-func NewWAFEngine(s db.WAFSettings, extraExclusions, crsDir string, plugins []string) (*WAFEngine, error) {
+func NewWAFEngine(s db.WAFSettings, extraExclusions, crsDir string, plugins []string, fp string) (*WAFEngine, error) {
 
 	// resolve per-plugin directives in the correct load order when a local
 	// CRS install is present and plugins have been selected
@@ -164,7 +167,29 @@ Include @crs-setup.conf.example
 	}
 
 	logger.Debug("waf: engine ready (mode=%d pl=%d audit=%v plugins=%v)", s.Mode, s.ParanoiaLevel, s.AuditLog, plugins)
-	return &WAFEngine{waf: waf, mode: s.Mode, log: s.AuditLog}, nil
+	return &WAFEngine{waf: waf, mode: s.Mode, log: s.AuditLog, fp: fp}, nil
+}
+
+// wafFingerprint identifies every input that affects rule compilation. Mode and
+// audit logging are deliberately excluded — they are wrapper state, not
+// compiled directives, so a change to either can reuse an existing ruleset.
+func wafFingerprint(s db.WAFSettings, extraExclusions, crsDir, crsVersion string, plugins []string) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "pl=%d\x00", s.ParanoiaLevel)
+	fmt.Fprintf(h, "gx=%s\x00", s.Exclusions)
+	fmt.Fprintf(h, "sx=%s\x00", extraExclusions)
+	fmt.Fprintf(h, "crs=%s\x00%s\x00", crsDir, crsVersion)
+	for _, p := range plugins {
+		fmt.Fprintf(h, "pg=%s\x00", p)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// reuse returns an engine sharing this one's compiled ruleset but carrying the
+// supplied operational settings. Callers must have already confirmed the
+// fingerprints match — only mode and audit logging may differ.
+func (e *WAFEngine) reuse(s db.WAFSettings) *WAFEngine {
+	return &WAFEngine{waf: e.waf, mode: s.Mode, log: s.AuditLog, fp: e.fp}
 }
 
 // Inspect runs a Coraza transaction against the incoming request.
