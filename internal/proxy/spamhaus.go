@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
@@ -58,7 +58,7 @@ type dropRecord struct {
 // dropFeed is the in-memory Spamhaus DROP set. It is built complete and
 // swapped in as a whole — never mutated under readers on the request path.
 type dropFeed struct {
-	cidrs []*compiledIPRule
+	cidrs ipTable
 	asns  map[uint32]struct{}
 }
 
@@ -240,27 +240,17 @@ func scanDropRecords(data []byte, fn func(dropRecord) error) error {
 	return nil
 }
 
-// parseDropCIDRs compiles a DROP v4 or v6 payload into IP rules that reuse the
-// same matcher type as manually configured rules.
-func parseDropCIDRs(data []byte) ([]*compiledIPRule, error) {
-	var out []*compiledIPRule
-
-	err := scanDropRecords(data, func(rec dropRecord) error {
+// parseDropCIDRs compiles a DROP list payload into a prefix table.
+func parseDropCIDRs(data []byte, into *ipTable) error {
+	return scanDropRecords(data, func(rec dropRecord) error {
 		if rec.CIDR == "" {
 			return nil
 		}
-		compiled, err := compileIPRule(rec.CIDR)
-		if err != nil {
+		if err := into.add(rec.CIDR); err != nil {
 			logger.Warn("drop: skipping invalid CIDR '%s': %v", rec.CIDR, err)
-			return nil
 		}
-		out = append(out, compiled)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // parseDropASNs compiles an ASN-DROP payload into a set for O(1) hot-path hits.
@@ -290,8 +280,8 @@ func UpdateSpamhausDrop(appPath string) error {
 	}
 
 	cidrParse := func(data []byte) error {
-		_, err := parseDropCIDRs(data)
-		return err
+		var tbl ipTable
+		return parseDropCIDRs(data, &tbl)
 	}
 	asnParse := func(data []byte) error {
 		_, err := parseDropASNs(data)
@@ -317,16 +307,12 @@ func UpdateSpamhausDrop(appPath string) error {
 }
 
 // matchesIP reports whether the address falls inside any DROP netblock.
-func (f *dropFeed) matchesIP(ip net.IP) bool {
+func (f *dropFeed) matchesIP(addr netip.Addr) bool {
 	if f == nil {
 		return false
 	}
-	for _, r := range f.cidrs {
-		if r.matchesIP(ip) {
-			return true
-		}
-	}
-	return false
+	_, hit := f.cidrs.lookup(addr)
+	return hit
 }
 
 // matchesASN reports whether the autonomous system number is in ASN-DROP.
@@ -341,7 +327,7 @@ func (f *dropFeed) matchesASN(asn uint32) bool {
 // empty reports whether the feed carries no entries — used to skip the feed
 // check entirely when the lists never loaded.
 func (f *dropFeed) empty() bool {
-	return f == nil || (len(f.cidrs) == 0 && len(f.asns) == 0)
+	return f == nil || (f.cidrs.len() == 0 && len(f.asns) == 0)
 }
 
 // buildDropFeed parses the three cached list payloads into a single feed. A
@@ -354,12 +340,10 @@ func buildDropFeed(v4, v6, asn []byte) *dropFeed {
 		if len(p) == 0 {
 			continue
 		}
-		cidrs, err := parseDropCIDRs(p)
-		if err != nil {
+		if err := parseDropCIDRs(p, &feed.cidrs); err != nil {
 			logger.Warn("drop: parse CIDR list: %v", err)
 			continue
 		}
-		feed.cidrs = append(feed.cidrs, cidrs...)
 	}
 
 	if len(asn) > 0 {
@@ -384,5 +368,5 @@ func (p *Proxy) swapDropFeed(feed *dropFeed) {
 	}
 
 	p.dropFeed.Store(feed)
-	logger.Debug("drop: feed active with %d netblocks and %d ASNs", len(feed.cidrs), len(feed.asns))
+	logger.Debug("drop: feed active with %d netblocks and %d ASNs", feed.cidrs.len(), len(feed.asns))
 }

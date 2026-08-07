@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sns v1.42.3
 	github.com/corazawaf/coraza-coreruleset/v4 v4.25.0
 	github.com/corazawaf/coraza/v3 v3.7.0
+	github.com/gaissmai/bart v0.29.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/mattn/go-sqlite3 v1.14.49
 	github.com/oschwald/maxminddb-golang v1.13.1

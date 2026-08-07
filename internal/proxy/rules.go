@@ -6,17 +6,20 @@ package proxy
 
 import (
 	"net"
+	"net/netip"
 	"strings"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
+
+	"github.com/gaissmai/bart"
 )
 
-// compiledIPRule holds a parsed network for fast CIDR matching
-type compiledIPRule struct {
-	raw  string
-	net  *net.IPNet
-	host net.IP // set when raw is a bare IP with no mask
+// ipTable is a prefix-trie of IP rules. The stored value is the raw rule text
+// so debug logging can name the matching entry. Bare IPs compile to /32 or /128.
+type ipTable struct {
+	tbl *bart.Table[string]
+	n   int
 }
 
 // compiledUARule holds a lowercased pattern for case-insensitive substring matching
@@ -26,8 +29,8 @@ type compiledUARule struct {
 
 // ruleSet holds the four lists for a single scope (global or per-site)
 type ruleSet struct {
-	ipBlacklist      []*compiledIPRule
-	ipWhitelist      []*compiledIPRule
+	ipBlacklist      ipTable
+	ipWhitelist      ipTable
 	uaBlacklist      []*compiledUARule
 	uaWhitelist      []*compiledUARule
 	countryBlacklist []string
@@ -52,34 +55,60 @@ func (r *compiledUARule) matches(uaLower string) bool {
 	return strings.Contains(uaLower, r.pattern)
 }
 
-// compileIPRule parses a CIDR string or bare IP into a compiledIPRule.
-// Bare IPs (no mask) are stored as host addresses for exact matching.
-func compileIPRule(cidr string) (*compiledIPRule, error) {
-
-	// attempt to parse as a CIDR block first
-	_, network, err := net.ParseCIDR(cidr)
+// compilePrefix parses a CIDR string or bare IP into a netip.Prefix.
+// Bare IPs (no mask) become host prefixes for exact matching.
+func compilePrefix(cidr string) (netip.Prefix, error) {
+	pfx, err := netip.ParsePrefix(cidr)
 	if err == nil {
-		logger.Debug("compileIPRule: compiled CIDR %s", cidr)
-		return &compiledIPRule{raw: cidr, net: network}, nil
+		return pfx.Masked(), nil
 	}
 
 	// fall back to treating it as a bare IP address
-	ip := net.ParseIP(cidr)
-	if ip == nil {
-		logger.Error("compileIPRule: invalid IP or CIDR '%s': %v", cidr, err)
-		return nil, err
+	addr, aerr := netip.ParseAddr(cidr)
+	if aerr != nil {
+		logger.Error("compilePrefix: invalid IP or CIDR '%s': %v", cidr, err)
+		return netip.Prefix{}, err
 	}
-
-	logger.Debug("compileIPRule: compiled bare IP %s", cidr)
-	return &compiledIPRule{raw: cidr, host: ip}, nil
+	return netip.PrefixFrom(addr, addr.BitLen()), nil
 }
 
-// matchesIP returns true if the given IP address matches this rule.
-func (r *compiledIPRule) matchesIP(ip net.IP) bool {
-	if r.net != nil {
-		return r.net.Contains(ip)
+// add compiles and inserts a rule, allocating the table on first use.
+// Invalid entries are skipped by the caller.
+func (t *ipTable) add(cidr string) error {
+	pfx, err := compilePrefix(cidr)
+	if err != nil {
+		return err
 	}
-	return r.host.Equal(ip)
+	if t.tbl == nil {
+		t.tbl = &bart.Table[string]{}
+	}
+	t.tbl.Insert(pfx, cidr)
+	t.n++
+	return nil
+}
+
+// len reports how many rules the table holds — an empty table imposes nothing.
+func (t *ipTable) len() int {
+	return t.n
+}
+
+// lookup reports whether the address falls inside any prefix, returning the
+// raw text of the matching rule.
+func (t *ipTable) lookup(ip netip.Addr) (string, bool) {
+	if t == nil || t.tbl == nil {
+		return "", false
+	}
+	return t.tbl.Lookup(ip)
+}
+
+// toAddr converts a net.IP to the netip.Addr form the tables index on,
+// unmapping 4-in-6 addresses so a v4 client matches a v4 prefix.
+func toAddr(ip net.IP) (netip.Addr, bool) {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return netip.Addr{}, false
+	}
+	return addr.Unmap(), true
 }
 
 // buildSecurityCache compiles all IP and UA rules from the database into
@@ -91,30 +120,32 @@ func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules
 
 	// compile IP rules into the appropriate scope and list
 	for _, r := range ipRules {
-		compiled, err := compileIPRule(r.CIDR)
-		if err != nil {
-			// log and skip invalid entries rather than aborting the whole cache build
-			logger.Warn("buildSecurityCache: skipping invalid IP rule '%s': %v", r.CIDR, err)
-			continue
-		}
-
+		var target *ipTable
 		if r.SiteID == nil {
 			// global rule
 			if r.ListType == 0 {
-				cache.global.ipBlacklist = append(cache.global.ipBlacklist, compiled)
+				target = &cache.global.ipBlacklist
 			} else {
-				cache.global.ipWhitelist = append(cache.global.ipWhitelist, compiled)
+				target = &cache.global.ipWhitelist
 			}
-		} else {
-			// per-site rule — get or create the site's rule set
-			rs := cache.perSite[*r.SiteID]
-			if r.ListType == 0 {
-				rs.ipBlacklist = append(rs.ipBlacklist, compiled)
-			} else {
-				rs.ipWhitelist = append(rs.ipWhitelist, compiled)
+			if err := target.add(r.CIDR); err != nil {
+				// log and skip invalid entries rather than aborting the whole cache build
+				logger.Warn("buildSecurityCache: skipping invalid IP rule '%s': %v", r.CIDR, err)
 			}
-			cache.perSite[*r.SiteID] = rs
+			continue
 		}
+
+		// per-site rule — get or create the site's rule set
+		rs := cache.perSite[*r.SiteID]
+		if r.ListType == 0 {
+			target = &rs.ipBlacklist
+		} else {
+			target = &rs.ipWhitelist
+		}
+		if err := target.add(r.CIDR); err != nil {
+			logger.Warn("buildSecurityCache: skipping invalid IP rule '%s': %v", r.CIDR, err)
+		}
+		cache.perSite[*r.SiteID] = rs
 	}
 
 	// compile UA rules into the appropriate scope and list
@@ -218,65 +249,67 @@ func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules
 // checkIP evaluates a client IP against a rule set. IP whitelists are the one
 // exception to blacklist supremacy: a whitelist match in either scope allows
 // the request outright, ahead of both blacklists and the Spamhaus DROP feed.
-// A non-empty whitelist the IP does not match still blocks. Returns false and
-// the log attribution token when the request should be blocked.
-func checkIP(ip net.IP, global, site ruleSet, feed *dropFeed) (bool, string) {
+// A non-empty whitelist the IP does not match still blocks. skipGlobalDeny is
+// set by the per-site pass, where the global blacklist and the DROP feed were
+// already cleared by enforceGlobalSecurity and re-scanning them is wasted work.
+// Returns false and the log attribution token when the request should be blocked.
+func checkIP(ip net.IP, global, site ruleSet, feed *dropFeed, skipGlobalDeny bool) (bool, string) {
+
+	addr, ok := toAddr(ip)
+	if !ok {
+		return true, ""
+	}
 
 	// per-site whitelist — a match allows outright, ahead of every blacklist
-	for _, r := range site.ipWhitelist {
-		if r.matchesIP(ip) {
-			if logger.IsDebug() {
-				logger.Debug("checkIP: allowed by site whitelist: %s", ip)
-			}
-			return true, ""
+	if raw, hit := site.ipWhitelist.lookup(addr); hit {
+		if logger.IsDebug() {
+			logger.Debug("checkIP: allowed by site whitelist rule %s: %s", raw, ip)
 		}
+		return true, ""
 	}
 
 	// global whitelist — a match allows outright, ahead of every blacklist
-	for _, r := range global.ipWhitelist {
-		if r.matchesIP(ip) {
-			if logger.IsDebug() {
-				logger.Debug("checkIP: allowed by global whitelist: %s", ip)
-			}
-			return true, ""
+	if raw, hit := global.ipWhitelist.lookup(addr); hit {
+		if logger.IsDebug() {
+			logger.Debug("checkIP: allowed by global whitelist rule %s: %s", raw, ip)
 		}
+		return true, ""
 	}
 
 	// a non-empty whitelist in either scope is a filter — no match means block
-	if len(site.ipWhitelist) > 0 || len(global.ipWhitelist) > 0 {
+	if site.ipWhitelist.len() > 0 || global.ipWhitelist.len() > 0 {
 		if logger.IsDebug() {
 			logger.Debug("checkIP: blocked by whitelist miss: %s", ip)
 		}
 		return false, "ip"
 	}
 
-	// global blacklist — hard block
-	for _, r := range global.ipBlacklist {
-		if r.matchesIP(ip) {
+	if !skipGlobalDeny {
+
+		// global blacklist — hard block
+		if raw, hit := global.ipBlacklist.lookup(addr); hit {
 			if logger.IsDebug() {
-				logger.Debug("checkIP: blocked by global blacklist: %s", ip)
+				logger.Debug("checkIP: blocked by global blacklist rule %s: %s", raw, ip)
 			}
 			return false, "ip"
 		}
-	}
 
-	// Spamhaus DROP — an extension of the global blacklist, attributed
-	// separately so feed hits are distinguishable from operator rules
-	if feed.matchesIP(ip) {
-		if logger.IsDebug() {
-			logger.Debug("checkIP: blocked by spamhaus drop: %s", ip)
+		// Spamhaus DROP — an extension of the global blacklist, attributed
+		// separately so feed hits are distinguishable from operator rules
+		if feed.matchesIP(addr) {
+			if logger.IsDebug() {
+				logger.Debug("checkIP: blocked by spamhaus drop: %s", ip)
+			}
+			return false, dropBlockReason
 		}
-		return false, dropBlockReason
 	}
 
 	// per-site blacklist — hard block
-	for _, r := range site.ipBlacklist {
-		if r.matchesIP(ip) {
-			if logger.IsDebug() {
-				logger.Debug("checkIP: blocked by site blacklist: %s", ip)
-			}
-			return false, "ip"
+	if raw, hit := site.ipBlacklist.lookup(addr); hit {
+		if logger.IsDebug() {
+			logger.Debug("checkIP: blocked by site blacklist rule %s: %s", raw, ip)
 		}
+		return false, "ip"
 	}
 
 	return true, ""
@@ -508,7 +541,7 @@ func checkUA(ua string, global, site ruleSet) bool {
 // boundary. Taking the leftmost entry instead would trust a value the client
 // can spoof, since appending proxies (Cloudflare/Fastly) preserve any
 // client-supplied X-Forwarded-For entries to the left of the real chain.
-func parseClientIP(remoteAddr, forwarded string, trustedProxies []*net.IPNet) net.IP {
+func parseClientIP(remoteAddr, forwarded string, trustedProxies *ipTable) net.IP {
 
 	// strip port from RemoteAddr and parse
 	host, _, err := net.SplitHostPort(remoteAddr)
@@ -526,12 +559,12 @@ func parseClientIP(remoteAddr, forwarded string, trustedProxies []*net.IPNet) ne
 		if ip.IsLoopback() {
 			return true
 		}
-		for _, network := range trustedProxies {
-			if network.Contains(ip) {
-				return true
-			}
+		addr, ok := toAddr(ip)
+		if !ok {
+			return false
 		}
-		return false
+		_, hit := trustedProxies.lookup(addr)
+		return hit
 	}
 
 	// the header is only trustworthy when the connection itself arrived from a

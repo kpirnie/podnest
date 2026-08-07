@@ -7,8 +7,8 @@ package proxy
 import (
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"podnest/internal/db"
@@ -276,21 +276,22 @@ func (p *Proxy) warmSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, co
 func (p *Proxy) warmTrustedProxies(cidrs []string) {
 
 	// compile the CIDRs into net.IPNet ranges, skipping any invalid entries
-	nets := make([]*net.IPNet, 0, len(cidrs))
+	tbl := ipTable{}
 	for _, cidr := range cidrs {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
 
-			// bare IPs are not valid proxy ranges — log and skip
+		// bare IPs are not valid proxy ranges — reject anything without a mask
+		if _, err := netip.ParsePrefix(cidr); err != nil {
 			logger.Warn("WarmTrustedProxies: skipping invalid CIDR '%s': %v", cidr, err)
 			continue
 		}
-		nets = append(nets, network)
+		if err := tbl.add(cidr); err != nil {
+			logger.Warn("WarmTrustedProxies: skipping invalid CIDR '%s': %v", cidr, err)
+		}
 	}
 
 	// atomically install the compiled ranges
-	p.trustedProxies.Store(&nets)
-	logger.Debug("proxy: trusted proxies warmed — %d ranges", len(nets))
+	p.trustedProxies.Store(&tbl)
+	logger.Debug("proxy: trusted proxies warmed — %d ranges", tbl.len())
 }
 
 // warmBypassCache compiles bypass CIDRs/IPs and atomically installs the result.
@@ -298,19 +299,16 @@ func (p *Proxy) warmTrustedProxies(cidrs []string) {
 func (p *Proxy) warmBypassCache(rules []*db.BypassRule) {
 
 	// compile the bypass CIDRs into compiledIPRule entries, skipping any invalid entries
-	compiled := make([]*compiledIPRule, 0, len(rules))
+	tbl := ipTable{}
 	for _, r := range rules {
-		c, err := compileIPRule(r.CIDR)
-		if err != nil {
+		if err := tbl.add(r.CIDR); err != nil {
 			logger.Warn("warmBypassCache: skipping invalid entry '%s': %v", r.CIDR, err)
-			continue
 		}
-		compiled = append(compiled, c)
 	}
 
 	// atomically install the compiled bypass rules
-	p.bypassNets.Store(&compiled)
-	logger.Debug("proxy: bypass cache warmed — %d entries", len(compiled))
+	p.bypassNets.Store(&tbl)
+	logger.Debug("proxy: bypass cache warmed — %d entries", tbl.len())
 }
 
 // WarmWAFCache loads WAF settings and per-site overrides from the database,

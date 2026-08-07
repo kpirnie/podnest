@@ -90,8 +90,8 @@ type Proxy struct {
 	wafEngine         atomic.Pointer[WAFEngine]                    // global compiled engine
 	wafSiteEngines    sync.Map                                     // int64(siteID) → *WAFEngine
 	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
-	trustedProxies    atomic.Pointer[[]*net.IPNet]                 // compiled trusted proxy ranges; swapped atomically on refresh
-	bypassNets        atomic.Pointer[[]*compiledIPRule]            // compiled bypass IP rules; swapped atomically on change
+	trustedProxies    atomic.Pointer[ipTable]                      // compiled trusted proxy ranges; swapped atomically on refresh
+	bypassNets        atomic.Pointer[ipTable]                      // compiled bypass IP rules; swapped atomically on change
 	geoDB             atomic.Pointer[maxminddb.Reader]             // in-memory country database; swapped atomically on refresh
 	asnDB             atomic.Pointer[maxminddb.Reader]             // in-memory ASN database; swapped atomically on refresh
 	dropFeed          atomic.Pointer[dropFeed]                     // Spamhaus DROP lists; swapped atomically on refresh
@@ -206,7 +206,7 @@ func New(cfg Config) *Proxy {
 	p.wafOverrides.Store(&emptyOverrides)
 
 	// seed an initial empty trusted proxy list so Load() never returns nil
-	emptyProxies := make([]*net.IPNet, 0)
+	emptyProxies := ipTable{}
 	p.trustedProxies.Store(&emptyProxies)
 
 	// seed an empty DROP feed so Load() never returns nil before the lists load
@@ -448,7 +448,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // string form — net.IP.String() allocates a new string on every call, so
 // converting once here avoids redundant allocations per request.
 func (p *Proxy) resolveClientIP(r *http.Request) (net.IP, string) {
-	ip := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
+	ip := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), p.trustedProxies.Load())
 	ipStr := "<unknown>"
 	if ip != nil {
 		ipStr = ip.String()
@@ -492,7 +492,7 @@ func (p *Proxy) blockRequest(w http.ResponseWriter, r *http.Request, clientIPStr
 func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, clientIP net.IP, clientIPStr string, start time.Time) bool {
 
 	// bypass list — matching IPs skip all enforcement
-	if clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load()) {
+	if clientIP != nil && isIPBypassed(clientIP, p.bypassNets.Load()) {
 		return false
 	}
 
@@ -500,7 +500,7 @@ func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, cl
 
 	// enforce global IP rules
 	if clientIP != nil {
-		if ok, reason := checkIP(clientIP, sec.global, ruleSet{}, p.dropFeed.Load()); !ok {
+		if ok, reason := checkIP(clientIP, sec.global, ruleSet{}, p.dropFeed.Load(), false); !ok {
 			p.blockRequest(w, r, clientIPStr, start, 0, "", reason)
 			return true
 		}
@@ -539,7 +539,7 @@ func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, cl
 func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clientIP net.IP, clientIPStr string, start time.Time, siteID int64, siteName string) bool {
 
 	// bypass list — matching IPs skip all IP, UA, and WAF enforcement
-	if clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load()) {
+	if clientIP != nil && isIPBypassed(clientIP, p.bypassNets.Load()) {
 		return false
 	}
 
@@ -556,7 +556,7 @@ func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clie
 
 	// enforce IP rules — whitelist match wins, otherwise blacklists decide
 	if clientIP != nil {
-		if ok, reason := checkIP(clientIP, sec.global, siteRules, p.dropFeed.Load()); !ok {
+		if ok, reason := checkIP(clientIP, sec.global, siteRules, p.dropFeed.Load(), true); !ok {
 			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, reason)
 			return true
 		}
@@ -814,7 +814,7 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 		}
 
 		// resolve client IP using the same trusted proxy logic as proxied sites
-		clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
+		clientIP := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), p.trustedProxies.Load())
 
 		clientIPStr := "<unknown>"
 		if clientIP != nil {
@@ -824,7 +824,7 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 		// the bypass list is the break-glass path for an admin whose IP has landed
 		// in a global blacklist or the DROP feed — without this the panel, and so
 		// the login page, stays unreachable no matter what CIDR is bypassed
-		if clientIP != nil && isIPBypassed(clientIP, *p.bypassNets.Load()) {
+		if clientIP != nil && isIPBypassed(clientIP, p.bypassNets.Load()) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -833,7 +833,7 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 
 		// enforce global IP rules — no per-site rules apply to the panel
 		if clientIP != nil {
-			if ok, _ := checkIP(clientIP, sec.global, ruleSet{}, p.dropFeed.Load()); !ok {
+			if ok, _ := checkIP(clientIP, sec.global, ruleSet{}, p.dropFeed.Load(), false); !ok {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
@@ -858,18 +858,17 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// isIPBypassed returns true when the client IP matches any entry in the
-// bypass list — bypassed requests skip IP, UA, and WAF enforcement entirely.
-func isIPBypassed(ip net.IP, bypass []*compiledIPRule) bool {
-	for _, r := range bypass {
-		if r.matchesIP(ip) {
-			if logger.IsDebug() {
-				logger.Debug("isIPBypassed: %s matched bypass rule %s", ip, r.raw)
-			}
-			return true
-		}
+// isIPBypassed reports whether the address matches a bypass rule.
+func isIPBypassed(ip net.IP, bypass *ipTable) bool {
+	addr, ok := toAddr(ip)
+	if !ok {
+		return false
 	}
-	return false
+	raw, hit := bypass.lookup(addr)
+	if hit && logger.IsDebug() {
+		logger.Debug("isIPBypassed: %s matched bypass rule %s", ip, raw)
+	}
+	return hit
 }
 
 // ClientIP resolves the real client IP for a request using the proxy's
@@ -877,7 +876,7 @@ func isIPBypassed(ip net.IP, bypass []*compiledIPRule) bool {
 // site traffic. Use this anywhere the client IP must not be forgeable via
 // X-Forwarded-For (e.g. login rate limiting) instead of reading the header.
 func (p *Proxy) ClientIP(r *http.Request) string {
-	ip := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), *p.trustedProxies.Load())
+	ip := parseClientIP(r.RemoteAddr, r.Header.Get("X-Forwarded-For"), p.trustedProxies.Load())
 	if ip == nil {
 		return ""
 	}
