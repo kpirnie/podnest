@@ -20,6 +20,38 @@ type contextKey string
 // ctxUser is the context key for the authenticated user
 const ctxUser contextKey = "user"
 const ctxCSRF contextKey = "csrf"
+const ctxSession contextKey = "session"
+
+// WithSession attaches a resolved session and user to a request context so
+// downstream middleware layers can reuse them instead of re-querying.
+func WithSession(ctx context.Context, session *models.Session, user *models.User) context.Context {
+	return context.WithValue(ctx, ctxSession, [2]any{session, user})
+}
+
+// SessionFromContext returns the session and user attached by WithSession.
+// Both are nil when nothing was attached.
+func SessionFromContext(ctx context.Context) (*models.Session, *models.User) {
+	v, ok := ctx.Value(ctxSession).([2]any)
+	if !ok {
+		return nil, nil
+	}
+	session, _ := v[0].(*models.Session)
+	user, _ := v[1].(*models.User)
+	return session, user
+}
+
+// resolve returns the session and user for a request, preferring an already
+// resolved pair from the context and falling back to a database lookup.
+func resolve(database *sql.DB, r *http.Request) (*models.Session, *models.User, error) {
+	if session, user := SessionFromContext(r.Context()); session != nil && user != nil {
+		return session, user, nil
+	}
+	sessionID := SessionFromRequest(r)
+	if sessionID == "" {
+		return nil, nil, nil
+	}
+	return SessionAndUser(database, sessionID)
+}
 
 // RequireAuth rejects unauthenticated requests with a redirect to /login
 func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
@@ -34,8 +66,8 @@ func RequireAuth(database *sql.DB, next http.Handler) http.Handler {
 			return
 		}
 
-		// If a session cookie is found, look up the user in the database.
-		session, user, err := SessionAndUser(database, sessionID)
+		// resolve identity — reuses the pair already attached by an outer layer
+		session, user, err := resolve(database, r)
 		if err != nil || user == nil {
 			logger.Error("the session cookie is invalid: %v", err)
 			ClearSessionCookie(w, r)
@@ -105,8 +137,8 @@ func RequireAPIAuth(database *sql.DB, next http.Handler) http.Handler {
 			return
 		}
 
-		// If a session cookie is found, look up the user in the database.
-		session, user, err := SessionAndUser(database, sessionID)
+		// resolve identity — reuses the pair already attached by an outer layer
+		session, user, err := resolve(database, r)
 		if err != nil || user == nil {
 			logger.Error("the session cookie is invalid: %v", err)
 			apiUnauthorized(w)

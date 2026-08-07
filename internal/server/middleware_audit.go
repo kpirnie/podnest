@@ -38,14 +38,19 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// best-effort identity resolution — cookie → user; nil if invalid/absent
+		// best-effort identity resolution — reuses the pair attached by the
+		// panel security layer; nil if invalid/absent
 		var uid *int64
 		username := ""
-		if sessionID := auth.SessionFromRequest(r); sessionID != "" {
-			if user, err := auth.SessionUser(s.cfg.DB, sessionID); err == nil && user != nil {
-				uid = &user.ID
-				username = user.UName
+		_, user := auth.SessionFromContext(r.Context())
+		if user == nil {
+			if sessionID := auth.SessionFromRequest(r); sessionID != "" {
+				user, _ = auth.SessionUser(s.cfg.DB, sessionID)
 			}
+		}
+		if user != nil {
+			uid = &user.ID
+			username = user.UName
 		}
 
 		// cap and restore the request body so downstream handlers can still read it

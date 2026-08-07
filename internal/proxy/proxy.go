@@ -803,10 +803,12 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// authenticated sessions bypass WAF, IP, and UA checks entirely —
-		// the user has already passed login; blocking their API calls is wrong
+		// the user has already passed login; blocking their API calls is wrong.
+		// The resolved pair rides the context so the audit and auth layers
+		// beneath do not repeat the same two queries.
 		if sessionID := auth.SessionFromRequest(r); sessionID != "" {
-			if user, err := auth.SessionUser(p.database, sessionID); err == nil && user != nil {
-				next.ServeHTTP(w, r)
+			if session, user, err := auth.SessionAndUser(p.database, sessionID); err == nil && session != nil && user != nil {
+				next.ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), session, user)))
 				return
 			}
 		}
