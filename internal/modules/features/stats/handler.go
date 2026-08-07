@@ -132,6 +132,10 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin:     apiutil.WSSameOrigin,
 }
 
+// duMaxWall bounds how long a disk-usage walk may run. A large html tree on
+// slow storage would otherwise hold the request goroutine indefinitely.
+const duMaxWall = 15 * time.Second
+
 // -- per-site routes ---------------------------------------------------------
 
 // apiSiteTraffic returns cached traffic stats for a single site.
@@ -266,8 +270,8 @@ func (h *Handler) apiSiteDisk(w http.ResponseWriter, r *http.Request) {
 
 	base := fmt.Sprintf("%s/sites/%s", h.AppPath, site.Name)
 	resp := diskResponse{
-		HTMLBytes: duBytes(base + "/html"),
-		DBBytes:   duBytes(base + "/db"),
+		HTMLBytes: duBytes(r.Context(), base+"/html"),
+		DBBytes:   duBytes(r.Context(), base+"/db"),
 	}
 	apiutil.JSON(w, http.StatusOK, resp)
 }
@@ -807,9 +811,15 @@ func topN(counts map[string]int, n int) []CountedEntry {
 }
 
 // duBytes runs du -sb on a path and returns the byte count, or 0 on error.
-func duBytes(path string) int64 {
-	out, err := exec.Command("du", "-sb", path).Output()
+// The context is the request's, so a client disconnect kills the child process
+// rather than leaving it walking the tree for a response nobody will read.
+func duBytes(ctx context.Context, path string) int64 {
+	ctx, cancel := context.WithTimeout(ctx, duMaxWall)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "du", "-sb", path).Output()
 	if err != nil {
+		logger.Debug("stats: du -sb %s: %v", path, err)
 		return 0
 	}
 	parts := strings.Fields(string(out))
