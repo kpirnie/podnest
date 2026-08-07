@@ -108,7 +108,6 @@ type Proxy struct {
 	accessLogCh       chan accessLogEntry                          // async drain channel — request goroutines never block on log writes
 	accessLogDone     chan struct{}                                // closed when the drain goroutine has finished
 	wafLog            *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
-	wafLogMu          sync.Mutex                                   // guards concurrent writes to wafLog
 	siteAccessLogs    sync.Map                                     // int64(siteID) → *os.File for per-site access.log
 	siteWAFLogs       sync.Map                                     // int64(siteID) → *os.File for per-site waf.log
 	manager           *autocert.Manager
@@ -342,11 +341,9 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 		p.accessLog.Close()
 	}
 
-	// flush and close the waf log file
+	// close the WAF log file — the drain has already stopped above
 	if p.wafLog != nil {
-		p.wafLogMu.Lock()
 		p.wafLog.Close()
-		p.wafLogMu.Unlock()
 	}
 }
 
@@ -620,7 +617,7 @@ func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clie
 
 	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
 	if wafEngine != nil {
-		if !wafEngine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, siteID, siteName, p.appPath) {
+		if !wafEngine.Inspect(w, r, clientIPStr, p.enqueueWAFLog, siteID, siteName) {
 			// WAF wrote the 403; record it in the access log for Fail2Ban
 			// the triggering rule ID is already recorded in waf.log by writeWAFLog
 			p.writeAccessLog(r, http.StatusForbidden, 0, start, time.Since(start), clientIPStr, siteID, siteName, "waf")
@@ -868,7 +865,7 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 		// enforce global WAF — siteID 0, siteName "panel" for log attribution
 		if p.wafEnabled.Load() {
 			if engine := p.wafEngine.Load(); engine != nil {
-				if !engine.Inspect(w, r, clientIPStr, p.wafLog, &p.wafLogMu, 0, "PODNEST", p.appPath) {
+				if !engine.Inspect(w, r, clientIPStr, p.enqueueWAFLog, 0, "PODNEST") {
 					return
 				}
 			}

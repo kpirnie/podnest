@@ -14,13 +14,23 @@ import (
 	"podnest/internal/logger"
 )
 
-// accessLogEntry is a single formatted access-log line queued for async write.
-// siteID 0 routes to the global proxy-access.log; siteName is only meaningful
-// when siteID > 0.
+// accessLogEntry is a single formatted log line queued for async write.
+// siteID 0 routes to the global log; siteName is only meaningful when
+// siteID > 0. waf selects the WAF log rather than the access log.
 type accessLogEntry struct {
 	siteID   int64
 	siteName string
 	line     string
+	waf      bool
+}
+
+// enqueueWAFLog is the wafLogSink implementation handed to the WAF engine.
+func (p *Proxy) enqueueWAFLog(siteID int64, siteName, line string) {
+	select {
+	case p.accessLogCh <- accessLogEntry{siteID: siteID, siteName: siteName, line: line, waf: true}:
+	default:
+		logger.Warn("proxy: access log channel full — WAF line dropped siteID=%d", siteID)
+	}
 }
 
 // siteLogFile returns the open *os.File for a per-site log, creating the file
@@ -71,21 +81,31 @@ func (p *Proxy) drainAccessLogs() {
 
 	for e := range p.accessLogCh {
 		if e.siteID > 0 {
-			f := p.siteLogFile(&p.siteAccessLogs, e.siteID, e.siteName, "access")
+			cache := &p.siteAccessLogs
+			logType := "access"
+			if e.waf {
+				cache = &p.siteWAFLogs
+				logType = "waf"
+			}
+			f := p.siteLogFile(cache, e.siteID, e.siteName, logType)
 			if f == nil {
 				continue
 			}
 			if _, err := f.WriteString(e.line); err != nil {
-				logger.Error("proxy: site access log write failed siteID=%d: %v", e.siteID, err)
+				logger.Error("proxy: site %s log write failed siteID=%d: %v", logType, e.siteID, err)
 			}
 			continue
 		}
 
-		if p.accessLog == nil {
+		global := p.accessLog
+		if e.waf {
+			global = p.wafLog
+		}
+		if global == nil {
 			continue
 		}
-		if _, err := p.accessLog.WriteString(e.line); err != nil {
-			logger.Error("proxy: access log write failed: %v", err)
+		if _, err := global.WriteString(e.line); err != nil {
+			logger.Error("proxy: global log write failed: %v", err)
 		}
 	}
 }

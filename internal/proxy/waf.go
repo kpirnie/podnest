@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
@@ -43,6 +42,10 @@ type overlayFS struct {
 	local    fs.FS // locally downloaded CRS — takes priority
 	embedded fs.FS // embedded coraza-coreruleset — fallback only
 }
+
+// wafLogSink receives a formatted WAF log line for async write. siteID 0 means
+// the global log. Implemented by (*Proxy).enqueueWAFLog.
+type wafLogSink func(siteID int64, siteName, line string)
 
 // siteExclusionDirectives are the Sec* directives a site owner may enter in the
 // per-site exclusions field. buildDirectives passes Sec* lines through verbatim,
@@ -167,7 +170,7 @@ Include @crs-setup.conf.example
 // Inspect runs a Coraza transaction against the incoming request.
 // Returns true if the request should proceed to the upstream proxy.
 // On a block decision a 403 has already been written to w.
-func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, accessLog *os.File, logMu *sync.Mutex, siteID int64, siteName string, appPath string) bool {
+func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, sink wafLogSink, siteID int64, siteName string) bool {
 	tx := e.waf.NewTransaction()
 	defer func() {
 		tx.ProcessLogging()
@@ -202,7 +205,7 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 		}
 	}
 	if it := tx.ProcessRequestHeaders(); it != nil {
-		return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
+		return e.interrupt(w, r, it, clientIP, sink, siteID, siteName)
 	}
 
 	// request body phase — buffer up to wafMaxBodyBytes, restore full stream for
@@ -233,7 +236,7 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 			if it, _, err := tx.WriteRequestBody(buf); err != nil {
 				logger.Error("waf: WriteRequestBody: %v", err)
 			} else if it != nil {
-				return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
+				return e.interrupt(w, r, it, clientIP, sink, siteID, siteName)
 			}
 		}
 	}
@@ -246,7 +249,7 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	} else if it != nil {
 		// interrupt call — pass logMu through so writeWAFLog can lock correctly
 
-		return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
+		return e.interrupt(w, r, it, clientIP, sink, siteID, siteName)
 	}
 
 	if logger.IsDebug() {
@@ -257,12 +260,12 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 
 // interrupt handles a WAF interruption. In detect mode it logs and passes the
 // request through. In prevent mode it logs and returns a 403.
-func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, accessLog *os.File, logMu *sync.Mutex, siteID int64, siteName string, appPath string) bool {
+func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, sink wafLogSink, siteID int64, siteName string) bool {
 	action := "DETECT"
 	if e.mode == db.WAFModePrevent {
 		action = "BLOCK"
 	}
-	writeWAFLog(accessLog, logMu, r, clientIP, it.RuleID, action, siteID, siteName, appPath)
+	writeWAFLog(sink, r, clientIP, it.RuleID, action, siteID, siteName)
 
 	if e.mode == db.WAFModePrevent {
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -271,10 +274,16 @@ func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.
 	return true
 }
 
-// writeWAFLog writes a WAF event to the correct WAF log.
-// siteID > 0 routes to {appPath}/sites/{siteName}/logs/waf.log;
-// siteID 0 routes to the global waf.log file handle f.
-func writeWAFLog(f *os.File, mu *sync.Mutex, r *http.Request, clientIP string, ruleID int, action string, siteID int64, siteName string, appPath string) {
+// writeWAFLog formats a WAF event and enqueues it for async write. siteID > 0
+// routes to {appPath}/sites/{siteName}/logs/waf.log via the cached per-site
+// handle; siteID 0 routes to the global waf.log. The sink is the proxy's log
+// drain, so a blocked request costs a channel send rather than an open, write,
+// and close — the syscall storm previously landed precisely during an attack.
+func writeWAFLog(sink wafLogSink, r *http.Request, clientIP string, ruleID int, action string, siteID int64, siteName string) {
+	if sink == nil {
+		return
+	}
+
 	line := fmt.Sprintf("%s WAF %s %s %s rule=%d %s %q\n",
 		time.Now().UTC().Format(time.RFC3339),
 		action,
@@ -285,38 +294,7 @@ func writeWAFLog(f *os.File, mu *sync.Mutex, r *http.Request, clientIP string, r
 		r.UserAgent(),
 	)
 
-	if siteID > 0 {
-		dir := fmt.Sprintf("%s/sites/%s/logs", appPath, siteName)
-		if err := os.MkdirAll(dir, 0750); err != nil {
-			logger.Error("proxy: writeWAFLog: mkdir %s: %v", dir, err)
-			return
-		}
-		path := dir + "/waf.log"
-		sf, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
-		if err != nil {
-			logger.Error("proxy: writeWAFLog: open %s: %v", path, err)
-			return
-		}
-		defer sf.Close()
-		mu.Lock()
-		_, err = sf.WriteString(line)
-		mu.Unlock()
-		if err != nil {
-			logger.Error("proxy: site WAF log write failed siteID=%d: %v", siteID, err)
-		}
-		return
-	}
-
-	// global WAF log — siteID 0
-	if f == nil {
-		return
-	}
-	mu.Lock()
-	_, err := f.WriteString(line)
-	mu.Unlock()
-	if err != nil {
-		logger.Error("waf: access log write: %v", err)
-	}
+	sink(siteID, siteName, line)
 }
 
 // buildDirectives produces inline Coraza/CRS directives for the paranoia level
