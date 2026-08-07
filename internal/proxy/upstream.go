@@ -5,8 +5,11 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -32,6 +35,16 @@ type upstreamEntry struct {
 	upstream string
 	passHost bool
 }
+
+// the cached ReverseProxy's ModifyResponse can signal without closing over
+// per-request state — a captured bool would be shared across every request
+// served by the cached proxy.
+type commitKey struct{}
+
+// rpMaxReplayBytes bounds how large a request body may be before the cascade
+// gives up on failover. Buffering an arbitrarily large upload to make retry
+// possible would hand every client a memory lever on the proxy.
+const rpMaxReplayBytes = 4 << 20 // 4 MB
 
 // newUpstreamPool parses a slice of RPRoute into an UpstreamPool.
 func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
@@ -91,22 +104,44 @@ var errUpstreamStatus = errors.New("upstream returned failover status")
 // before any bytes reach the client, so a rejected upstream can fall through to
 // the next while an accepted one streams straight through.
 // Returns true if the response was committed to the client.
-func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, transport *http.Transport, clientIPFor func(*http.Request) string) bool {
+func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, rp *httputil.ReverseProxy) bool {
+	var committed atomic.Bool
+	rp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), commitKey{}, &committed)))
+	return committed.Load()
+}
 
-	committed := false
-	rp := newReverseProxy(target.URL, transport, target.PassHost, clientIPFor)
-	rp.ModifyResponse = func(resp *http.Response) error {
-		if resp.StatusCode >= 400 {
-			return errUpstreamStatus
-		}
-		committed = true
-		return nil
+// bufferReplayBody reads the request body into memory so a failed upstream can
+// be retried with the same payload, and rewinds r.Body for the first attempt.
+// Reports false when the body exceeds rpMaxReplayBytes, in which case r.Body is
+// restored as a stream and the caller must not fail over.
+func bufferReplayBody(r *http.Request) (bool, []byte) {
+	if r.Body == nil || r.Body == http.NoBody {
+		return true, nil
 	}
-	rp.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
-		logger.Debug("upstream: target '%s' unavailable: %v", target.URL.Host, err)
+
+	buf, err := io.ReadAll(io.LimitReader(r.Body, rpMaxReplayBytes+1))
+	if err != nil {
+		logger.Debug("upstream: buffering request body failed: %v", err)
+		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), r.Body))
+		return false, nil
 	}
-	rp.ServeHTTP(w, r)
-	return committed
+
+	// over the cap — chain the read prefix back on and stream the rest
+	if len(buf) > rpMaxReplayBytes {
+		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), r.Body))
+		return false, nil
+	}
+
+	r.Body = io.NopCloser(bytes.NewReader(buf))
+	return true, buf
+}
+
+// resetReplayBody rewinds the buffered body for another cascade attempt.
+func resetReplayBody(r *http.Request, body []byte) {
+	if body == nil {
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
 }
 
 // newReverseProxy creates a fully transparent httputil.ReverseProxy for the given target.
@@ -171,9 +206,21 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool, 
 			}
 
 		},
+		ModifyResponse: func(resp *http.Response) error {
+
+			// a failover status is not committed — the cascade moves on
+			if resp.StatusCode >= 400 {
+				return errUpstreamStatus
+			}
+			if resp.Request != nil {
+				if c, ok := resp.Request.Context().Value(commitKey{}).(*atomic.Bool); ok {
+					c.Store(true)
+				}
+			}
+			return nil
+		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			logger.Error("upstream: reverse proxy error for target '%s': %v", target.Host, err)
-			http.Error(w, "upstream unavailable", http.StatusBadGateway)
+			logger.Debug("upstream: target '%s' unavailable: %v", target.Host, err)
 		},
 	}
 }

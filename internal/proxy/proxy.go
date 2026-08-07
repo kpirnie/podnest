@@ -411,23 +411,40 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rpPool != nil {
 		startIdx := rpPool.NextIndex()
 
+		// a failed first attempt has already consumed r.Body, so the cascade
+		// replays from a buffer. Over the cap the body is left streaming and
+		// no failover is attempted — a single try is better than sending a
+		// truncated payload to a second upstream.
+		replayable, body := bufferReplayBody(r)
+
 		// first attempt
 		first := rpPool.At(startIdx)
-		if tryUpstream(sw, r, first, p.rpTransportForTarget(first), p.realClientIP) {
+		firstTransport := p.rpTransportForTarget(first)
+		if tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, firstTransport)) {
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+			return
+		}
+
+		if !replayable {
+			http.Error(sw, "upstream unavailable", http.StatusBadGateway)
+			p.writeAccessLog(r, http.StatusBadGateway, 0, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
 
 		// a verified upstream may have a newly-broken cert — flip it back and retry once unverified
-		if p.markTLSUnverified(first) && tryUpstream(sw, r, first, p.rpTransport, p.realClientIP) {
-			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
-			return
+		if p.markTLSUnverified(first) {
+			resetReplayBody(r, body)
+			if tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, p.rpTransport)) {
+				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+				return
+			}
 		}
 
-		// first upstream failed — try remaining upstreams with buffered recorder
+		// first upstream failed — try the remaining upstreams
 		for i := 1; i < rpPool.Len(); i++ {
 			target := rpPool.At(startIdx + i)
-			if tryUpstream(sw, r, target, p.rpTransportForTarget(target), p.realClientIP) {
+			resetReplayBody(r, body)
+			if tryUpstream(sw, r, target, p.getOrCreateRPProxy(target.URL, target.PassHost, p.rpTransportForTarget(target))) {
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 				return
 			}
@@ -751,16 +768,19 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 	return actual.(*httputil.ReverseProxy)
 }
 
-// getOrCreateRPProxy returns a cached *httputil.ReverseProxy for the given upstream URL,
-// creating one if needed. Keyed by the full upstream URL string so connection pools are
-// reused across requests rather than allocated per-request.
-func (p *Proxy) getOrCreateRPProxy(target *url.URL, passHost bool) *httputil.ReverseProxy {
-	key := target.String() + fmt.Sprintf("|ph=%v", passHost)
+// getOrCreateRPProxy returns the cached ReverseProxy for an upstream, building
+// it on first use. The key carries the transport identity because
+// rpTransportForTarget selects the verifying or non-verifying pool per target
+// and the markTLSUnverified retry deliberately forces the non-verifying one —
+// a proxy built against one transport must never be reused for the other.
+func (p *Proxy) getOrCreateRPProxy(target *url.URL, passHost bool, transport *http.Transport) *httputil.ReverseProxy {
+	verify := transport == p.rpVerifyTransport
+	key := target.String() + fmt.Sprintf("|ph=%v|v=%v", passHost, verify)
 	if rp, ok := p.rpProxyCache.Load(key); ok {
 		return rp.(*httputil.ReverseProxy)
 	}
 
-	rp := newReverseProxy(target, p.rpTransport, passHost, p.realClientIP)
+	rp := newReverseProxy(target, transport, passHost, p.realClientIP)
 	actual, _ := p.rpProxyCache.LoadOrStore(key, rp)
 	return actual.(*httputil.ReverseProxy)
 }
