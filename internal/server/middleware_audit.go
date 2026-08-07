@@ -18,11 +18,26 @@ import (
 	"podnest/internal/models"
 )
 
+// auditStatusWriter wraps http.ResponseWriter to capture the written status code.
+// Only substituted for non-GET/HEAD requests — GET WebSocket/streaming routes are never touched.
+type auditStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
 // auditMaxBodyBytes is the maximum request body size captured for the details field.
 const auditMaxBodyBytes = 1 << 20 // 1 MB
 
 // numericSegment matches path segments that are purely numeric (e.g. /sites/42/configs)
 var numericSegment = regexp.MustCompile(`/\d+`)
+
+// auditBodySkipSuffixes are route suffixes whose bodies are multipart uploads.
+// Buffering a megabyte of binary payload only to mask it into uselessness costs
+// throughput and gains nothing, so the body is left untouched for these.
+var auditBodySkipSuffixes = []string{
+	"/files/upload",
+	"/backups/import/upload",
+}
 
 // auditMiddleware is the outermost wrapper for /api/ — it records every non-GET/HEAD
 // request (including unauthenticated ones) to the audit log.
@@ -53,12 +68,14 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			username = user.UName
 		}
 
-		// cap and restore the request body so downstream handlers can still read it
+		// cap the captured body for the audit record, but restore the full
+		// stream to the handler — the unread remainder is chained on after the
+		// captured prefix so large uploads are not silently truncated
 		var bodyBytes []byte
-		if r.Body != nil {
+		if r.Body != nil && !skipAuditBody(r.URL.Path) {
 			limited := io.LimitReader(r.Body, auditMaxBodyBytes)
 			bodyBytes, _ = io.ReadAll(limited)
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), r.Body))
 		}
 
 		// wrap the ResponseWriter to capture the status code after the handler runs
@@ -94,13 +111,6 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			NewState:   newState,
 		})
 	})
-}
-
-// auditStatusWriter wraps http.ResponseWriter to capture the written status code.
-// Only substituted for non-GET/HEAD requests — GET WebSocket/streaming routes are never touched.
-type auditStatusWriter struct {
-	http.ResponseWriter
-	status int
 }
 
 // WriteHeader captures the status code before forwarding it
@@ -166,4 +176,14 @@ func buildDetails(body []byte, rawQuery string) string {
 // so audit-log attribution cannot be spoofed through X-Forwarded-For.
 func (s *Server) auditClientIP(r *http.Request) string {
 	return s.proxy.ClientIP(r)
+}
+
+// skipAuditBody reports whether the request body should be left uncaptured.
+func skipAuditBody(path string) bool {
+	for _, s := range auditBodySkipSuffixes {
+		if strings.HasSuffix(path, s) {
+			return true
+		}
+	}
+	return false
 }
