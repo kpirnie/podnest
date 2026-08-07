@@ -6,6 +6,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,14 +21,11 @@ import (
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/types"
+	"golang.org/x/sync/semaphore"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
 )
-
-// wafMaxBodyBytes is the maximum request body size inspected per request.
-// Bytes beyond this limit are forwarded to the upstream uninspected.
-const wafMaxBodyBytes = 4 << 20 // 4 MB
 
 // pluginSuffixes are the three file types that make up a CRS plugin
 var pluginSuffixes = []string{"-config.conf", "-before.conf", "-after.conf"}
@@ -59,6 +57,40 @@ var siteExclusionDirectives = map[string]bool{
 	"secruleupdatetargetbyid":   true,
 	"secruleupdatetargetbytag":  true,
 	"secruleupdateactionbyid":   true,
+}
+
+// wafMaxBodyBytes is the maximum request body size inspected per request.
+// Bytes beyond this limit are forwarded to the upstream uninspected.
+const wafMaxBodyBytes = 4 << 20 // 4 MB
+
+// wafBodyBudgetBytes caps the total request-body bytes held in memory across
+// all concurrent inspections. Buffered bodies are handed to the upstream and
+// outlive Inspect, so without a ceiling the resident set scales with
+// concurrency times wafMaxBodyBytes.
+const wafBodyBudgetBytes = 512 << 20 // 512 MB
+
+// wafBudgetWait is how long a request waits for budget before being refused.
+// Under normal load small bodies clear instantly and this never fires; it only
+// engages when the budget is genuinely saturated by large concurrent uploads.
+const wafBudgetWait = 2 * time.Second
+
+// wafBodyBudget is a weighted semaphore over wafBodyBudgetBytes. Each request
+// is charged its actual body size rather than a fixed slot, so ordinary small
+// POSTs admit in the thousands while only genuinely large uploads consume real
+// weight. Saturation returns 503 rather than skipping inspection — skipping
+// would let an attacker flood the budget and then walk a payload through the
+// unfiltered path, turning the ceiling into a WAF bypass.
+var wafBodyBudget = semaphore.NewWeighted(wafBodyBudgetBytes)
+
+// wafBodyWeight is the budget charge for a request. A declared Content-Length
+// within the inspection limit is charged as-is; anything larger, negative, or
+// absent (chunked encoding, where the size is not knowable up front) is charged
+// the full inspection limit.
+func wafBodyWeight(r *http.Request) int64 {
+	if n := r.ContentLength; n > 0 && n < wafMaxBodyBytes {
+		return n
+	}
+	return wafMaxBodyBytes
 }
 
 // Open implements fs.FS. It first tries to open the file from the local FS, and if that fails it falls back to the embedded FS.
@@ -173,9 +205,23 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 		return e.interrupt(w, r, it, clientIP, accessLog, logMu, siteID, siteName, appPath)
 	}
 
-	// request body phase — buffer up to wafMaxBodyBytes using a pooled buffer to
-	// avoid per-request heap allocation; restore full stream for upstream after inspection
-	if r.Body != nil {
+	// request body phase — buffer up to wafMaxBodyBytes, restore full stream for
+	// upstream after inspection
+	if r.Body != nil && r.Body != http.NoBody {
+
+		// charge the body against the global memory budget before allocating
+		weight := wafBodyWeight(r)
+		ctx, cancel := context.WithTimeout(r.Context(), wafBudgetWait)
+		err := wafBodyBudget.Acquire(ctx, weight)
+		cancel()
+		if err != nil {
+			logger.Warn("waf: body inspection budget saturated — refusing request from %s", clientIP)
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return false
+		}
+		defer wafBodyBudget.Release(weight)
+
 		// read up to wafMaxBodyBytes for inspection, then restore the full stream for
 		// the upstream (inspected prefix + any unread remainder). The buffer is handed
 		// to the upstream and outlives this function, so it cannot be pooled/reused —
