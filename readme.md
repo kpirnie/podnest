@@ -104,7 +104,7 @@ Once running, the UI is available at: `http://your-host:9000`
 | Command | Description |
 |---|---|
 | `pdnctl install --user <name> --version <latest\|dev\|beta>` | Fresh rootless setup under a dedicated user |
-| `pdnctl update` | Pull the newest image on the current channel and restart |
+| `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
 | `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
 | `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
 | `pdnctl status` | Show the install summary and service status |
@@ -112,6 +112,8 @@ Once running, the UI is available at: `http://your-host:9000`
 | `pdnctl uninstall --purge` | Remove PodNest, the dedicated user, and all site data |
 
 All `pdnctl` commands must be run as root.
+
+`pdnctl update` upgrades itself before touching the service — it pulls the newest `pdnctl` release binary from GitHub and swaps it into place, skipping the download when the running binary is already current. `bootstrap.sh` is only needed for the very first install.
 
 ---
 
