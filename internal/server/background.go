@@ -369,23 +369,34 @@ func (s *Server) rotateLogs() {
 	time.Sleep(time.Until(next))
 
 	run := func() {
-		// collect all log directories to rotate: global + per-site
-		dirs := []string{s.cfg.AppPath + "/logs"}
+		// collect all log directories to rotate, pairing each site's directory
+		// with the ID whose cached handles have to be released first
+		type rotateTarget struct {
+			dir    string
+			siteID int64
+		}
+		targets := []rotateTarget{{dir: s.cfg.AppPath + "/logs"}}
 
 		sites, err := db.GetAllSites(s.cfg.DB)
 		if err != nil {
 			logger.Error("rotateLogs: failed to load sites: %v", err)
 		} else {
 			for _, site := range sites {
-				dirs = append(dirs, fmt.Sprintf("%s/sites/%s/logs", s.cfg.AppPath, site.Name))
+				targets = append(targets, rotateTarget{
+					dir:    fmt.Sprintf("%s/sites/%s/logs", s.cfg.AppPath, site.Name),
+					siteID: site.ID,
+				})
 			}
 		}
 
-		for _, dir := range dirs {
-			if _, err := os.Stat(dir); os.IsNotExist(err) {
+		for _, t := range targets {
+			if _, err := os.Stat(t.dir); os.IsNotExist(err) {
 				continue
 			}
-			rotateLogDir(dir)
+			siteID := t.siteID
+			rotateLogDir(t.dir, func() {
+				s.proxy.CloseSiteLogs(siteID)
+			})
 		}
 	}
 
@@ -397,9 +408,11 @@ func (s *Server) rotateLogs() {
 	}
 }
 
-// rotateLogDir rotates access.log and waf.log in a single log directory.
-// Files older than 2 days are compressed; archives older than 7 days are deleted.
-func rotateLogDir(dir string) {
+// rotateLogDir compresses and prunes log files in a directory. onRotate, when
+// non-nil, is called after compression and before the original is unlinked so
+// the proxy can release its cached handle — otherwise it keeps writing to a
+// dead inode.
+func rotateLogDir(dir string, onRotate func()) {
 	cutoffRotate := time.Now().AddDate(0, 0, -2)
 	cutoffDelete := time.Now().AddDate(0, 0, -7)
 
@@ -419,6 +432,10 @@ func rotateLogDir(dir string) {
 			if err := compressLogFile(path, archivePath); err != nil {
 				logger.Error("rotateLogs: compress %s: %v", path, err)
 				continue
+			}
+			// release any cached handle before the inode goes away
+			if onRotate != nil {
+				onRotate()
 			}
 			if err := os.Remove(path); err != nil {
 				logger.Error("rotateLogs: remove %s after compress: %v", path, err)

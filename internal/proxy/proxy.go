@@ -107,6 +107,7 @@ type Proxy struct {
 	accessLog         *os.File                                     // structured access log for Fail2Ban consumption
 	accessLogCh       chan accessLogEntry                          // async drain channel — request goroutines never block on log writes
 	accessLogDone     chan struct{}                                // closed when the drain goroutine has finished
+	logCloseCh        chan closeReq                                // rotation asks the drain to close and evict site handles
 	wafLog            *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
 	siteAccessLogs    sync.Map                                     // int64(siteID) → *os.File for per-site access.log
 	siteWAFLogs       sync.Map                                     // int64(siteID) → *os.File for per-site waf.log
@@ -231,6 +232,7 @@ func New(cfg Config) *Proxy {
 	// critical path of every request across every site
 	p.accessLogCh = make(chan accessLogEntry, 4096)
 	p.accessLogDone = make(chan struct{})
+	p.logCloseCh = make(chan closeReq)
 	go p.drainAccessLogs()
 
 	// setup the waf log

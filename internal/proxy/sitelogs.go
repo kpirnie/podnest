@@ -24,6 +24,15 @@ type accessLogEntry struct {
 	waf      bool
 }
 
+// closeReq asks the drain to close and forget a site's cached log handles.
+// Rotation compresses and unlinks the file; without this the drain keeps
+// writing to the unlinked inode, losing every line after the first rotation
+// and leaking a descriptor per rotation per site.
+type closeReq struct {
+	siteID int64
+	done   chan struct{}
+}
+
 // enqueueWAFLog is the wafLogSink implementation handed to the WAF engine.
 func (p *Proxy) enqueueWAFLog(siteID int64, siteName, line string) {
 	select {
@@ -72,6 +81,24 @@ func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType str
 	return f
 }
 
+// CloseSiteLogs closes and evicts the cached access and WAF log handles for a
+// site, blocking until the drain has done so. Callers must invoke this before
+// removing or renaming the underlying files. siteID 0 is ignored — the global
+// handles are owned by Shutdown.
+func (p *Proxy) CloseSiteLogs(siteID int64) {
+	if p == nil || p.logCloseCh == nil || siteID <= 0 {
+		return
+	}
+
+	done := make(chan struct{})
+	select {
+	case p.logCloseCh <- closeReq{siteID: siteID, done: done}:
+		<-done
+	case <-time.After(5 * time.Second):
+		logger.Warn("proxy: CloseSiteLogs timed out siteID=%d", siteID)
+	}
+}
+
 // drainAccessLogs is the sole writer of every access log file. Running all
 // writes through one goroutine removes the shared mutex and the write syscall
 // from the request path entirely. Closing accessLogCh terminates it; the done
@@ -79,34 +106,52 @@ func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType str
 func (p *Proxy) drainAccessLogs() {
 	defer close(p.accessLogDone)
 
-	for e := range p.accessLogCh {
-		if e.siteID > 0 {
-			cache := &p.siteAccessLogs
-			logType := "access"
-			if e.waf {
-				cache = &p.siteWAFLogs
-				logType = "waf"
+	for {
+		select {
+		case req := <-p.logCloseCh:
+			for _, cache := range []*sync.Map{&p.siteAccessLogs, &p.siteWAFLogs} {
+				if v, ok := cache.LoadAndDelete(req.siteID); ok {
+					v.(*os.File).Close()
+				}
 			}
-			f := p.siteLogFile(cache, e.siteID, e.siteName, logType)
-			if f == nil {
-				continue
+			close(req.done)
+		case e, ok := <-p.accessLogCh:
+			if !ok {
+				return
 			}
-			if _, err := f.WriteString(e.line); err != nil {
-				logger.Error("proxy: site %s log write failed siteID=%d: %v", logType, e.siteID, err)
-			}
-			continue
+			p.writeLogEntry(e)
 		}
+	}
+}
 
-		global := p.accessLog
+// writeLogEntry resolves the target handle and writes one queued line.
+func (p *Proxy) writeLogEntry(e accessLogEntry) {
+	if e.siteID > 0 {
+		cache := &p.siteAccessLogs
+		logType := "access"
 		if e.waf {
-			global = p.wafLog
+			cache = &p.siteWAFLogs
+			logType = "waf"
 		}
-		if global == nil {
-			continue
+		f := p.siteLogFile(cache, e.siteID, e.siteName, logType)
+		if f == nil {
+			return
 		}
-		if _, err := global.WriteString(e.line); err != nil {
-			logger.Error("proxy: global log write failed: %v", err)
+		if _, err := f.WriteString(e.line); err != nil {
+			logger.Error("proxy: site %s log write failed siteID=%d: %v", logType, e.siteID, err)
 		}
+		return
+	}
+
+	global := p.accessLog
+	if e.waf {
+		global = p.wafLog
+	}
+	if global == nil {
+		return
+	}
+	if _, err := global.WriteString(e.line); err != nil {
+		logger.Error("proxy: global log write failed: %v", err)
 	}
 }
 
