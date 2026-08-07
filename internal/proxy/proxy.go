@@ -105,7 +105,8 @@ type Proxy struct {
 	rpVerifyTransport *http.Transport                              // verifying twin of rpTransport for upstreams whose certs probe as valid
 	rpTLSVerified     sync.Map                                     // string(upstream host) → bool; probed cert-verification verdicts
 	accessLog         *os.File                                     // structured access log for Fail2Ban consumption
-	accessLogMu       sync.Mutex                                   // guards concurrent writes to accessLog
+	accessLogCh       chan accessLogEntry                          // async drain channel — request goroutines never block on log writes
+	accessLogDone     chan struct{}                                // closed when the drain goroutine has finished
 	wafLog            *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
 	wafLogMu          sync.Mutex                                   // guards concurrent writes to wafLog
 	siteAccessLogs    sync.Map                                     // int64(siteID) → *os.File for per-site access.log
@@ -226,6 +227,13 @@ func New(cfg Config) *Proxy {
 		}
 	}
 
+	// start the async access-log drain — a single writer goroutine owns every
+	// log handle, which removes the per-request mutex and syscall from the
+	// critical path of every request across every site
+	p.accessLogCh = make(chan accessLogEntry, 4096)
+	p.accessLogDone = make(chan struct{})
+	go p.drainAccessLogs()
+
 	// setup the waf log
 	wafPath := logDir + "/waf.log"
 	if f, err := os.OpenFile(wafPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640); err != nil {
@@ -322,11 +330,16 @@ func (p *Proxy) Shutdown(ctx context.Context) {
 	_ = p.httpsSrv.Shutdown(ctx)
 	_ = p.http3Srv.Close()
 
-	// flush and close the access log file
+	// stop accepting log lines and wait for the drain to flush what is queued
+	// before the file handles are closed underneath it
+	if p.accessLogCh != nil {
+		close(p.accessLogCh)
+		<-p.accessLogDone
+	}
+
+	// close the access log file
 	if p.accessLog != nil {
-		p.accessLogMu.Lock()
 		p.accessLog.Close()
-		p.accessLogMu.Unlock()
 	}
 
 	// flush and close the waf log file

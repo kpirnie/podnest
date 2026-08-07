@@ -14,6 +14,15 @@ import (
 	"podnest/internal/logger"
 )
 
+// accessLogEntry is a single formatted access-log line queued for async write.
+// siteID 0 routes to the global proxy-access.log; siteName is only meaningful
+// when siteID > 0.
+type accessLogEntry struct {
+	siteID   int64
+	siteName string
+	line     string
+}
+
 // siteLogFile returns the open *os.File for a per-site log, creating the file
 // and its parent logs/ directory on first access. The result is cached in the
 // appropriate sync.Map (cache) so the file is opened at most once per site.
@@ -53,13 +62,42 @@ func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType str
 	return f
 }
 
-// writeAccessLog writes a single structured line to the correct access log.
-// siteID 0 (admin/unmatched traffic) routes to the global proxy-access.log;
-// all other sites route to {appPath}/sites/{siteName}/logs/access.log.
-// siteName is only required when siteID > 0. reason is an optional variadic
-// block-reason token (e.g. "ip", "ua", "geo:CN"); when provided, it is
-// appended to the log line after the quoted user agent as "reason=<value>"
-// so existing positional parsers remain unaffected.
+// drainAccessLogs is the sole writer of every access log file. Running all
+// writes through one goroutine removes the shared mutex and the write syscall
+// from the request path entirely. Closing accessLogCh terminates it; the done
+// channel signals that every queued line has been written.
+func (p *Proxy) drainAccessLogs() {
+	defer close(p.accessLogDone)
+
+	for e := range p.accessLogCh {
+		if e.siteID > 0 {
+			f := p.siteLogFile(&p.siteAccessLogs, e.siteID, e.siteName, "access")
+			if f == nil {
+				continue
+			}
+			if _, err := f.WriteString(e.line); err != nil {
+				logger.Error("proxy: site access log write failed siteID=%d: %v", e.siteID, err)
+			}
+			continue
+		}
+
+		if p.accessLog == nil {
+			continue
+		}
+		if _, err := p.accessLog.WriteString(e.line); err != nil {
+			logger.Error("proxy: access log write failed: %v", err)
+		}
+	}
+}
+
+// writeAccessLog formats a single structured access log line and enqueues it
+// for async write. siteID 0 (admin/unmatched traffic) routes to the global
+// proxy-access.log; all other sites route to
+// {appPath}/sites/{siteName}/logs/access.log. siteName is only required when
+// siteID > 0. reason is an optional variadic block-reason token (e.g. "ip",
+// "ua", "geo:CN"); when provided, it is appended to the log line after the
+// quoted user agent as "reason=<value>" so existing positional parsers remain
+// unaffected.
 func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Time, dur time.Duration, clientIP string, siteID int64, siteName string, reason ...string) {
 	line := fmt.Sprintf("%s %s %s %s %d %d %s %s %q",
 		start.UTC().Format(time.RFC3339),
@@ -79,29 +117,10 @@ func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Ti
 	}
 	line += "\n"
 
-	if siteID > 0 {
-		// per-site log
-		f := p.siteLogFile(&p.siteAccessLogs, siteID, siteName, "access")
-		if f == nil {
-			return
-		}
-		p.accessLogMu.Lock()
-		_, err := f.WriteString(line)
-		p.accessLogMu.Unlock()
-		if err != nil {
-			logger.Error("proxy: site access log write failed siteID=%d: %v", siteID, err)
-		}
-		return
-	}
-
-	// global log — siteID 0 (admin domain, unmatched)
-	if p.accessLog == nil {
-		return
-	}
-	p.accessLogMu.Lock()
-	_, err := p.accessLog.WriteString(line)
-	p.accessLogMu.Unlock()
-	if err != nil {
-		logger.Error("proxy: access log write failed: %v", err)
+	// non-blocking send — drop rather than stall a request goroutine
+	select {
+	case p.accessLogCh <- accessLogEntry{siteID: siteID, siteName: siteName, line: line}:
+	default:
+		logger.Warn("proxy: access log channel full — line dropped siteID=%d", siteID)
 	}
 }
