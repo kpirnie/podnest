@@ -25,7 +25,7 @@ var imageTagRe = regexp.MustCompile(`ghcr\.io/kpirnie/podnest:[^ \n]*`)
 // updateCmd pulls the requested (or current) channel and restarts the service
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Pull the newest PodNest image and restart the service",
+	Short: "Update pdnctl, pull the newest PodNest image, and restart the service",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runUpdate()
 	},
@@ -39,6 +39,11 @@ func init() {
 
 // runUpdate carries out the pull + tag rewrite + restart
 func runUpdate() error {
+	// refresh the host binary first; a failure here must not block the image update
+	if err := selfUpdate(); err != nil {
+		fmt.Printf("WARNING: pdnctl self-update skipped: %v\n", err)
+	}
+
 	s, err := loadState()
 	if err != nil {
 		return err

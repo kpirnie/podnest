@@ -20,7 +20,7 @@ var AppVersion = "dev"
 const ghRepo = "kpirnie/podnest"
 
 // ghTagsURL is the GitHub API endpoint for the newest repository tag — releases
-// are never published for this repo, tags are the single source of truth
+// are published for this repo, tags are the single source of truth
 const ghTagsURL = "https://api.github.com/repos/" + ghRepo + "/tags?per_page=1"
 
 // ReleaseURL is the human-facing tags page showing the latest version
