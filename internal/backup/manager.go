@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"podnest/internal/db"
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -1645,8 +1646,9 @@ func (m *Manager) fixPostRestorePerms(siteDir string, siteID int64) {
 	os.Chown(siteDir, 0, 0)
 	os.Chmod(siteDir, 0755)
 
-	// html — setgid + group-writable, siteUID owned
-	os.Chown(siteDir+"/html", uid, uid)
+	// html — setgid + group-writable, siteUID owned; the restored tree carries
+	// whatever ownership the archive held, so it is corrected in full here
+	fileutil.ChownTree(siteDir+"/html", uid)
 	os.Chmod(siteDir+"/html", 0755)
 
 	// php-fpm, redis — siteUID owned

@@ -1247,6 +1247,10 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// cp -a preserves the source site's UID on every copied file, so the whole
+	// cloned tree is reassigned to the clone's own SFTP UID
+	fileutil.ChownTree(cloneSiteDir+"/html", sftpUID)
+
 	// if the cloned site is of type WordPress, generate a wp-config.php file with the appropriate database and Redis credentials, write it to the cloned site's html directory, and handle any errors during writing or changing ownership
 	if clone.SiteType == models.SiteTypeWordPress {
 		wpCfgPath := cloneSiteDir + "/html/wp-config.php"

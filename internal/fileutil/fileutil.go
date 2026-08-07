@@ -6,8 +6,11 @@ package fileutil
 
 import (
 	"bufio"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
+	"syscall"
 
 	"podnest/internal/logger"
 )
@@ -43,4 +46,30 @@ func ReadEnvValue(path, key string) (string, error) {
 
 	logger.Debug("key '%s' not found in %s", key, path)
 	return "", scanner.Err()
+}
+
+// ChownTree recursively forces ownership of root and everything beneath it to
+// uid:uid, skipping any entry already correct so the common (no-drift) case costs
+// only stat calls, not chowns. Symlinks are changed with Lchown so a stray link
+// is never followed out of the tree. Only a foreign-uid writer (restore, clone,
+// import) leaves drift behind, so this is called at the completion of those
+// operations rather than on a hot path.
+func ChownTree(root string, uid int) {
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable entry — skip, don't abort the walk
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if ok && int(st.Uid) == uid && int(st.Gid) == uid {
+			return nil // already correct — no syscall needed
+		}
+		if err := os.Lchown(path, uid, uid); err != nil {
+			logger.Debug("ChownTree: %s: %v", path, err)
+		}
+		return nil
+	})
 }

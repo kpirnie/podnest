@@ -13,18 +13,17 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"io/fs"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"podnest/internal/auth"
 	"podnest/internal/db"
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -205,7 +204,10 @@ func (s *Server) detectHostGateway() string {
 }
 
 // permissionReaper periodically corrects ownership and permissions on all site
-// directories — fires immediately on startup then every 30 seconds.
+// directories — fires immediately on startup then every 5 minutes. The recursive
+// html tree walk runs on its own 6-hour ticker: drift beneath html only occurs
+// after a restore, clone, or import, each of which now corrects its own tree, so
+// the walk is a safety net rather than the primary mechanism.
 func (s *Server) permissionReaper() {
 	fix := func() {
 		sites, err := db.GetAllSites(s.cfg.DB)
@@ -221,7 +223,6 @@ func (s *Server) permissionReaper() {
 
 			os.Chown(siteDir, 0, 0)
 			os.Chmod(siteDir, 0755)
-			chownTreeTo(siteDir+"/html", sftpUID)
 			os.Chmod(siteDir+"/html", 02775)
 			os.Chown(siteDir+"/nginx", sftpUID, sftpUID)
 			os.Chmod(siteDir+"/nginx", 0755)
@@ -240,11 +241,29 @@ func (s *Server) permissionReaper() {
 		}
 	}
 
+	sweep := func() {
+		sites, err := db.GetAllSites(s.cfg.DB)
+		if err != nil {
+			logger.Error("permissionReaper: sweep: failed to load sites: %v", err)
+			return
+		}
+		for _, site := range sites {
+			fileutil.ChownTree(s.sitesBase()+"/"+site.Name+"/html", sftp.UIDForSite(site.ID))
+		}
+	}
+
 	fix()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		fix()
+	sweepTicker := time.NewTicker(6 * time.Hour)
+	defer sweepTicker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			fix()
+		case <-sweepTicker.C:
+			sweep()
+		}
 	}
 }
 
@@ -729,30 +748,4 @@ func (s *Server) mariadbUpgradeChecker() {
 	for range ticker.C {
 		run()
 	}
-}
-
-// chownTreeTo recursively forces ownership of root and everything beneath it to
-// uid:uid, skipping any entry already correct so the common (no-drift) case costs
-// only stat calls, not chowns. Symlinks are changed with Lchown so a stray link
-// is never followed out of the tree. This is the polled equivalent of an inotify
-// chown watcher: php-fpm and the file manager both run as the site UID, so this
-// only ever has work to do after a foreign-uid writer (restore, clone, import).
-func chownTreeTo(root string, uid int) {
-	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil // unreadable entry — skip, don't abort the walk
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		st, ok := info.Sys().(*syscall.Stat_t)
-		if ok && int(st.Uid) == uid && int(st.Gid) == uid {
-			return nil // already correct — no syscall needed
-		}
-		if err := os.Lchown(path, uid, uid); err != nil {
-			logger.Debug("chownTreeTo: %s: %v", path, err)
-		}
-		return nil
-	})
 }
