@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,6 +42,14 @@ import (
 
 //go:embed maintenance.html
 var maintenanceHTML []byte
+
+// wpSaltConsts are the wp-config.php key/salt constants regenerated on import
+var wpSaltConsts = []string{
+	"AUTH_KEY", "SECURE_AUTH_KEY", "LOGGED_IN_KEY", "NONCE_KEY",
+	"AUTH_SALT", "SECURE_AUTH_SALT", "LOGGED_IN_SALT", "NONCE_SALT",
+}
+
+var wpPrefixRe = regexp.MustCompile(`(?m)^\s*\$table_prefix\s*=\s*['"]([A-Za-z0-9_]+)['"]\s*;?`)
 
 // constants for restic binary path and maintenance mode file names
 const (
@@ -541,6 +550,9 @@ func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []strin
 		// exclude the nginx cache and the maintenance conf we injected
 		"--exclude", filepath.Join(siteDir, "nginx", "cache"),
 		"--exclude", filepath.Join(siteDir, "nginx", "conf.d", maintConfName),
+		// rendered configs are the target site's, never the snapshot's
+		"--exclude", filepath.Join(siteDir, "nginx"),
+		"--exclude", filepath.Join(siteDir, "php-fpm"),
 	}
 
 	// run the restic restore command
@@ -1747,6 +1759,15 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 	// reapply correct ownership after the file copy
 	m.fixPostRestorePerms(siteDir, targetSite.ID)
 
+	// the archive's wp-config wins for prefix, multisite and custom defines —
+	// only this pod's own connection details and salts are replaced
+	wpCfgPath := filepath.Join(siteDir, "html", "wp-config.php")
+	if targetSite.SiteType == models.SiteTypeWordPress {
+		if err := m.rewriteWPConfig(wpCfgPath, siteDir); err != nil {
+			logger.Error("ImportRestore: rewrite wp-config for site %s: %v", targetSite.Name, err)
+		}
+	}
+
 	// restore the database if a dump is present and the site type has a database
 	dbDump := filepath.Join(tmpDir, "db_dump.sql")
 	if _, err := os.Stat(dbDump); err == nil {
@@ -1760,8 +1781,9 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 	// read the manifest to get source domains for search-replace
 	sourceDomains := readImportManifest(tmpDir)
 
-	// run search-replace for WordPress sites if we have a source domain to replace
-	if targetSite.SiteType == models.SiteTypeWordPress && len(sourceDomains) > 0 {
+	// run search-replace for WordPress sites, falling back to the imported
+	// siteurl when the archive carried no manifest
+	if targetSite.SiteType == models.SiteTypeWordPress {
 
 		// fetch the target site's primary domain
 		targetDomains, err := db.GetDomainsBySite(m.db, targetSite.ID)
@@ -1769,12 +1791,25 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 			logger.Warn("ImportRestore: could not fetch target domains for site %s: %v", targetSite.Name, err)
 		} else {
 
-			// only run search-replace if we have both a source and target domain to work with
-			fromDomain := sourceDomains[0]
+			// prefer the manifest, then the siteurl already in the imported DB
+			fromDomain := ""
+			if len(sourceDomains) > 0 {
+				fromDomain = sourceDomains[0]
+			}
+			if fromDomain == "" {
+				fromDomain, err = m.wpSourceDomain(ctx, targetSite, siteDir, wpCfgPath)
+				if err != nil {
+					logger.Warn("ImportRestore: no source domain for site %s: %v", targetSite.Name, err)
+				}
+			}
+
+			// replace throughout the DB, then repoint multisite at the new domain
 			toDomain := targetDomains[0].Domain
-			if fromDomain != toDomain {
+			if fromDomain != "" && fromDomain != toDomain {
 				if err := m.wpSearchReplace(ctx, targetSite, fromDomain, toDomain); err != nil {
 					logger.Error("ImportRestore: search-replace failed for site %s: %v", targetSite.Name, err)
+				} else if err := rewriteWPConfigDomain(wpCfgPath, toDomain); err != nil {
+					logger.Error("ImportRestore: rewrite DOMAIN_CURRENT_SITE for site %s: %v", targetSite.Name, err)
 				}
 			}
 		}
@@ -1995,7 +2030,18 @@ func importFiles(srcDir, siteDir string) error {
 
 		// never overwrite the target site's credentials or import the raw dump
 		if rel == ".env" || rel == "db_dump.sql" || rel == "manifest.json" ||
-			rel == "html/wp-config.php" || rel == "html/web.config" || rel == "html/.env" {
+			rel == "html/web.config" || rel == "html/.env" {
+			return nil
+		}
+
+		// rendered configs belong to the target site — the source's carry its own
+		// listen port and php-fpm pool user
+		if rel == "nginx" || rel == "php-fpm" ||
+			strings.HasPrefix(rel, "nginx"+string(os.PathSeparator)) ||
+			strings.HasPrefix(rel, "php-fpm"+string(os.PathSeparator)) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -2029,6 +2075,160 @@ func importFiles(srcDir, siteDir string) error {
 		}
 		return nil
 	})
+}
+
+// wpConstPattern matches a wp-config.php constant in either the guarded
+// defined() || define() form or the bare define() form
+func wpConstPattern(name string) *regexp.Regexp {
+	return regexp.MustCompile(`(?mi)^([ \t]*(?:defined\(\s*['"]` + name + `['"]\s*\)\s*\|\|\s*)?define\(\s*['"]` + name + `['"]\s*,\s*)([^)]*?)(\s*\)\s*;)`)
+}
+
+// quotePHP renders a value as a single-quoted PHP string literal
+func quotePHP(v string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"
+}
+
+// setWPConst replaces the value of an existing wp-config.php constant. A
+// constant that is not already defined is never added.
+func setWPConst(src, name, value string) string {
+	return setWPConstRaw(src, name, quotePHP(value))
+}
+
+// setWPConstRaw is setWPConst for values that are not PHP strings
+func setWPConstRaw(src, name, literal string) string {
+	re := wpConstPattern(name)
+	return re.ReplaceAllStringFunc(src, func(hit string) string {
+		g := re.FindStringSubmatch(hit)
+		return g[1] + literal + g[3]
+	})
+}
+
+// wpSalt returns a fresh random value for a wp-config.php key or salt
+func wpSalt() (string, error) {
+	b := make([]byte, 48)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// rewriteWPConfig points the imported wp-config.php at the target pod's own
+// database and Redis and regenerates its keys and salts. Everything else the
+// archive carried — table prefix, multisite constants, custom defines — stands.
+func (m *Manager) rewriteWPConfig(wpCfgPath, siteDir string) error {
+	raw, err := os.ReadFile(wpCfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("rewriteWPConfig: read: %w", err)
+	}
+
+	envPath := filepath.Join(siteDir, ".env")
+	dbName, err := readEnvValue(envPath, "DB_NAME")
+	if err != nil {
+		return fmt.Errorf("rewriteWPConfig: DB_NAME: %w", err)
+	}
+	dbUser, err := readEnvValue(envPath, "DB_USER")
+	if err != nil {
+		return fmt.Errorf("rewriteWPConfig: DB_USER: %w", err)
+	}
+	dbPass, err := readEnvValue(envPath, "DB_PASS")
+	if err != nil {
+		return fmt.Errorf("rewriteWPConfig: DB_PASS: %w", err)
+	}
+	redisPass, err := readEnvValue(envPath, "REDIS_PASS")
+	if err != nil {
+		return fmt.Errorf("rewriteWPConfig: REDIS_PASS: %w", err)
+	}
+
+	src := string(raw)
+	src = setWPConst(src, "DB_NAME", dbName)
+	src = setWPConst(src, "DB_USER", dbUser)
+	src = setWPConst(src, "DB_PASSWORD", dbPass)
+	src = setWPConst(src, "DB_HOST", "127.0.0.1:3306")
+	src = setWPConst(src, "WP_REDIS_HOST", "127.0.0.1")
+	src = setWPConstRaw(src, "WP_REDIS_PORT", "6379")
+	src = setWPConst(src, "WP_REDIS_PASSWORD", redisPass)
+
+	for _, name := range wpSaltConsts {
+		s, err := wpSalt()
+		if err != nil {
+			return fmt.Errorf("rewriteWPConfig: salt: %w", err)
+		}
+		src = setWPConst(src, name, s)
+	}
+
+	if err := os.WriteFile(wpCfgPath, []byte(src), 0640); err != nil {
+		return fmt.Errorf("rewriteWPConfig: write: %w", err)
+	}
+
+	logger.Debug("rewriteWPConfig: connection constants rewritten in %s", wpCfgPath)
+	return nil
+}
+
+// rewriteWPConfigDomain repoints DOMAIN_CURRENT_SITE at the target domain.
+// Single-site installs have no such constant and are left untouched. This runs
+// only after search-replace, since wp-cli bootstraps multisite against the
+// domain still stored in the site and blogs tables.
+func rewriteWPConfigDomain(wpCfgPath, toDomain string) error {
+	raw, err := os.ReadFile(wpCfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("rewriteWPConfigDomain: read: %w", err)
+	}
+
+	src := setWPConst(string(raw), "DOMAIN_CURRENT_SITE", toDomain)
+	if err := os.WriteFile(wpCfgPath, []byte(src), 0640); err != nil {
+		return fmt.Errorf("rewriteWPConfigDomain: write: %w", err)
+	}
+	return nil
+}
+
+// wpSourceDomain reads the host out of the imported siteurl option, used as the
+// search-replace source when the archive carried no manifest
+func (m *Manager) wpSourceDomain(ctx context.Context, site *models.Site, siteDir, wpCfgPath string) (string, error) {
+	prefix := "wp_"
+	if raw, err := os.ReadFile(wpCfgPath); err == nil {
+		if hit := wpPrefixRe.FindSubmatch(raw); hit != nil {
+			prefix = string(hit[1])
+		}
+	}
+
+	envPath := filepath.Join(siteDir, ".env")
+	rootPass, err := readEnvValue(envPath, "DB_ROOT_PASS")
+	if err != nil {
+		return "", fmt.Errorf("wpSourceDomain: DB_ROOT_PASS: %w", err)
+	}
+	dbName, err := readEnvValue(envPath, "DB_NAME")
+	if err != nil {
+		return "", fmt.Errorf("wpSourceDomain: DB_NAME: %w", err)
+	}
+
+	query := fmt.Sprintf(
+		"SELECT option_value FROM `%s`.`%soptions` WHERE option_name='siteurl' LIMIT 1",
+		dbName, prefix,
+	)
+	cmd := exec.CommandContext(ctx, "podman",
+		"exec", "-e", "MYSQL_PWD", podman.ContainerName(site.Name, "db"),
+		"mariadb", "-uroot", "-N", "-B", "-e", query,
+	)
+	cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("wpSourceDomain: mariadb: %w — %s", err, stderr.String())
+	}
+
+	u, err := url.Parse(strings.TrimSpace(string(out)))
+	if err != nil || u.Host == "" {
+		return "", fmt.Errorf("wpSourceDomain: unusable siteurl %q", strings.TrimSpace(string(out)))
+	}
+	return u.Host, nil
 }
 
 // importDB pipes db_dump.sql into the target site's MariaDB container,
@@ -2211,6 +2411,7 @@ func (m *Manager) wpSearchReplace(ctx context.Context, site *models.Site, fromDo
 			"Cmd": []string{
 				"/usr/local/bin/wp",
 				"--path=/var/www/html",
+				"--url=" + fromDomain,
 				"--allow-root",
 				"search-replace",
 				"--all-tables",
@@ -2228,6 +2429,18 @@ func (m *Manager) wpSearchReplace(ctx context.Context, site *models.Site, fromDo
 		map[string]any{"Detach": false}, nil,
 	); err != nil {
 		return fmt.Errorf("wpSearchReplace: start exec: %w", err)
+	}
+
+	// a failed wp-cli run exits non-zero without erroring the API call
+	var inspect struct {
+		ExitCode int  `json:"ExitCode"`
+		Running  bool `json:"Running"`
+	}
+	if err := m.podman.GetJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err != nil {
+		return fmt.Errorf("wpSearchReplace: inspect exec: %w", err)
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("wpSearchReplace: wp-cli exited %d", inspect.ExitCode)
 	}
 
 	logger.Debug("wpSearchReplace: replaced %s → %s for site %s", fromDomain, toDomain, site.Name)

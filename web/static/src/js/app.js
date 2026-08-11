@@ -33,11 +33,15 @@ router.register("audit-log",   (root)         => viewAuditLog(root));
 // them; since the panel's forms live inside switcher-connected tab panels, that
 // kills caret movement in every field. Stop these keys in the capture phase so
 // UIkit never receives them — the browser's default caret behavior then runs.
-// The WP-CLI terminal deliberately uses Up/Down for history, so it's exempt.
+// The WP-CLI terminal is exempt for Up/Down only, and CodeMirror entirely.
 document.addEventListener("keydown", (e) => {
     const t = e.target;
     if (!t?.matches?.("input, textarea, select, [contenteditable='true']")) return;
-    if (t.id === "wpcli-input") return; // keep its Up/Down history handler
+    // CodeMirror binds its own caret keymap on the editor element, so stopping
+    // propagation here would strand it
+    if (t.closest?.(".CodeMirror")) return;
+    // the WP-CLI terminal owns only Up/Down, for history
+    if (t.id === "wpcli-input" && (e.key === "ArrowUp" || e.key === "ArrowDown")) return;
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
         e.stopPropagation();
     }
