@@ -1,5 +1,5 @@
 # -- stage 1: build -----------------------------------------------------------
-FROM docker.io/golang:1.26.5-alpine AS builder
+FROM docker.io/golang:1.26.6-alpine AS builder
 
 # add gcc and musl-dev
 RUN apk add --no-cache gcc musl-dev
