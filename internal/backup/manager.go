@@ -1965,9 +1965,15 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 		}
 	}
 
-	// delete the source archive now that the restore succeeded
-	if err := os.Remove(archivePath); err != nil {
-		logger.Warn("ImportRestore: remove archive %s: %v", archivePath, err)
+	// delete the source archive now that the restore succeeded, but only when
+	// it lives in the target's own import directory — a cross-site import
+	// resolves the archive against the source site and must not remove it
+	if filepath.Dir(archivePath) == m.importDir(targetSite.Name) {
+		if err := os.Remove(archivePath); err != nil {
+			logger.Warn("ImportRestore: remove archive %s: %v", archivePath, err)
+		}
+	} else {
+		logger.Debug("ImportRestore: archive %s is outside %s, leaving it in place", archivePath, targetSite.Name)
 	}
 
 	logger.Debug("ImportRestore: completed for site %s from %s", targetSite.Name, filepath.Base(archivePath))
