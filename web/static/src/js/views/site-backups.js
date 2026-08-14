@@ -395,8 +395,11 @@ export function wireBackupsPanel(root, siteId) {
         const select = importModal.querySelector('#import-target-site');
         try {
             const sites = await api.get('/sites');
+            // siteId can arrive as a string — compare numerically or nothing
+            // matches and the browser silently selects the first site instead
+            const current = Number(siteId);
             select.innerHTML = sites
-                .map(s => `<option value="${s.ID}"${s.ID === siteId ? ' selected' : ''}>${s.Name}</option>`)
+                .map(s => `<option value="${s.ID}"${Number(s.ID) === current ? ' selected' : ''}>${s.Name}</option>`)
                 .join('');
         } catch (err) {
             select.innerHTML = '<option value="">Failed to load sites</option>';
