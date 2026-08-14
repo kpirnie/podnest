@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"podnest/internal/apiutil"
+	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -386,6 +387,14 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "target site not found")
 			return
 		}
+
+		// the target never passes through ResolveSite, so authorise it here
+		user := auth.UserFromContext(r.Context())
+		if user == nil || (user.Role != models.RoleAdmin && targetSite.UID != user.ID) {
+			logger.Error("apiImportSFTP: user does not own target site %d", targetSite.ID)
+			apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+			return
+		}
 	}
 
 	go func() {
@@ -418,6 +427,15 @@ func (m Module) resolveImportTarget(w http.ResponseWriter, r *http.Request, curr
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "target site not found")
 		return nil, false
 	}
+
+	// the target never passes through ResolveSite, so authorise it here
+	user := auth.UserFromContext(r.Context())
+	if user == nil || (user.Role != models.RoleAdmin && target.UID != user.ID) {
+		logger.Error("resolveImportTarget: user does not own target site %d", target.ID)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+		return nil, false
+	}
+
 	return target, true
 }
 

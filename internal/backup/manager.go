@@ -338,6 +338,9 @@ func (m *Manager) Backup(ctx context.Context, site *models.Site, label string) (
 		return 0, err
 	}
 
+	// bring the record list in line with what survived the retention prune
+	m.reconcileBackupRecords(ctx, site, repo, s3)
+
 	logger.Debug("Backup: completed %s for site %s (id=%d, size=%d)", tag, site.Name, id, totalSize)
 	return id, nil
 }
@@ -544,6 +547,11 @@ func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []strin
 		return err
 	}
 
+	// clear the web root so the snapshot cannot merge into what is there now
+	if err := wipeHTMLRoot(siteDir); err != nil {
+		return fmt.Errorf("restoreFiles: wipe html: %w", err)
+	}
+
 	// setup the restore command
 	args := []string{
 		"-r", repoPath, "restore", snapID,
@@ -554,6 +562,13 @@ func (m *Manager) restoreFiles(ctx context.Context, repoPath string, env []strin
 		// rendered configs are the target site's, never the snapshot's
 		"--exclude", filepath.Join(siteDir, "nginx"),
 		"--exclude", filepath.Join(siteDir, "php-fpm"),
+		// preserved target files in the web root are never overwritten
+		"--exclude", filepath.Join(siteDir, "html", ".nginx.conf*"),
+		"--exclude", filepath.Join(siteDir, "html", ".user.ini"),
+		"--exclude", filepath.Join(siteDir, "html", "web.config"),
+		"--exclude", filepath.Join(siteDir, "html", ".env"),
+		"--exclude", filepath.Join(siteDir, "html", maintHTMLName),
+		"--exclude", filepath.Join(siteDir, "html", "wp-config.php"),
 	}
 
 	// run the restic restore command
@@ -593,6 +608,11 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 	dbName, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_NAME")
 	if err != nil {
 		return fmt.Errorf("restoreDB: DB_NAME: %w", err)
+	}
+
+	// the target must be empty or the snapshot merges into whatever was there
+	if err := m.clearDatabase(ctx, site, dbName, rootPass); err != nil {
+		return err
 	}
 
 	// dump the SQL from restic into a temp file on the host
@@ -729,6 +749,99 @@ func (m *Manager) forgetPrune(ctx context.Context, repoPath string, env []string
 
 	logger.Debug("forgetPrune: pruned %s with %sd retention", repoPath, retainDays)
 	return nil
+}
+
+// snapshotTags returns the set of run tags still present in a restic repo
+func (m *Manager) snapshotTags(ctx context.Context, repoPath string, env []string) (map[string]bool, error) {
+
+	// list ALL snapshots — tag filtering via restic CLI can miss stdin snapshots
+	cmd := exec.CommandContext(ctx, resticBin,
+		"-r", repoPath, "snapshots", "--json",
+	)
+	cmd.Env = env
+
+	// capture the output for parsing
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("snapshotTags: restic snapshots: %w", err)
+	}
+
+	// parse the JSON output; only the tags matter here
+	var snaps []struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.Unmarshal(out, &snaps); err != nil {
+		return nil, fmt.Errorf("snapshotTags: parse: %w", err)
+	}
+
+	// collect every tag still living in the repo
+	tags := make(map[string]bool)
+	for _, s := range snaps {
+		for _, t := range s.Tags {
+			tags[t] = true
+		}
+	}
+	return tags, nil
+}
+
+// reconcileBackupRecords removes backup records whose restic snapshots no
+// longer exist, keeping the record list in step with the retention policy
+func (m *Manager) reconcileBackupRecords(ctx context.Context, site *models.Site, repo *models.BackupRepo, s3 *s3Config) {
+
+	// union of surviving tags across every enabled repo
+	tags := make(map[string]bool)
+	unread := false
+
+	// collect surviving tags from the local repo
+	if repo.LocalEnabled {
+		t, err := m.snapshotTags(ctx, repo.LocalPath, resticEnv(repo.RepoPassword, nil))
+		if err != nil {
+			logger.Warn("reconcileBackupRecords: local snapshots for site %d: %v", site.ID, err)
+			unread = true
+		} else {
+			for k := range t {
+				tags[k] = true
+			}
+		}
+	}
+
+	// collect surviving tags from the S3 repo
+	if repo.S3Enabled && s3 != nil {
+		t, err := m.snapshotTags(ctx, s3RepoURL(s3.endpoint, s3.bucket, site.Name), resticEnv(repo.RepoPassword, s3))
+		if err != nil {
+			logger.Warn("reconcileBackupRecords: S3 snapshots for site %d: %v", site.ID, err)
+			unread = true
+		} else {
+			for k := range t {
+				tags[k] = true
+			}
+		}
+	}
+
+	// an unreadable repo means an incomplete picture — never prune on a guess
+	if unread {
+		logger.Warn("reconcileBackupRecords: skipping site %d, a repo could not be read", site.ID)
+		return
+	}
+
+	// pull the current record list to compare against
+	backups, err := db.ListBackups(m.db, site.ID)
+	if err != nil {
+		logger.Warn("reconcileBackupRecords: list backups for site %d: %v", site.ID, err)
+		return
+	}
+
+	// drop any record with no surviving snapshot behind it
+	for _, b := range backups {
+		if tags[b.SnapshotID] {
+			continue
+		}
+		if err := db.DeleteBackup(m.db, b.ID); err != nil {
+			logger.Warn("reconcileBackupRecords: delete record %d: %v", b.ID, err)
+			continue
+		}
+		logger.Debug("reconcileBackupRecords: removed orphaned record %d (%s) for site %d", b.ID, b.SnapshotID, site.ID)
+	}
 }
 
 // enableMaintenance writes the maintenance page and injects a catch-all nginx
@@ -1341,32 +1454,52 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	// only sites with a MariaDB container have a DB snapshot
 	if dbSnapID != "" {
 
+		// spill the dump to disk — tar needs the size up front and the dump can
+		// be multiple gigabytes, far too large to hold in memory
+		spill, err := os.CreateTemp(tmpDir, "podnest-dbdump-*.sql")
+		if err != nil {
+			return fmt.Errorf("export: create db spill: %w", err)
+		}
+		defer os.Remove(spill.Name())
+		defer spill.Close()
+
 		// setup the command to dump the DB snapshot
 		dbCmd := exec.CommandContext(ctx, resticBin,
 			"-r", repoPath, "dump", dbSnapID, "db_dump.sql",
 		)
 		dbCmd.Env = env
+		dbCmd.Stdout = spill
 
 		// capture stderr for error reporting
 		var dbStderr bytes.Buffer
 		dbCmd.Stderr = &dbStderr
 
-		// run the restic dump command and capture the SQL data into memory
-		sqlData, err := dbCmd.Output()
-		if err != nil {
+		// run the restic dump command, streaming the SQL to the spill file
+		if err := dbCmd.Run(); err != nil {
 			return fmt.Errorf("export: restic dump db: %w — %s", err, dbStderr.String())
+		}
+
+		// size the tar entry from the spilled file
+		st, err := spill.Stat()
+		if err != nil {
+			return fmt.Errorf("export: stat db spill: %w", err)
+		}
+
+		// rewind before streaming the spill into the archive
+		if _, err := spill.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("export: rewind db spill: %w", err)
 		}
 
 		// write db_dump.sql as a top-level entry in the archive
 		if err := tw.WriteHeader(&tar.Header{
 			Name:    "db_dump.sql",
-			Size:    int64(len(sqlData)),
+			Size:    st.Size(),
 			Mode:    0644,
 			ModTime: backup.Created,
 		}); err != nil {
 			return fmt.Errorf("export: write db header: %w", err)
 		}
-		if _, err := tw.Write(sqlData); err != nil {
+		if _, err := io.Copy(tw, spill); err != nil {
 			return fmt.Errorf("export: write db entry: %w", err)
 		}
 	}
@@ -1763,6 +1896,11 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 		return fmt.Errorf("ImportRestore: extract: %w", err)
 	}
 
+	// clear the web root so the archive cannot merge into a previous occupant
+	if err := wipeHTMLRoot(siteDir); err != nil {
+		return fmt.Errorf("ImportRestore: wipe html: %w", err)
+	}
+
 	// copy extracted files into the site directory, excluding .env and db_dump.sql
 	if err := importFiles(tmpDir, siteDir); err != nil {
 		return fmt.Errorf("ImportRestore: import files: %w", err)
@@ -2046,6 +2184,11 @@ func importFiles(srcDir, siteDir string) error {
 			return nil
 		}
 
+		// preserved target files in the web root are never overwritten
+		if dir, base := filepath.Split(rel); filepath.Clean(dir) == "html" && htmlPreserved(base) {
+			return nil
+		}
+
 		// rendered configs belong to the target site — the source's carry its own
 		// listen port and php-fpm pool user
 		if rel == "nginx" || rel == "php-fpm" ||
@@ -2087,6 +2230,45 @@ func importFiles(srcDir, siteDir string) error {
 		}
 		return nil
 	})
+}
+
+// htmlPreserved reports whether a name directly inside html/ belongs to the
+// target site and must survive an import untouched
+func htmlPreserved(name string) bool {
+	switch name {
+	case ".user.ini", "web.config", ".env", "maintenance.html", "wp-config.php":
+		return true
+	}
+
+	// nginx includes /var/www/html/.nginx.conf* as a glob
+	return strings.HasPrefix(name, ".nginx.conf")
+}
+
+// wipeHTMLRoot empties the site's web root ahead of an import, keeping only the
+// target's own files so the archive never merges into a previous occupant
+func wipeHTMLRoot(siteDir string) error {
+	htmlDir := filepath.Join(siteDir, "html")
+
+	entries, err := os.ReadDir(htmlDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("wipeHTMLRoot: read %s: %w", htmlDir, err)
+	}
+
+	// remove every entry that is not on the preserve list
+	for _, e := range entries {
+		if htmlPreserved(e.Name()) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(htmlDir, e.Name())); err != nil {
+			return fmt.Errorf("wipeHTMLRoot: remove %s: %w", e.Name(), err)
+		}
+	}
+
+	logger.Debug("wipeHTMLRoot: cleared %s", htmlDir)
+	return nil
 }
 
 // wpConstPattern matches a wp-config.php constant in either the guarded
@@ -2243,6 +2425,131 @@ func (m *Manager) wpSourceDomain(ctx context.Context, site *models.Site, siteDir
 	return u.Host, nil
 }
 
+// clearDatabase drops every table, view and routine in the target schema so an
+// import lands on an empty database. The database itself and its grants stay.
+func (m *Manager) clearDatabase(ctx context.Context, site *models.Site, dbName, rootPass string) error {
+
+	dbContainer := podman.ContainerName(site.Name, "db")
+
+	// run a query in the site's DB container and split the rows into fields
+	query := func(sql string) ([][]string, error) {
+		cmd := exec.CommandContext(ctx, "podman",
+			"exec", "-e", "MYSQL_PWD", dbContainer,
+			"mariadb", "-uroot", "-N", "-B", "-e", sql,
+		)
+		cmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("clearDatabase: mariadb: %w — %s", err, stderr.String())
+		}
+
+		var rows [][]string
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if line == "" {
+				continue
+			}
+			rows = append(rows, strings.Split(line, "\t"))
+		}
+		return rows, nil
+	}
+
+	// base tables and views living in the schema
+	tables, err := query(fmt.Sprintf(
+		"SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA='%s'",
+		strings.ReplaceAll(dbName, "'", "''"),
+	))
+	if err != nil {
+		return err
+	}
+
+	// stored procedures and functions living in the schema
+	routines, err := query(fmt.Sprintf(
+		"SELECT ROUTINE_NAME, ROUTINE_TYPE FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA='%s'",
+		strings.ReplaceAll(dbName, "'", "''"),
+	))
+	if err != nil {
+		return err
+	}
+
+	// nothing to do on a fresh site
+	if len(tables) == 0 && len(routines) == 0 {
+		logger.Debug("clearDatabase: %s is already empty", dbName)
+		return nil
+	}
+
+	// quote an identifier for the drop script
+	ident := func(s string) string {
+		return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+	}
+
+	// build the drop script with constraint checks off so order does not matter
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "SET FOREIGN_KEY_CHECKS=0;\nUSE %s;\n", ident(dbName))
+	for _, r := range tables {
+		if len(r) < 2 {
+			continue
+		}
+		kind := "TABLE"
+		if strings.EqualFold(r[1], "VIEW") {
+			kind = "VIEW"
+		}
+		fmt.Fprintf(&sb, "DROP %s IF EXISTS %s;\n", kind, ident(r[0]))
+	}
+	for _, r := range routines {
+		if len(r) < 2 {
+			continue
+		}
+		kind := "PROCEDURE"
+		if strings.EqualFold(r[1], "FUNCTION") {
+			kind = "FUNCTION"
+		}
+		fmt.Fprintf(&sb, "DROP %s IF EXISTS %s;\n", kind, ident(r[0]))
+	}
+	fmt.Fprint(&sb, "SET FOREIGN_KEY_CHECKS=1;\n")
+
+	// stage the script on the host
+	script, err := os.CreateTemp("", "podnest-clear-*.sql")
+	if err != nil {
+		return fmt.Errorf("clearDatabase: create temp: %w", err)
+	}
+	defer os.Remove(script.Name())
+
+	if _, err := script.WriteString(sb.String()); err != nil {
+		script.Close()
+		return fmt.Errorf("clearDatabase: write temp: %w", err)
+	}
+	script.Close()
+
+	// copy the script into the container
+	cpCmd := exec.CommandContext(ctx, "podman",
+		"cp", script.Name(), dbContainer+":/tmp/podnest-clear.sql",
+	)
+	cpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock)
+	if out, err := cpCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("clearDatabase: podman cp: %w — %s", err, string(out))
+	}
+
+	// run the drops
+	dropCmd := exec.CommandContext(ctx, "podman",
+		"exec", "-e", "MYSQL_PWD", dbContainer,
+		"sh", "-c",
+		"mariadb -uroot < /tmp/podnest-clear.sql && rm /tmp/podnest-clear.sql",
+	)
+	dropCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+
+	var dropStderr bytes.Buffer
+	dropCmd.Stderr = &dropStderr
+	if err := dropCmd.Run(); err != nil {
+		return fmt.Errorf("clearDatabase: mariadb: %w — %s", err, dropStderr.String())
+	}
+
+	logger.Debug("clearDatabase: dropped %d tables/views and %d routines in %s", len(tables), len(routines), dbName)
+	return nil
+}
+
 // importDB pipes db_dump.sql into the target site's MariaDB container,
 // rewriting USE / CREATE DATABASE statements to match the target site name
 func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, siteDir string) error {
@@ -2253,6 +2560,11 @@ func (m *Manager) importDB(ctx context.Context, site *models.Site, dumpPath, sit
 	dbName, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_NAME")
 	if err != nil {
 		return fmt.Errorf("importDB: DB_NAME: %w", err)
+	}
+
+	// the target must be empty or the archive merges into whatever was there
+	if err := m.clearDatabase(ctx, site, dbName, rootPass); err != nil {
+		return err
 	}
 
 	// rewrite the dump to a temp file with corrected db references
