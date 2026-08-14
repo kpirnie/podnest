@@ -54,6 +54,7 @@ var wpPrefixRe = regexp.MustCompile(`(?m)^\s*\$table_prefix\s*=\s*['"]([A-Za-z0-
 // constants for restic binary path and maintenance mode file names
 const (
 	resticBin     = "/usr/bin/restic"
+	resticTmpDir  = "/var/tmp"
 	maintConfName = "000-maint.conf"
 	maintHTMLName = "maintenance.html"
 )
@@ -146,7 +147,7 @@ func (m *Manager) loadS3Config() (*s3Config, error) {
 // resticEnv builds the environment slice for a restic command
 func resticEnv(password string, s3 *s3Config) []string {
 	env := append(os.Environ(), "RESTIC_PASSWORD="+password)
-	env = append(env, "TMPDIR=/var/tmp")
+	env = append(env, "TMPDIR="+resticTmpDir)
 	if s3 != nil {
 		env = append(env,
 			"AWS_ACCESS_KEY_ID="+s3.accessKey,
@@ -1245,11 +1246,21 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		return fmt.Errorf("export: find file snapshot: %w", err)
 	}
 
+	// only the db snapshot lookup remains before staging; resolve it now so
+	// every metadata failure happens ahead of the first byte of output
+	var dbSnapID string
+	if modules.TypeModule(site.SiteType).HasDatabase() {
+		dbSnapID, err = m.findSnapshot(ctx, repoPath, env, backup.SnapshotID, "db")
+		if err != nil {
+			return fmt.Errorf("export: find db snapshot: %w", err)
+		}
+	}
+
 	logger.Debug("Export: fileSnapID=%q repoPath=%q", fileSnapID, repoPath)
 
 	// restore the file snapshot to a temp directory — avoids relying on
 	// restic's --archive tar flag which is not available in all versions
-	tmpDir, err := os.MkdirTemp("", "podnest-export-*")
+	tmpDir, err := os.MkdirTemp(resticTmpDir, "podnest-export-*")
 	if err != nil {
 		return fmt.Errorf("export: create temp dir: %w", err)
 	}
@@ -1275,6 +1286,11 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	// restic restores to tmpDir + original absolute path, e.g.
 	// tmpDir/home/sites/sites/testsite/html/...
 	siteRestoreDir := filepath.Join(tmpDir, m.appPath, "sites", site.Name)
+
+	// staging succeeded — signal the caller that headers may now be written
+	if h, ok := w.(interface{ ExportReady() }); ok {
+		h.ExportReady()
+	}
 
 	// wrap the response writer in gzip then tar
 	gz := gzip.NewWriter(w)
@@ -1323,11 +1339,7 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	}
 
 	// only sites with a MariaDB container have a DB snapshot
-	if modules.TypeModule(site.SiteType).HasDatabase() {
-		dbSnapID, err := m.findSnapshot(ctx, repoPath, env, backup.SnapshotID, "db")
-		if err != nil {
-			return fmt.Errorf("export: find db snapshot: %w", err)
-		}
+	if dbSnapID != "" {
 
 		// setup the command to dump the DB snapshot
 		dbCmd := exec.CommandContext(ctx, resticBin,
@@ -1742,7 +1754,7 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 	}()
 
 	// extract the archive to a temp directory
-	tmpDir, err := os.MkdirTemp("", "podnest-import-*")
+	tmpDir, err := os.MkdirTemp(resticTmpDir, "podnest-import-*")
 	if err != nil {
 		return fmt.Errorf("ImportRestore: create temp dir: %w", err)
 	}

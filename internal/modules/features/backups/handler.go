@@ -201,14 +201,45 @@ func (m Module) apiDownloadBackup(w http.ResponseWriter, r *http.Request, site *
 		backup.Created.UTC().Format("2006-01-02"),
 		backup.ID,
 	)
-	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
 	logger.Debug("apiDownloadBackup: streaming backup %d for site %s as %s", bid, site.Name, filename)
-	if err := m.Manager.Export(r.Context(), site, backup, w); err != nil {
+	dw := &deferredDownloadWriter{w: w, filename: filename}
+	if err := m.Manager.Export(r.Context(), site, backup, dw); err != nil {
 		logger.Error("apiDownloadBackup: export failed for backup %d: %v", bid, err)
+		if !dw.ready {
+			apiutil.Error(w, http.StatusInternalServerError, err)
+		}
 	}
+}
+
+// deferredDownloadWriter holds back the attachment response headers until the
+// export has finished staging, so a pre-stream failure can still return a JSON
+// error instead of a zero-length 200 with a Content-Disposition attached.
+type deferredDownloadWriter struct {
+	w        http.ResponseWriter
+	filename string
+	ready    bool
+}
+
+// ExportReady marks staging complete and emits the download response headers.
+func (d *deferredDownloadWriter) ExportReady() {
+	if d.ready {
+		return
+	}
+	d.ready = true
+	h := d.w.Header()
+	h.Set("Content-Type", "application/gzip")
+	h.Set("Content-Disposition", "attachment; filename=\""+d.filename+"\"")
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Accel-Buffering", "no")
+	d.w.WriteHeader(http.StatusOK)
+}
+
+// Write emits the headers on first use if ExportReady was not called.
+func (d *deferredDownloadWriter) Write(p []byte) (int, error) {
+	if !d.ready {
+		d.ExportReady()
+	}
+	return d.w.Write(p)
 }
 
 // parseBID parses the {bid} path value and writes an error response on failure.
