@@ -342,6 +342,11 @@ export function wireBackupsPanel(root, siteId) {
         if (downloadBtn) {
             const bid = downloadBtn.dataset.id;
 
+            // correlation token — the server sets a cookie under this name once
+            // staging is done and the download response headers are on the wire
+            const dlToken = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+            const dlCookie = `kp_dl_${dlToken}`;
+
             showProgressModal(
                 "Preparing Download",
                 "Your backup archive is being generated — this may take a moment depending on site size. Your download will begin automatically. Do not close this tab."
@@ -351,21 +356,30 @@ export function wireBackupsPanel(root, siteId) {
             // potentially blocks the UI, then trigger via a hidden anchor
             setTimeout(() => {
                 const a = document.createElement("a");
-                a.href = `/api/sites/${siteId}/backups/${bid}/download`;
+                a.href = `/api/sites/${siteId}/backups/${bid}/download?dl=${dlToken}`;
                 a.style.display = "none";
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
 
-                // dismiss the modal after a reasonable delay — we can't detect
-                // when the browser finishes downloading so we give it 5 seconds
-                // which is enough time for the response headers to arrive and
-                // the save dialog to appear
-                setTimeout(() => {
-                    hideProgressModal();
-                }, 5000);
-            }, 300);
+                // poll for the server's cookie — it lands when the download
+                // actually starts, however long staging took
+                const started = Date.now();
+                const poll = setInterval(() => {
+                    const hit = document.cookie
+                        .split(";")
+                        .some(c => c.trim().startsWith(`${dlCookie}=`));
 
+                    // stop waiting after 30 minutes so the modal cannot stick
+                    if (!hit && Date.now() - started < 1800000) {
+                        return;
+                    }
+                    clearInterval(poll);
+                    document.cookie = `${dlCookie}=; Path=/; Max-Age=0`;
+                    hideProgressModal();
+                }, 500);
+            }, 300);
+            
             return;
         }
         

@@ -203,7 +203,7 @@ func (m Module) apiDownloadBackup(w http.ResponseWriter, r *http.Request, site *
 		backup.ID,
 	)
 	logger.Debug("apiDownloadBackup: streaming backup %d for site %s as %s", bid, site.Name, filename)
-	dw := &deferredDownloadWriter{w: w, filename: filename}
+	dw := &deferredDownloadWriter{w: w, filename: filename, token: downloadToken(r.URL.Query().Get("dl"))}
 	if err := m.Manager.Export(r.Context(), site, backup, dw); err != nil {
 		logger.Error("apiDownloadBackup: export failed for backup %d: %v", bid, err)
 		if !dw.ready {
@@ -218,6 +218,7 @@ func (m Module) apiDownloadBackup(w http.ResponseWriter, r *http.Request, site *
 type deferredDownloadWriter struct {
 	w        http.ResponseWriter
 	filename string
+	token    string
 	ready    bool
 }
 
@@ -228,6 +229,18 @@ func (d *deferredDownloadWriter) ExportReady() {
 	}
 	d.ready = true
 	h := d.w.Header()
+
+	// the browser cannot signal the client when a download starts, so drop a
+	// readable cookie here — the UI polls for it to dismiss its progress modal
+	if d.token != "" {
+		http.SetCookie(d.w, &http.Cookie{
+			Name:   "kp_dl_" + d.token,
+			Value:  "1",
+			Path:   "/",
+			MaxAge: 600,
+		})
+	}
+
 	h.Set("Content-Type", "application/gzip")
 	h.Set("Content-Disposition", "attachment; filename=\""+d.filename+"\"")
 	h.Set("Cache-Control", "no-store")
@@ -241,6 +254,20 @@ func (d *deferredDownloadWriter) Write(p []byte) (int, error) {
 		d.ExportReady()
 	}
 	return d.w.Write(p)
+}
+
+// downloadToken sanitises the client-supplied download correlation token,
+// keeping only short alphanumeric values safe to echo back in a cookie name
+func downloadToken(s string) string {
+	if len(s) == 0 || len(s) > 32 {
+		return ""
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return ""
+		}
+	}
+	return s
 }
 
 // parseBID parses the {bid} path value and writes an error response on failure.
