@@ -41,6 +41,27 @@ func buildCSP(nonce string) string {
 		"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; " +
 		"manifest-src 'self'; " +
 		"frame-src 'none'; " +
+		"frame-ancestors 'self'; " +
+		"object-src 'none'; " +
+		"base-uri 'self'; " +
+		"form-action 'self'"
+}
+
+// buildPMACSP returns a relaxed policy for the proxied phpMyAdmin interface.
+// PMA emits inline scripts and styles it generates itself and cannot be nonced
+// from here, so script-src and style-src allow inline — but the policy is still
+// present, which keeps object-src, base-uri, form-action and frame-ancestors
+// enforced on that path instead of leaving it with no policy at all.
+func buildPMACSP() string {
+	return "" +
+		"default-src 'self'; " +
+		"script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"font-src 'self' data:; " +
+		"img-src 'self' data: blob:; " +
+		"connect-src 'self'; " +
+		"frame-src 'none'; " +
+		"frame-ancestors 'self'; " +
 		"object-src 'none'; " +
 		"base-uri 'self'; " +
 		"form-action 'self'"
@@ -76,8 +97,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		nonce := base64.StdEncoding.EncodeToString(nb[:])
 		r = r.WithContext(context.WithValue(r.Context(), cspNonceKey, nonce))
 
-		// skip CSP for the PMA proxy — phpMyAdmin loads its own external assets
-		if !strings.HasPrefix(r.URL.Path, "/pma/") {
+		// PMA gets its own relaxed policy rather than an exemption — matched on
+		// the routed prefix so nothing resolving under it is left unprotected
+		if r.URL.Path == "/pma" || strings.HasPrefix(r.URL.Path, "/pma/") {
+			w.Header().Set("Content-Security-Policy", buildPMACSP())
+		} else {
 			w.Header().Set("Content-Security-Policy", buildCSP(nonce))
 		}
 
