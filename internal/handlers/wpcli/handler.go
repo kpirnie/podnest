@@ -103,18 +103,22 @@ func (h *Handler) apiWPCLI(w http.ResponseWriter, r *http.Request) {
 
 	containerName := podman.ContainerName(site.Name, "php")
 
-	// the command reaches sh -c intact, so this exec runs as the site UID rather
-	// than root — matching cron's execute(), which runs wp the same way
+	// argv exec rather than `sh -c` — the command is user-supplied, so routing
+	// it through a shell would make `;`, `|`, `>` and `$(...)` executable in the
+	// container. Every wp subcommand stays available; only shell interpretation
+	// is removed. Runs as the site UID, matching cron's execute().
+	argv := append([]string{
+		wpcliContainerPath, "--path=/var/www/html", "--no-color", "--allow-root",
+	}, splitCommand(cmd)...)
+
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
 		"Detach":       false,
 		"User":         fmt.Sprintf("%d", sftp.UIDForSite(site.ID)),
-		"Cmd": []string{
-			"sh", "-c",
-			fmt.Sprintf("%s --path=/var/www/html --no-color --allow-root %s", wpcliContainerPath, cmd),
-		},
+		"Cmd":          argv,
 	}
+
 	var execResp struct {
 		ID string `json:"Id"`
 	}
@@ -261,4 +265,53 @@ func (h *Handler) ensureWPCLI(ctx context.Context, siteName string, conn *websoc
 	logger.Debug("ensureWPCLI: wp-cli installed successfully in container %s", containerName)
 	conn.WriteMessage(websocket.TextMessage, []byte("[info] WP-CLI installed successfully"))
 	return nil
+}
+
+// splitCommand splits a WP-CLI command line into argv tokens, honoring single
+// quotes, double quotes and backslash escapes. Unterminated quotes and a
+// trailing backslash are tolerated — the remainder becomes a literal token
+// rather than an error, since operators only ever see this through the
+// terminal UI. The result is passed to exec as argv so shell metacharacters
+// carry no meaning.
+func splitCommand(s string) []string {
+	var (
+		args []string
+		cur  strings.Builder
+		has  bool
+		quo  rune
+		esc  bool
+	)
+	for _, c := range s {
+		switch {
+		case esc:
+			cur.WriteRune(c)
+			has = true
+			esc = false
+		case c == '\\' && quo != '\'':
+			esc = true
+			has = true
+		case quo != 0:
+			if c == quo {
+				quo = 0
+			} else {
+				cur.WriteRune(c)
+			}
+		case c == '\'' || c == '"':
+			quo = c
+			has = true
+		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
+			if has {
+				args = append(args, cur.String())
+				cur.Reset()
+				has = false
+			}
+		default:
+			cur.WriteRune(c)
+			has = true
+		}
+	}
+	if has {
+		args = append(args, cur.String())
+	}
+	return args
 }
