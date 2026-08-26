@@ -117,7 +117,10 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                             <tr>
                                 <td class="kp-muted">Password</td>
                                 <td>
-                                    <span id="sftp-pass-display" class="kp-mono kp-sftp-pass">${sftp?.Password ?? '—'}</span>
+                                    <span id="sftp-pass-display" class="kp-mono kp-sftp-pass" data-revealed="0">••••••••••••</span>
+                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left" id="sftp-reveal-btn" uk-tooltip="Reveal the Password">
+                                        <span uk-icon="icon: eye; ratio: 0.75"></span>
+                                    </button>
                                     <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left" id="sftp-copy-btn" uk-tooltip="Copy the Password">
                                         <span uk-icon="icon: copy; ratio: 0.75"></span>
                                     </button>
@@ -189,7 +192,14 @@ export function wireOverviewTab(root, siteId, site = null) {
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
         try {
-            await api.post(`/sites/${siteId}/sftp-regen`);
+            const res = await api.post(`/sites/${siteId}/sftp-regen`);
+            const disp = root.querySelector('#sftp-pass-display');
+            if (disp && res?.password) {
+                disp.textContent = res.password;
+                disp.dataset.revealed = '1';
+                const rb = root.querySelector('#sftp-reveal-btn');
+                if (rb) rb.innerHTML = '<span uk-icon="icon: eye-slash; ratio: 0.75"></span>';
+            }
             toast.success('SFTP password regenerated');
             router.go('site-detail', { id: String(siteId) });
         } catch (e) {
@@ -199,9 +209,14 @@ export function wireOverviewTab(root, siteId, site = null) {
         }
     });
 
-    root.querySelector('#sftp-copy-btn')?.addEventListener('click', () => {
-        const pass = root.querySelector('#sftp-pass-display')?.textContent;
-        if (!pass) return;
+    // fetchSftpPassword pulls the plaintext on demand — it is no longer part of
+    // the site-detail payload
+    const fetchSftpPassword = async () => {
+        const res = await api.get(`/sites/${siteId}/sftp-password`);
+        return res?.password ?? '';
+    };
+
+    const writeClipboard = (pass) => {
         if (navigator.clipboard) {
             navigator.clipboard.writeText(pass)
                 .then(() => toast.success('Password copied to clipboard'))
@@ -215,6 +230,49 @@ export function wireOverviewTab(root, siteId, site = null) {
             document.execCommand('copy');
             document.body.removeChild(el);
             toast.success('Password copied to clipboard');
+        }
+    };
+
+    root.querySelector('#sftp-reveal-btn')?.addEventListener('click', async () => {
+        const disp = root.querySelector('#sftp-pass-display');
+        const btn  = root.querySelector('#sftp-reveal-btn');
+        if (!disp) return;
+
+        if (disp.dataset.revealed === '1') {
+            disp.textContent = '••••••••••••';
+            disp.dataset.revealed = '0';
+            btn.innerHTML = '<span uk-icon="icon: eye; ratio: 0.75"></span>';
+            return;
+        }
+
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            disp.textContent = await fetchSftpPassword();
+            disp.dataset.revealed = '1';
+            btn.innerHTML = '<span uk-icon="icon: eye-slash; ratio: 0.75"></span>';
+        } catch (e) {
+            toast.error(e.message);
+            btn.innerHTML = orig;
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    root.querySelector('#sftp-copy-btn')?.addEventListener('click', async () => {
+        const btn  = root.querySelector('#sftp-copy-btn');
+        const orig = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
+        try {
+            const pass = await fetchSftpPassword();
+            if (pass) writeClipboard(pass);
+        } catch (e) {
+            toast.error(e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = orig;
         }
     });
 

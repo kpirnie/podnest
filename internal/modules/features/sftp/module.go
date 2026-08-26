@@ -41,6 +41,13 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		}
 		m.apiRegenerateSFTPPassword(w, r, site)
 	})
+	mux.HandleFunc("GET /sites/{id}/sftp-password", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		m.apiRevealSFTPPassword(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; SFTP users are created during site provisioning.

@@ -36,5 +36,25 @@ func (m Module) apiRegenerateSFTPPassword(w http.ResponseWriter, r *http.Request
 	}
 
 	logger.Debug("SFTP password regenerated for site %d", site.ID)
-	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	w.Header().Set("Cache-Control", "no-store")
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok", "password": newPassword})
+}
+
+// apiRevealSFTPPassword returns the plaintext SFTP password for a site. Split
+// out of apiGetSite so the credential is fetched on an explicit user action
+// rather than riding along in every site-detail response.
+func (m Module) apiRevealSFTPPassword(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	cred, err := db.GetSFTPCredBySite(m.DB, site.ID)
+	if err != nil {
+		logger.Error("failed to fetch SFTP cred for site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if cred == nil {
+		apiutil.ErrorMsg(w, http.StatusNotFound, "no sftp credential for site")
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	apiutil.JSON(w, http.StatusOK, map[string]string{"password": cred.Password})
 }

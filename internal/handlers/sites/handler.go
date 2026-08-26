@@ -217,7 +217,10 @@ func (h *Handler) apiGetSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if the site type supports SFTP, fetch the SFTP credentials for the site
+	// if the site type supports SFTP, fetch the credential for the site. The
+	// password is stripped before it leaves this handler — it travels only via
+	// the dedicated reveal endpoint so it is not in the payload of every
+	// site-detail page load
 	var sftpCred *models.SFTPCred
 	if modules.TypeModule(site.SiteType).HasSFTP() {
 		sftpCred, err = db.GetSFTPCredBySite(h.DB, site.ID)
@@ -225,6 +228,11 @@ func (h *Handler) apiGetSite(w http.ResponseWriter, r *http.Request) {
 			logger.Error("failed to fetch SFTP cred for site %d: %v", site.ID, err)
 			apiutil.Error(w, http.StatusInternalServerError, err)
 			return
+		}
+		if sftpCred != nil {
+			redacted := *sftpCred
+			redacted.Password = ""
+			sftpCred = &redacted
 		}
 	}
 
