@@ -316,8 +316,12 @@ func (h *Handler) apiTOTPSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if caller.ID != target.ID && caller.Role != models.RoleAdmin {
-		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+	// TOTP is the caller's own second factor, not a resource an admin
+	// administers — enrolling on another account would hand the admin a working
+	// factor for it and lock the owner out of their own. Self only, admin or not
+	if caller.ID != target.ID {
+		logger.Warn("apiTOTPSetup: user %d attempted TOTP setup on user %d", caller.ID, target.ID)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "TOTP can only be set up for your own account")
 		return
 	}
 
@@ -346,8 +350,9 @@ func (h *Handler) apiTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if caller.ID != target.ID && caller.Role != models.RoleAdmin {
-		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+	if caller.ID != target.ID {
+		logger.Warn("apiTOTPConfirm: user %d attempted TOTP confirm on user %d", caller.ID, target.ID)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "TOTP can only be confirmed for your own account")
 		return
 	}
 
@@ -383,8 +388,8 @@ func (h *Handler) apiTOTPConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// encrypt the confirmed secret with the owner's key — only when confirming our own
-	if caller.ID == target.ID && totpKey != nil && !auth.IsEncryptedTOTPSecret(fresh.TOTPSecret) {
+	// the secret is always the caller's own now, so the key is always available
+	if totpKey != nil && !auth.IsEncryptedTOTPSecret(fresh.TOTPSecret) {
 		if enc, encErr := auth.EncryptTOTPSecret(totpKey, fresh.TOTPSecret); encErr == nil {
 			_ = db.UpdateTOTPSecret(h.DB, target.ID, enc)
 		}
@@ -430,6 +435,14 @@ func (h *Handler) apiTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = db.DeleteBackupCodes(h.DB, target.ID)
+
+	// an admin stripping someone else's factor is the recovery path — drop the
+	// target's sessions so a removed factor cannot be paired with a session that
+	// was already open when it was removed
+	if caller.ID != target.ID {
+		_ = db.DeleteUserSessions(h.DB, target.ID)
+		_ = db.DeletePMASessionsByUser(h.DB, target.ID)
+	}
 
 	logger.Debug("TOTP disabled for user %d by caller %d", target.ID, caller.ID)
 	w.WriteHeader(http.StatusNoContent)
