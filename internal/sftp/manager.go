@@ -54,6 +54,10 @@ func (m *Manager) SetHostAppPath(p string) {
 // UIDForSite returns a deterministic UID for a site based on its ID
 func UIDForSite(siteID int64) int { return sftpUIDBase + int(siteID) }
 
+// UIDBase returns the floor of the per-site UID range. Any UID at or below it
+// falls outside the range allocated to sites.
+func UIDBase() int { return sftpUIDBase }
+
 // Ensure makes sure the global SFTP container exists and is running.
 // If the container exists but is stopped or crashed, it attempts to start it.
 func (m *Manager) Ensure(ctx context.Context) error {

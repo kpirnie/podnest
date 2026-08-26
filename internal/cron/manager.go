@@ -229,6 +229,16 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 	containerName := podman.ContainerName(site.Name, role)
 	siteUID := sftp.UIDForSite(site.ID)
 
+	// the exec user is the only boundary between a site-owner cron and the rest
+	// of the host — the command itself is deliberately a full shell. A UID at or
+	// below the base means site.ID was zero or negative, which would run the job
+	// as root or as another site's user
+	if siteUID <= sftp.UIDBase() {
+		logger.Error("cron: job %d refused — invalid exec uid %d for site %d", job.ID, siteUID, site.ID)
+		_ = db.SetCronResult(m.database, job.ID, "", "invalid exec uid")
+		return fmt.Errorf("invalid exec uid %d for site %d", siteUID, site.ID)
+	}
+
 	logger.Debug("cron: running job %d (%s) in container %s", job.ID, job.Label, containerName)
 
 	// for WordPress sites, auto-install WP-CLI if the command starts with "wp "

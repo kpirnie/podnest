@@ -77,6 +77,7 @@ func (m Module) apiCreateCron(w http.ResponseWriter, r *http.Request, site *mode
 
 	m.Manager.Reload()
 	logger.Debug("apiCreateCron: created cron %d for site %d", id, site.ID)
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), "", db.SnapshotCron(m.DB, id)))
 	apiutil.JSON(w, http.StatusCreated, map[string]int64{"id": id})
 }
 
