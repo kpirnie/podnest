@@ -21,6 +21,19 @@ import (
 	"time"
 )
 
+// rpTLSDowngradeTTL bounds how long a verified upstream stays downgraded after a
+// handshake failure. Without an expiry a single interrupted handshake pins the
+// host to the non-verifying transport for the life of the process, which is
+// exactly the outcome an active MITM wants.
+const rpTLSDowngradeTTL = 15 * time.Minute
+
+// tlsVerdict is the cached cert-verification result for an upstream host.
+// downgradedAt is zero unless a verified host was flipped back by a failure.
+type tlsVerdict struct {
+	verified     bool
+	downgradedAt time.Time
+}
+
 // ObtainCert proactively triggers Let's Encrypt certificate issuance for a domain.
 func (p *Proxy) ObtainCert(domain string) {
 	go func() {
@@ -34,39 +47,69 @@ func (p *Proxy) ObtainCert(domain string) {
 	}()
 }
 
+// upstreamTLSKey normalizes an upstream host to host:port so an implicit 443
+// and an explicit one resolve to the same verdict entry.
+func upstreamTLSKey(u *url.URL) string {
+	if u.Port() == "" {
+		if u.Scheme == "http" {
+			return net.JoinHostPort(u.Hostname(), "80")
+		}
+		return net.JoinHostPort(u.Hostname(), "443")
+	}
+	return u.Host
+}
+
 // probeUpstreamTLS records whether an https upstream presents a verifiable certificate,
 // so serving can pick the verifying transport without a per-route setting
 func (p *Proxy) probeUpstreamTLS(u *url.URL) {
 	if u.Scheme != "https" {
 		return
 	}
-	host := u.Host
-	if u.Port() == "" {
-		host = net.JoinHostPort(u.Hostname(), "443")
-	}
+	key := upstreamTLSKey(u)
 	d := &net.Dialer{Timeout: 5 * time.Second}
-	conn, err := tls.DialWithDialer(d, "tcp", host, &tls.Config{ServerName: u.Hostname()})
+	conn, err := tls.DialWithDialer(d, "tcp", key, &tls.Config{ServerName: u.Hostname()})
 	if err != nil {
-		p.rpTLSVerified.Store(u.Host, false)
+		p.rpTLSVerified.Store(key, tlsVerdict{verified: false, downgradedAt: time.Now()})
 		return
 	}
 	conn.Close()
-	p.rpTLSVerified.Store(u.Host, true)
-	logger.Debug("proxy: upstream %s presents a verifiable certificate", u.Host)
+	p.rpTLSVerified.Store(key, tlsVerdict{verified: true})
+	logger.Debug("proxy: upstream %s presents a verifiable certificate", key)
 }
 
-// rpTransportForTarget returns the verifying transport when the upstream's cert probed as valid
+// rpTransportForTarget returns the verifying transport when the upstream's cert probed as valid.
+// An expired downgrade triggers a re-probe so a host that was flipped back by a
+// transient failure can recover verification instead of staying unverified.
 func (p *Proxy) rpTransportForTarget(t UpstreamTarget) *http.Transport {
-	if v, ok := p.rpTLSVerified.Load(t.URL.Host); ok && v.(bool) {
+	key := upstreamTLSKey(t.URL)
+	v, ok := p.rpTLSVerified.Load(key)
+	if !ok {
+		return p.rpTransport
+	}
+	verdict := v.(tlsVerdict)
+	if verdict.verified {
 		return p.rpVerifyTransport
+	}
+	if !verdict.downgradedAt.IsZero() && time.Since(verdict.downgradedAt) > rpTLSDowngradeTTL {
+		// reset the clock before probing so concurrent requests do not stampede
+		p.rpTLSVerified.Store(key, tlsVerdict{verified: false, downgradedAt: time.Now()})
+		go p.probeUpstreamTLS(t.URL)
 	}
 	return p.rpTransport
 }
 
-// markTLSUnverified flips a probed-verified host back to skip-verify; returns true if flipped
+// markTLSUnverified flips a probed-verified host back to skip-verify; returns true if flipped.
+// The flip is logged and timestamped — it expires after rpTLSDowngradeTTL rather
+// than persisting silently for the life of the process.
 func (p *Proxy) markTLSUnverified(t UpstreamTarget) bool {
-	if v, ok := p.rpTLSVerified.Load(t.URL.Host); ok && v.(bool) {
-		p.rpTLSVerified.Store(t.URL.Host, false)
+	key := upstreamTLSKey(t.URL)
+	v, ok := p.rpTLSVerified.Load(key)
+	if !ok {
+		return false
+	}
+	if verdict := v.(tlsVerdict); verdict.verified {
+		p.rpTLSVerified.Store(key, tlsVerdict{verified: false, downgradedAt: time.Now()})
+		logger.Warn("proxy: upstream %s downgraded to unverified TLS after a failed request", key)
 		return true
 	}
 	return false

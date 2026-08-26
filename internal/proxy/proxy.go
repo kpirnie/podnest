@@ -103,7 +103,7 @@ type Proxy struct {
 	adminTransport    *http.Transport                              // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
 	rpTransport       *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
 	rpVerifyTransport *http.Transport                              // verifying twin of rpTransport for upstreams whose certs probe as valid
-	rpTLSVerified     sync.Map                                     // string(upstream host) → bool; probed cert-verification verdicts
+	rpTLSVerified     sync.Map                                     // string(host:port) → tlsVerdict; probed cert-verification verdicts with downgrade expiry
 	accessLog         *os.File                                     // structured access log for Fail2Ban consumption
 	accessLogCh       chan accessLogEntry                          // async drain channel — request goroutines never block on log writes
 	accessLogDone     chan struct{}                                // closed when the drain goroutine has finished
