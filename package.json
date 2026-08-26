@@ -21,6 +21,6 @@
     "esbuild@0.28.1": true
   },
   "dependencies": {
-    "npm": "latest"
+    "npm": "^10.9.9"
   }
 }
