@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, fmtBytes, hideProgressModal, showProgressModal } from '../helpers.js';
+import { confirm, escapeHtml, fmtBytes, hideProgressModal, showProgressModal } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // renderBackupsTab returns the static HTML shell for the backups tab
@@ -115,8 +115,8 @@ function renderBackupList(backups) {
 
     const rows = backups.map((b) => `
         <tr>
-            <td class="kp-mono" style="font-size:0.8rem">${b.SnapshotID}</td>
-            <td>${b.Label || '—'}</td>
+            <td class="kp-mono" style="font-size:0.8rem">${escapeHtml(b.SnapshotID)}</td>
+            <td>${b.Label ? escapeHtml(b.Label) : '—'}</td>
             <td>${typeLabel(b.BackupType)}</td>
             <td>${fmtBytes(b.SizeBytes)}</td>
             <td>${new Date(b.Created).toLocaleString()}</td>
@@ -201,7 +201,7 @@ export async function loadBackupsPanel(root, siteId) {
                 errBanner.innerHTML = `
                     <div uk-alert class="uk-alert-warning">
                         <a class="uk-alert-close" uk-close></a>
-                        <p><strong>Last scheduled backup failed${at}:</strong> ${repo.last_error}</p>
+                        <p><strong>Last scheduled backup failed${at}:</strong> ${escapeHtml(repo.last_error)}</p>
                     </div>`;
             } else {
                 errBanner.innerHTML = "";
@@ -215,7 +215,7 @@ export async function loadBackupsPanel(root, siteId) {
     } catch (err) {
         const listWrap = root.querySelector("#backup-list-wrap");
         if (listWrap) listWrap.innerHTML =
-            `<p class="kp-muted uk-text-small">Failed to load backups: ${err.message}</p>`;
+            `<p class="kp-muted uk-text-small">Failed to load backups: ${escapeHtml(err.message)}</p>`;
     }
 }
 
@@ -414,8 +414,8 @@ export function wireBackupsPanel(root, siteId) {
             } else {
                 sftpList.innerHTML = files.map(f => `
                     <div class="uk-flex uk-flex-middle uk-flex-between uk-margin-small-bottom">
-                        <span class="kp-mono uk-text-small">${f}</span>
-                        <button class="uk-button kp-btn-primary kp-btn-sm import-sftp-btn" data-file="${f}">
+                        <span class="kp-mono uk-text-small">${escapeHtml(f)}</span>
+                        <button class="uk-button kp-btn-primary kp-btn-sm import-sftp-btn" data-file="${escapeHtml(f)}">
                             Restore
                         </button>
                     </div>`).join('');

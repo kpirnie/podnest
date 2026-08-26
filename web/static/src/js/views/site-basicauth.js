@@ -5,6 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
+import { escapeHtml } from '../helpers.js';
 import { toast } from '../toast.js';
 
 // renderBasicAuthTab returns the static HTML shell for the basic auth tab
@@ -91,7 +92,7 @@ function renderUserList(panel, users) {
 
     list.innerHTML = users.map(u => `
         <div class="uk-flex uk-flex-middle uk-margin-small-bottom ba-user-row" data-uid="${u.id}" style="gap:8px">
-            <span class="kp-mono" style="flex:1">${u.username}</span>
+            <span class="kp-mono" style="flex:1">${escapeHtml(u.username)}</span>
             <a href="javascript:void(0);" class="kp-muted ba-delete-btn" uk-icon="trash" uk-tooltip="Remove credential"></a>
         </div>`).join('');
 }
