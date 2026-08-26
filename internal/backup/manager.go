@@ -2263,14 +2263,40 @@ func wipeHTMLRoot(siteDir string) error {
 		return fmt.Errorf("wipeHTMLRoot: read %s: %w", htmlDir, err)
 	}
 
-	// remove every entry that is not on the preserve list
+	// remove every entry that is not on the preserve list; a failure mid-tree
+	// must not abort, or the web root is left half-destroyed
+	var failed []string
 	for _, e := range entries {
 		if htmlPreserved(e.Name()) {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(htmlDir, e.Name())); err != nil {
-			return fmt.Errorf("wipeHTMLRoot: remove %s: %w", e.Name(), err)
+
+		target := filepath.Join(htmlDir, e.Name())
+		if err := os.RemoveAll(target); err == nil {
+			continue
 		}
+
+		// retry once after loosening the tree, then give up on this entry
+		_ = filepath.Walk(target, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				_ = os.Chmod(p, 0o755)
+			}
+			return nil
+		})
+		if err := os.RemoveAll(target); err != nil {
+			logger.Warn("wipeHTMLRoot: remove %s: %v", e.Name(), err)
+			failed = append(failed, e.Name())
+		}
+	}
+
+	// leftovers are reported, not fatal — the overlay still needs to run
+	if len(failed) > 0 {
+		logger.Warn("wipeHTMLRoot: %d entries could not be removed from %s: %s",
+			len(failed), htmlDir, strings.Join(failed, ", "))
+		return nil
 	}
 
 	logger.Debug("wipeHTMLRoot: cleared %s", htmlDir)

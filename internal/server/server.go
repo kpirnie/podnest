@@ -189,8 +189,8 @@ func (s *Server) Start() error {
 		logger.Warn("proxy: cache warm failed: %v", err)
 	}
 
-	// start the weekly trusted proxy CIDR auto-refresh
-	proxy.StartTrustedProxyRefresher(px, 7*24*time.Hour)
+	// start the daily trusted proxy CIDR auto-refresh
+	proxy.StartTrustedProxyRefresher(px, 24*time.Hour)
 
 	// run the proxy
 	go func() {
