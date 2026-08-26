@@ -17,10 +17,12 @@ import (
 )
 
 // sensitiveKeys matches JSON key names whose values must be masked before persistence.
-var sensitiveKeys = regexp.MustCompile(`(?i)(^|[_\-.])(password|pass|passwd|pwd|secret|token|key)([_\-.]|$)`)
+// Two alternations: separator-bounded generic words, and compound forms that carry no
+// separator (apikey, secretkey) which the bounded pattern would otherwise miss.
+var sensitiveKeys = regexp.MustCompile(`(?i)((^|[_\-.])(password|pass|passwd|pwd|secret|token|key|auth|credential|credentials|totp|otp|mfa|seed|salt|signature|private|cert|certificate|cookie|bearer|dsn|passphrase|recovery)([_\-.]|$))|(apikey|apitoken|apisecret|accesskey|secretkey|privatekey|authtoken|sessiontoken|refreshtoken|connectionstring)`)
 
-// sensitiveRegex is the fallback pattern for non-JSON bodies — same regex as the logger.
-var sensitiveRegex = regexp.MustCompile(`(?i)(password|pass|passwd|pwd|secret|token|key)([=:\s"]+)([^\s"&,]+)`)
+// sensitiveRegex is the fallback pattern for non-JSON bodies — same terms as the logger.
+var sensitiveRegex = regexp.MustCompile(`(?i)(password|pass|passwd|pwd|secret|token|key|auth|credential|credentials|totp|otp|mfa|seed|salt|signature|passphrase|recovery|apikey|apitoken|accesskey|secretkey|privatekey|authtoken|connectionstring)([=:\s"]+)([^\s"&,]+)`)
 
 // auditCh is the async drain channel — callers enqueue and return immediately.
 var auditCh = make(chan models.AuditEntry, 2048)
