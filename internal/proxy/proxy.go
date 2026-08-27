@@ -818,6 +818,14 @@ func (p *Proxy) resolveWAFEngine(siteID int64) *WAFEngine {
 	}
 }
 
+// isPanelStaticPath reports whether the request targets an embedded panel asset.
+// These are public, carry no session-dependent output, and are requested many
+// times per page load — resolving a session for each one is a DB round trip
+// spent on a file that would be served identically either way.
+func isPanelStaticPath(path string) bool {
+	return strings.HasPrefix(path, "/static/") || path == "/favicon.ico"
+}
+
 // PanelSecurityMiddleware returns an http.Handler middleware that applies the
 // global WAF engine, IP rules, and UA rules to admin panel requests.
 // Requests carrying a valid session cookie bypass all security checks —
@@ -829,10 +837,12 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 		// the user has already passed login; blocking their API calls is wrong.
 		// The resolved pair rides the context so the audit and auth layers
 		// beneath do not repeat the same two queries.
-		if sessionID := auth.SessionFromRequest(r); sessionID != "" {
-			if session, user, err := auth.SessionAndUser(p.database, sessionID); err == nil && session != nil && user != nil {
-				next.ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), session, user)))
-				return
+		if !isPanelStaticPath(r.URL.Path) {
+			if sessionID := auth.SessionFromRequest(r); sessionID != "" {
+				if session, user, err := auth.SessionAndUser(p.database, sessionID); err == nil && session != nil && user != nil {
+					next.ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), session, user)))
+					return
+				}
 			}
 		}
 
