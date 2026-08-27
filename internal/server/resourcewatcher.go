@@ -62,33 +62,40 @@ func (rs *resourceState) clearWarning() {
 // When available memory drops below the reserve, it throttles the heaviest pod
 // and dispatches notifications. Fires immediately then on the configured interval.
 func (s *Server) resourceWatcher() {
-	poll := func() {
+	poll := func() int {
 		ctx := context.Background()
 
-		// load settings from DB each cycle so changes take effect without restart
+		// one settings read per cycle rather than a query per key; changes still
+		// take effect without a restart
+		settings, err := db.GetAllSettings(s.cfg.DB)
+		if err != nil {
+			logger.Error("resourceWatcher: could not load settings: %v", err)
+			settings = map[string]string{}
+		}
+
 		ramReserveGB := 2.0
 		throttlePct := 50.0
 		webhookURL := ""
+		intervalSec := 30
 
-		if v, _ := db.GetSetting(s.cfg.DB, "resource_ram_reserve_gb"); v != "" {
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				ramReserveGB = f
-			}
+		if f, err := strconv.ParseFloat(settings["resource_ram_reserve_gb"], 64); err == nil {
+			ramReserveGB = f
 		}
-		if v, _ := db.GetSetting(s.cfg.DB, "resource_throttle_pct"); v != "" {
-			if f, err := strconv.ParseFloat(v, 64); err == nil {
-				throttlePct = f
-			}
+		if f, err := strconv.ParseFloat(settings["resource_throttle_pct"], 64); err == nil {
+			throttlePct = f
 		}
-		if v, _ := db.GetSetting(s.cfg.DB, "resource_webhook_url"); v != "" {
+		if v := settings["resource_webhook_url"]; v != "" {
 			webhookURL = v
+		}
+		if n, err := strconv.Atoi(settings["resource_poll_interval"]); err == nil && n >= 5 {
+			intervalSec = n
 		}
 
 		// read host memory state from /proc/meminfo
 		totalMB, availableMB, err := readMemInfoMB()
 		if err != nil {
 			logger.Error("resourceWatcher: could not read /proc/meminfo: %v", err)
-			return
+			return intervalSec
 		}
 		reserveMB := int64(ramReserveGB * 1024)
 		logger.Debug("resourceWatcher: totalMB=%d availableMB=%d reserveMB=%d", totalMB, availableMB, reserveMB)
@@ -125,13 +132,13 @@ func (s *Server) resourceWatcher() {
 				})
 				logger.Debug("resourceWatcher: memory resolved (availableMB=%d reserveMB=%d)", availableMB, reserveMB)
 			}
-			return
+			return intervalSec
 		}
 
 		// find the heaviest pod
 		offender, offenderMB := heaviestPod(podUsage)
 		if offender == "" {
-			return
+			return intervalSec
 		}
 
 		logger.Warn("resourceWatcher: memory threshold breached (availableMB=%d reserveMB=%d offender=%s %dMB)",
@@ -170,28 +177,18 @@ func (s *Server) resourceWatcher() {
 		// send admin notifications
 		msg := fmt.Sprintf("PodNest: available memory low — %dMB available, %dMB reserved. Throttling %s.", availableMB, reserveMB, offender)
 		s.notify("PodNest Resource Alert", msg, msg)
+
+		return intervalSec
 	}
 
-	// read poll interval from DB; default 30s
-	intervalSec := 30
-	if v, _ := db.GetSetting(s.cfg.DB, "resource_poll_interval"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 5 {
-			intervalSec = n
-		}
-	}
-
-	poll()
+	intervalSec := poll()
 	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		// reload interval from DB in case it changed
-		if v, _ := db.GetSetting(s.cfg.DB, "resource_poll_interval"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n >= 5 && n != intervalSec {
-				intervalSec = n
-				ticker.Reset(time.Duration(intervalSec) * time.Second)
-			}
+		if n := poll(); n != intervalSec {
+			intervalSec = n
+			ticker.Reset(time.Duration(intervalSec) * time.Second)
 		}
-		poll()
 	}
 }
 

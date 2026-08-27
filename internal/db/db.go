@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -31,7 +32,7 @@ func Open(path string) (*sql.DB, error) {
 	}
 
 	// Open the database with appropriate flags for concurrency and integrity
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on")
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on&_txlock=immediate")
 	if err != nil {
 		logger.Error("failed to open sqlite: %v", err)
 		return nil, err
@@ -62,6 +63,11 @@ func Open(path string) (*sql.DB, error) {
 	}
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
+
+	// bound how long a pooled connection lives so a long-running process does
+	// not hold file handles across a DB file replacement (restore, manual swap)
+	db.SetConnMaxLifetime(time.Hour)
+	db.SetConnMaxIdleTime(10 * time.Minute)
 
 	// Verify the connection is valid
 	if err := db.Ping(); err != nil {
