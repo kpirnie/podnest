@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"podnest/internal/auth"
@@ -203,6 +204,31 @@ func (s *Server) detectHostGateway() string {
 	return "127.0.0.1"
 }
 
+// ensurePerms applies uid/gid and mode to path only when they differ. A single
+// Lstat replaces the unconditional Chown+Chmod pair, so the steady state — where
+// nothing has drifted — costs one read syscall per path instead of two writes.
+func ensurePerms(path string, uid, gid int, mode os.FileMode) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return
+	}
+
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		if int(st.Uid) != uid || int(st.Gid) != gid {
+			if err := os.Chown(path, uid, gid); err != nil {
+				logger.Debug("ensurePerms: chown %s: %v", path, err)
+			}
+		}
+	}
+
+	// compare the full permission word including setuid/setgid/sticky
+	if fi.Mode()&os.ModePerm|fi.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != mode {
+		if err := os.Chmod(path, mode); err != nil {
+			logger.Debug("ensurePerms: chmod %s: %v", path, err)
+		}
+	}
+}
+
 // permissionReaper periodically corrects ownership and permissions on all site
 // directories — fires immediately on startup then every 5 minutes. The recursive
 // html tree walk runs on its own 6-hour ticker: drift beneath html only occurs
@@ -221,23 +247,17 @@ func (s *Server) permissionReaper() {
 			siteDir := s.sitesBase() + "/" + site.Name
 			sftpUID := sftp.UIDForSite(site.ID)
 
-			os.Chown(siteDir, 0, 0)
-			os.Chmod(siteDir, 0755)
-			os.Chmod(siteDir+"/html", 02775)
-			os.Chown(siteDir+"/nginx", sftpUID, sftpUID)
-			os.Chmod(siteDir+"/nginx", 0755)
-			os.Chown(siteDir+"/nginx/logs", 101, 101)
-			os.Chmod(siteDir+"/nginx/logs", 0750)
+			ensurePerms(siteDir, 0, 0, 0755)
+			ensurePerms(siteDir+"/html", sftpUID, sftpUID, os.ModeSetgid|0775)
+			ensurePerms(siteDir+"/nginx", sftpUID, sftpUID, 0755)
+			ensurePerms(siteDir+"/nginx/logs", 101, 101, 0750)
 
 			for _, d := range []string{"php-fpm", "redis"} {
-				os.Chown(siteDir+"/"+d, sftpUID, sftpUID)
-				os.Chmod(siteDir+"/"+d, 0755)
+				ensurePerms(siteDir+"/"+d, sftpUID, sftpUID, 0755)
 			}
 
-			os.Chown(siteDir+"/db", 999, 999)
-			os.Chmod(siteDir+"/db", 0755)
-			os.Chown(siteDir+"/backups", 0, sftpUID)
-			os.Chmod(siteDir+"/backups", 0750)
+			ensurePerms(siteDir+"/db", 999, 999, 0755)
+			ensurePerms(siteDir+"/backups", 0, sftpUID, 0750)
 		}
 	}
 
