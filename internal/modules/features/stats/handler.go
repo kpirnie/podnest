@@ -6,9 +6,11 @@ package stats
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -28,7 +30,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// -- types -------------------------------------------------------------------
+// seekProbeLines caps how far a probe scans for a timestamped line
+const seekProbeLines = 64
 
 // TrafficStats is the parsed result from the proxy access log.
 type TrafficStats struct {
@@ -529,6 +532,74 @@ func (h *Handler) fetchPodStats(ctx context.Context, names []string) (*podStatsR
 	return resp, nil
 }
 
+// seekToCutoff positions f at the first log line at or after cutoff. The access
+// log is append-only and chronologically ordered, so a binary search over byte
+// offsets skips the bulk of an old file rather than scanning it to reach the
+// 24h window. Lines that carry no RFC3339 timestamp (WAF entries) are stepped
+// over during probing.
+func seekToCutoff(f *os.File, cutoff time.Time) error {
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	// probe reads the first timestamped line at or after off, returning its
+	// timestamp and the offset the line began at
+	probe := func(off int64) (time.Time, int64, bool) {
+		if _, err := f.Seek(off, io.SeekStart); err != nil {
+			return time.Time{}, 0, false
+		}
+		r := bufio.NewReader(f)
+		pos := off
+		if off > 0 {
+			// discard the partial line the offset landed inside
+			skipped, err := r.ReadBytes('\n')
+			if err != nil {
+				return time.Time{}, 0, false
+			}
+			pos += int64(len(skipped))
+		}
+		for range seekProbeLines {
+			line, err := r.ReadBytes('\n')
+			if err != nil && len(line) == 0 {
+				return time.Time{}, 0, false
+			}
+			start := pos
+			pos += int64(len(line))
+			sp := bytes.IndexByte(line, ' ')
+			if sp <= 0 {
+				continue
+			}
+			ts, perr := time.Parse(time.RFC3339, string(line[:sp]))
+			if perr != nil {
+				continue
+			}
+			return ts, start, true
+		}
+		return time.Time{}, 0, false
+	}
+
+	lo, hi := int64(0), fi.Size()
+	best := int64(0)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		ts, start, ok := probe(mid)
+		if !ok {
+			hi = mid
+			continue
+		}
+		if ts.Before(cutoff) {
+			lo = start + 1
+		} else {
+			best = start
+			hi = start
+		}
+	}
+
+	_, err = f.Seek(best, io.SeekStart)
+	return err
+}
+
 // parseTrafficLog reads the proxy-access.log and computes TrafficStats.
 // Pass a non-nil domains slice to filter to a single site; pass nil + global=true
 // for the full-log aggregate (which also populates TopSites).
@@ -545,6 +616,14 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 	now := time.Now().UTC()
 	cutoff := now.Add(-24 * time.Hour)
 
+	// skip past everything older than the window before scanning
+	if err := seekToCutoff(f, cutoff); err != nil {
+		logger.Debug("parseTrafficLog: seek failed, scanning from start: %v", err)
+		if _, serr := f.Seek(0, io.SeekStart); serr != nil {
+			return nil, serr
+		}
+	}
+
 	domainSet := make(map[string]struct{}, len(domains))
 	for _, d := range domains {
 		domainSet[d] = struct{}{}
@@ -558,6 +637,7 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 	var stats TrafficStats
 
 	scanner := bufio.NewScanner(f)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
