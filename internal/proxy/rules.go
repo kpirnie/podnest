@@ -22,17 +22,12 @@ type ipTable struct {
 	n   int
 }
 
-// compiledUARule holds a lowercased pattern for case-insensitive substring matching
-type compiledUARule struct {
-	pattern string
-}
-
 // ruleSet holds the four lists for a single scope (global or per-site)
 type ruleSet struct {
 	ipBlacklist      ipTable
 	ipWhitelist      ipTable
-	uaBlacklist      []*compiledUARule
-	uaWhitelist      []*compiledUARule
+	uaBlacklist      *uaMatcher
+	uaWhitelist      *uaMatcher
 	countryBlacklist []string
 	countryWhitelist []string
 	asnBlacklist     map[uint32]struct{}
@@ -45,14 +40,108 @@ type securityCache struct {
 	perSite map[int64]ruleSet
 }
 
-// matches reports whether the request UA matches this rule. The special
-// pattern <blank> matches an empty or whitespace-only user-agent, which a
-// plain substring match can never do.
-func (r *compiledUARule) matches(uaLower string) bool {
-	if r.pattern == "<blank>" {
-		return uaLower == ""
+// acNode is a single state in the Aho-Corasick automaton
+type acNode struct {
+	next   map[byte]int32
+	fail   int32
+	output bool
+	match  string
+}
+
+// uaMatcher matches every pattern in a list against a UA in one pass, so match
+// cost tracks UA length rather than pattern count.
+type uaMatcher struct {
+	nodes []acNode
+	n     int
+}
+
+// newUAMatcher builds the automaton from lowercased patterns
+func newUAMatcher(patterns []string) *uaMatcher {
+	m := &uaMatcher{nodes: []acNode{{next: map[byte]int32{}, fail: 0}}}
+
+	for _, p := range patterns {
+		if p == "" {
+			continue
+		}
+		cur := int32(0)
+		for i := 0; i < len(p); i++ {
+			c := p[i]
+			nxt, ok := m.nodes[cur].next[c]
+			if !ok {
+				m.nodes = append(m.nodes, acNode{next: map[byte]int32{}, fail: 0})
+				nxt = int32(len(m.nodes) - 1)
+				m.nodes[cur].next[c] = nxt
+			}
+			cur = nxt
+		}
+		m.nodes[cur].output = true
+		m.nodes[cur].match = p
+		m.n++
 	}
-	return strings.Contains(uaLower, r.pattern)
+
+	// breadth-first fail-link construction
+	queue := make([]int32, 0, len(m.nodes))
+	for _, s := range m.nodes[0].next {
+		m.nodes[s].fail = 0
+		queue = append(queue, s)
+	}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for c, s := range m.nodes[cur].next {
+			f := m.nodes[cur].fail
+			for f != 0 {
+				if _, ok := m.nodes[f].next[c]; ok {
+					break
+				}
+				f = m.nodes[f].fail
+			}
+			if t, ok := m.nodes[f].next[c]; ok && t != s {
+				m.nodes[s].fail = t
+			} else {
+				m.nodes[s].fail = 0
+			}
+			if m.nodes[m.nodes[s].fail].output && !m.nodes[s].output {
+				m.nodes[s].output = true
+				m.nodes[s].match = m.nodes[m.nodes[s].fail].match
+			}
+			queue = append(queue, s)
+		}
+	}
+	return m
+}
+
+// len reports how many patterns the matcher holds
+func (m *uaMatcher) len() int {
+	if m == nil {
+		return 0
+	}
+	return m.n
+}
+
+// find returns the first matching pattern and whether one was found
+func (m *uaMatcher) find(s string) (string, bool) {
+	if m == nil || m.n == 0 {
+		return "", false
+	}
+	cur := int32(0)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		for {
+			if nxt, ok := m.nodes[cur].next[c]; ok {
+				cur = nxt
+				break
+			}
+			if cur == 0 {
+				break
+			}
+			cur = m.nodes[cur].fail
+		}
+		if m.nodes[cur].output {
+			return m.nodes[cur].match, true
+		}
+	}
+	return "", false
 }
 
 // compilePrefix parses a CIDR string or bare IP into a netip.Prefix.
@@ -148,29 +237,43 @@ func buildSecurityCache(ipRules []*db.IPRule, uaRules []*db.UARule, countryRules
 		cache.perSite[*r.SiteID] = rs
 	}
 
-	// compile UA rules into the appropriate scope and list
-	for _, r := range uaRules {
+	// collect UA patterns per scope and list, then build one automaton each
+	type uaLists struct{ black, white []string }
+	globalUA := uaLists{}
+	siteUA := make(map[int64]*uaLists)
 
+	for _, r := range uaRules {
 		// lowercase once at compile time so hot-path matching only lowercases the request UA
-		compiled := &compiledUARule{pattern: strings.ToLower(r.Pattern)}
+		pattern := strings.ToLower(r.Pattern)
 
 		if r.SiteID == nil {
-			// global rule
 			if r.ListType == 0 {
-				cache.global.uaBlacklist = append(cache.global.uaBlacklist, compiled)
+				globalUA.black = append(globalUA.black, pattern)
 			} else {
-				cache.global.uaWhitelist = append(cache.global.uaWhitelist, compiled)
+				globalUA.white = append(globalUA.white, pattern)
 			}
-		} else {
-			// per-site rule — get or create the site's rule set
-			rs := cache.perSite[*r.SiteID]
-			if r.ListType == 0 {
-				rs.uaBlacklist = append(rs.uaBlacklist, compiled)
-			} else {
-				rs.uaWhitelist = append(rs.uaWhitelist, compiled)
-			}
-			cache.perSite[*r.SiteID] = rs
+			continue
 		}
+
+		l, ok := siteUA[*r.SiteID]
+		if !ok {
+			l = &uaLists{}
+			siteUA[*r.SiteID] = l
+		}
+		if r.ListType == 0 {
+			l.black = append(l.black, pattern)
+		} else {
+			l.white = append(l.white, pattern)
+		}
+	}
+
+	cache.global.uaBlacklist = newUAMatcher(globalUA.black)
+	cache.global.uaWhitelist = newUAMatcher(globalUA.white)
+	for siteID, l := range siteUA {
+		rs := cache.perSite[siteID]
+		rs.uaBlacklist = newUAMatcher(l.black)
+		rs.uaWhitelist = newUAMatcher(l.white)
+		cache.perSite[siteID] = rs
 	}
 
 	// compile country rules into the appropriate scope and list — codes are
@@ -477,35 +580,24 @@ func checkUA(ua string, global, site ruleSet) bool {
 	}
 
 	// global blacklist — hard block, no override
-	for _, r := range global.uaBlacklist {
-		if r.matches(uaLower) {
-			if logger.IsDebug() {
-				logger.Debug("checkUA: blocked by global blacklist pattern '%s'", r.pattern)
-			}
-			return false
+	if pattern, hit := global.uaBlacklist.find(uaLower); hit {
+		if logger.IsDebug() {
+			logger.Debug("checkUA: blocked by global blacklist pattern '%s'", pattern)
 		}
+		return false
 	}
 
 	// per-site blacklist — hard block, no override
-	for _, r := range site.uaBlacklist {
-		if r.matches(uaLower) {
-			if logger.IsDebug() {
-				logger.Debug("checkUA: blocked by site blacklist pattern '%s'", r.pattern)
-			}
-			return false
+	if pattern, hit := site.uaBlacklist.find(uaLower); hit {
+		if logger.IsDebug() {
+			logger.Debug("checkUA: blocked by site blacklist pattern '%s'", pattern)
 		}
+		return false
 	}
 
 	// global whitelist — if non-empty, UA must match at least one pattern
-	if len(global.uaWhitelist) > 0 {
-		allowed := false
-		for _, r := range global.uaWhitelist {
-			if r.matches(uaLower) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+	if global.uaWhitelist.len() > 0 {
+		if _, hit := global.uaWhitelist.find(uaLower); !hit {
 			if logger.IsDebug() {
 				logger.Debug("checkUA: blocked by global whitelist miss")
 			}
@@ -514,15 +606,8 @@ func checkUA(ua string, global, site ruleSet) bool {
 	}
 
 	// per-site whitelist — if non-empty, UA must match at least one pattern
-	if len(site.uaWhitelist) > 0 {
-		allowed := false
-		for _, r := range site.uaWhitelist {
-			if r.matches(uaLower) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
+	if site.uaWhitelist.len() > 0 {
+		if _, hit := site.uaWhitelist.find(uaLower); !hit {
 			if logger.IsDebug() {
 				logger.Debug("checkUA: blocked by site whitelist miss")
 			}
