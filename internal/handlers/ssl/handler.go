@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -22,6 +23,8 @@ import (
 const (
 	statusNone       = "none"
 	statusSelfSigned = "self-signed"
+	statusExpired    = "expired"
+	statusMismatch   = "mismatch"
 	statusValid      = "valid"
 )
 
@@ -81,13 +84,27 @@ func checkSSL(domain string) string {
 		DNSName:     domain,
 		CurrentTime: time.Now(),
 	}
-	if _, err := certs[0].Verify(opts); err == nil {
-		logger.Debug("checkSSL: valid CA cert for %s", domain)
-		return statusValid
+
+	// InsecureSkipVerify above only opens the connection so an untrusted chain
+	// can still be inspected — this explicit Verify is the trust decision
+	if _, err := certs[0].Verify(opts); err != nil {
+		var invalid x509.CertificateInvalidError
+		var hostErr x509.HostnameError
+		switch {
+		case errors.As(err, &invalid) && invalid.Reason == x509.Expired:
+			logger.Debug("checkSSL: expired cert for %s", domain)
+			return statusExpired
+		case errors.As(err, &hostErr):
+			logger.Debug("checkSSL: hostname mismatch for %s", domain)
+			return statusMismatch
+		default:
+			logger.Debug("checkSSL: untrusted cert for %s: %v", domain, err)
+			return statusSelfSigned
+		}
 	}
 
-	logger.Debug("checkSSL: self-signed cert detected for %s", domain)
-	return statusSelfSigned
+	logger.Debug("checkSSL: valid CA cert for %s", domain)
+	return statusValid
 }
 
 // callerOwnsDomain reports whether the authenticated caller may probe domain.

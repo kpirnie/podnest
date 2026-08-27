@@ -9073,11 +9073,14 @@
         "tags": [
           "SSL"
         ],
-        "summary": "List ssl status",
+        "summary": "Get ssl status for a domain",
         "operationId": "get_ssl_status",
+        "parameters": [
+          { "name": "domain", "in": "query", "required": true, "description": "Domain name to probe. Must be the configured admin domain (admins only) or a registered domain the caller owns.", "schema": { "type": "string" } }
+        ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Success — returns {\"status\"}: one of \"valid\", \"self-signed\", \"expired\", \"mismatch\", \"none\"",
             "content": {
               "application/json": {
                 "schema": {
