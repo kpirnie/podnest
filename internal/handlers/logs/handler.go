@@ -6,6 +6,7 @@ package logs
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -55,6 +56,9 @@ var logPayloadPool = sync.Pool{
 		return &b
 	},
 }
+
+// tailChunkSize is how much is read per backward step when tailing a log
+const tailChunkSize = 64 * 1024
 
 // RegisterRoutes mounts log streaming routes onto api.
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
@@ -291,53 +295,79 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// tailWAFLog returns the last n lines from path that contain any of the given
-// domains. Reads the file sequentially and keeps only the last n matches to
-// avoid loading the entire log into memory on large files.
-func tailWAFLog(path string, domains []string, n int) ([]string, error) {
+// tailMatching returns the last n lines satisfying keep, in chronological order.
+// The file is read backward from EOF a chunk at a time and stops as soon as n
+// matches are held, so returning the tail of a multi-gigabyte log does not read
+// the whole thing.
+func tailMatching(path string, n int, keep func(string) bool) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
 
-	// use a circular buffer of size n so we never hold more than n lines in memory
-	buf := make([]string, n)
-	pos := 0
-	count := 0
-
-	scanner := bufio.NewScanner(f)
-	// raise the scanner buffer for long log lines (default 64KB is usually fine
-	// but WAF lines with long UAs can exceed it)
-	scanner.Buffer(make([]byte, 128*1024), 128*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		for _, d := range domains {
-			if strings.Contains(line, d) {
-				buf[pos%n] = line
-				pos++
-				count++
-				break
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
+	fi, err := f.Stat()
+	if err != nil {
 		return nil, err
 	}
 
-	if count == 0 {
-		return []string{}, nil
+	out := make([]string, 0, n)
+	off := fi.Size()
+	var carry []byte
+
+	for off > 0 && len(out) < n {
+		start := off - tailChunkSize
+		if start < 0 {
+			start = 0
+		}
+		chunk := make([]byte, off-start)
+		if _, err := f.ReadAt(chunk, start); err != nil && err != io.EOF {
+			return nil, err
+		}
+		off = start
+
+		chunk = append(chunk, carry...)
+		lines := bytes.Split(chunk, []byte("\n"))
+
+		// the first element is a partial line unless the file start was reached
+		if off > 0 {
+			carry = lines[0]
+			lines = lines[1:]
+		} else {
+			carry = nil
+		}
+
+		for i := len(lines) - 1; i >= 0 && len(out) < n; i-- {
+			line := string(bytes.TrimRight(lines[i], "\r"))
+			if line == "" {
+				continue
+			}
+			if keep != nil && !keep(line) {
+				continue
+			}
+			out = append(out, line)
+		}
 	}
 
-	// reassemble in chronological order from the circular buffer
-	if count <= n {
-		return buf[:count], nil
+	// collected newest-first — flip to chronological
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
 	}
-	result := make([]string, n)
-	for i := 0; i < n; i++ {
-		result[i] = buf[(pos+i)%n]
-	}
-	return result, nil
+	return out, nil
+}
+
+// tailWAFLog returns the last n lines from path that contain any of the given
+// domains. Reads the file sequentially and keeps only the last n matches to
+// avoid loading the entire log into memory on large files.
+func tailWAFLog(path string, domains []string, n int) ([]string, error) {
+	return tailMatching(path, n, func(line string) bool {
+		for _, d := range domains {
+			if strings.Contains(line, d) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // apiSiteProxyLog streams proxy-access.log entries filtered to this site's domains via WebSocket.
@@ -610,39 +640,5 @@ func (h *Handler) apiGlobalWAFLog(w http.ResponseWriter, r *http.Request) {
 
 // tailLogLines returns the last n lines from path with no domain filtering.
 func tailLogLines(path string, n int) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	buf := make([]string, n)
-	pos := 0
-	count := 0
-
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 128*1024), 128*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		buf[pos%n] = line
-		pos++
-		count++
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	if count == 0 {
-		return []string{}, nil
-	}
-	if count <= n {
-		return buf[:count], nil
-	}
-	result := make([]string, n)
-	for i := 0; i < n; i++ {
-		result[i] = buf[(pos+i)%n]
-	}
-	return result, nil
+	return tailMatching(path, n, nil)
 }
