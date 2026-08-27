@@ -254,7 +254,8 @@ display_startup_errors = Off
 log_errors             = %s
 error_log              = /proc/self/fd/2
 error_reporting        = E_ALL & ~E_DEPRECATED & ~E_STRICT
-disable_functions      = exec,passthru,shell_exec,system,popen,pcntl_exec,dl,parse_ini_file,show_source,symlink,putenv
+disable_functions      = exec,passthru,shell_exec,system,popen,pcntl_exec,dl,parse_ini_file,show_source,symlink,putenv,assert
+open_basedir           = /var/www/html/:/tmp/:/usr/local/lib/php/:/proc/self/fd/:/etc/ImageMagick-7/:/usr/share/fonts/
 
 memory_limit        = %s
 max_execution_time  = %s
