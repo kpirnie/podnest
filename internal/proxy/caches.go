@@ -159,6 +159,20 @@ func (p *Proxy) warmCache() error {
 	return nil
 }
 
+// WarmRPRoutes rebuilds only the domain→upstream cache and re-warms the
+// connections and TLS verdicts that depend on it. An RP route save changes
+// nothing in the IP, UA, country, ASN, bypass, basicauth or redirect caches,
+// so a full WarmCaches re-reads seven tables and rebuilds every rule set for
+// a change that touches one.
+func (p *Proxy) WarmRPRoutes() error {
+	if err := p.warmCache(); err != nil {
+		return err
+	}
+	p.warmTLSCache()
+	p.warmConnections()
+	return nil
+}
+
 // WarmTLSCache proactively loads certificates for all registered domains into
 // the autocert in-memory cache to prevent disk reads on the first TLS handshake
 // after a restart. Runs in a goroutine so it does not block proxy startup.

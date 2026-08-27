@@ -21,6 +21,7 @@ import (
 // ProxyRoutes is the subset of proxy.Proxy consumed by this handler.
 type ProxyRoutes interface {
 	WarmCaches(justTrustedProxies bool) error
+	WarmRPRoutes() error
 	ObtainCert(domain string)
 }
 
@@ -94,7 +95,7 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Proxy.WarmCaches(false); err != nil {
+	if err := h.Proxy.WarmRPRoutes(); err != nil {
 		logger.Error("apiUpdateRPRoutes: failed to reload domain cache after route update: %v", err)
 	}
 
