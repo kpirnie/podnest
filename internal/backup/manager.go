@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"podnest/internal/db"
@@ -76,6 +77,21 @@ type s3Config struct {
 	region    string
 	accessKey string
 	secretKey string
+}
+
+// importFreeSpaceFloor is the amount of disk that must remain free on the
+// extraction filesystem.
+const importFreeSpaceFloor = 1 << 30
+
+// extractBudget caps total bytes written across an entire archive.
+type extractBudget struct {
+	remaining int64
+}
+
+// budgetWriter charges every write against the archive's extraction budget
+type budgetWriter struct {
+	w io.Writer
+	b *extractBudget
 }
 
 // New returns a backup Manager
@@ -1700,7 +1716,8 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	// build the canonical headers string and the signed headers string
 	var canonHeaderStr, signedHeaderStr strings.Builder
 	for _, k := range headerKeys {
-		canonHeaderStr.WriteString(k + ":" + canonHeaders[k] + "\n")
+		head := fmt.Sprintf("%s:%s\n", k, canonHeaders[k])
+		canonHeaderStr.WriteString(head)
 		if signedHeaderStr.Len() > 0 {
 			signedHeaderStr.WriteByte(';')
 		}
@@ -1980,22 +1997,82 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 	return nil
 }
 
-// extractArchive dispatches to the correct extractor based on file extension
+// newExtractBudget sizes the budget from the free space on destDir's filesystem
+func newExtractBudget(destDir string) (*extractBudget, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(destDir, &st); err != nil {
+		return nil, fmt.Errorf("newExtractBudget: statfs %s: %w", destDir, err)
+	}
+	free := int64(st.Bavail) * int64(st.Bsize)
+	allowance := free - importFreeSpaceFloor
+	if allowance <= 0 {
+		return nil, fmt.Errorf("insufficient disk space to extract: %d bytes free, %d required", free, int64(importFreeSpaceFloor))
+	}
+	return &extractBudget{remaining: allowance}, nil
+}
+
+// take draws n bytes from the budget, failing once the allowance is exhausted
+func (b *extractBudget) take(n int64) error {
+	if b.remaining < n {
+		return fmt.Errorf("archive exceeds available disk space")
+	}
+	b.remaining -= n
+	return nil
+}
+
+// Write implements io.Writer, refusing the write once the budget is exhausted
+func (bw budgetWriter) Write(p []byte) (int, error) {
+	if err := bw.b.take(int64(len(p))); err != nil {
+		return 0, err
+	}
+	return bw.w.Write(p)
+}
+
+// emptyDir removes everything inside dir without removing dir itself
+func emptyDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// extractArchive dispatches to the correct extractor based on file extension.
+// A failed extraction leaves nothing behind — partial output is removed before
+// the error is returned.
 func extractArchive(src, destDir string) error {
+	budget, err := newExtractBudget(destDir)
+	if err != nil {
+		return fmt.Errorf("extractArchive: %w", err)
+	}
+
 	switch {
 	case strings.HasSuffix(src, ".tar.gz"):
-		return extractTarGz(src, destDir)
+		err = extractTarGz(src, destDir, budget)
 	case strings.HasSuffix(src, ".tar.xz"):
-		return extractTarXz(src, destDir)
+		err = extractTarXz(src, destDir, budget)
 	case strings.HasSuffix(src, ".zip"):
-		return extractZip(src, destDir)
+		err = extractZip(src, destDir, budget)
 	default:
 		return fmt.Errorf("extractArchive: unsupported format: %s", filepath.Base(src))
 	}
+
+	if err != nil {
+		if cleanErr := emptyDir(destDir); cleanErr != nil {
+			logger.Error("extractArchive: cleanup of %s after failure: %v", destDir, cleanErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // extractTarGz extracts a .tar.gz archive into destDir
-func extractTarGz(src, destDir string) error {
+func extractTarGz(src, destDir string, budget *extractBudget) error {
 
 	// open the file and wrap in a gzip reader
 	f, err := os.Open(src)
@@ -2012,11 +2089,11 @@ func extractTarGz(src, destDir string) error {
 	defer gr.Close()
 
 	// pass the gzip reader into the tar extractor
-	return extractTar(tar.NewReader(gr), destDir)
+	return extractTar(tar.NewReader(gr), destDir, budget)
 }
 
 // extractTarXz extracts a .tar.xz archive into destDir via the xz binary
-func extractTarXz(src, destDir string) error {
+func extractTarXz(src, destDir string, budget *extractBudget) error {
 
 	// bound the decompress so a malformed or oversized .tar.xz cannot hang the
 	// restore indefinitely
@@ -2036,7 +2113,7 @@ func extractTarXz(src, destDir string) error {
 	}
 
 	// pass the xz stdout into the tar extractor; wait for xz to finish and capture any errors
-	tarErr := extractTar(tar.NewReader(pr), destDir)
+	tarErr := extractTar(tar.NewReader(pr), destDir, budget)
 	waitErr := xzCmd.Wait()
 	if tarErr != nil {
 		return tarErr
@@ -2058,7 +2135,7 @@ func safeFileMode(m os.FileMode) os.FileMode {
 
 // extractTar reads all entries from a tar.Reader into destDir, guarding
 // against path traversal attacks
-func extractTar(tr *tar.Reader, destDir string) error {
+func extractTar(tr *tar.Reader, destDir string, budget *extractBudget) error {
 
 	// iterate through each entry in the tar archive and write it to the destination directory
 	for {
@@ -2093,7 +2170,7 @@ func extractTar(tr *tar.Reader, destDir string) error {
 			if err != nil {
 				return fmt.Errorf("extractTar: create %s: %w", hdr.Name, err)
 			}
-			if _, err := io.Copy(f, tr); err != nil {
+			if _, err := io.Copy(budgetWriter{w: f, b: budget}, tr); err != nil {
 				f.Close()
 				return fmt.Errorf("extractTar: write %s: %w", hdr.Name, err)
 			}
@@ -2112,7 +2189,7 @@ func extractTar(tr *tar.Reader, destDir string) error {
 }
 
 // extractZip extracts a .zip archive into destDir, guarding against path traversal
-func extractZip(src, destDir string) error {
+func extractZip(src, destDir string, budget *extractBudget) error {
 
 	// stat the file to get its size for zip.OpenReader
 	fi, err := os.Stat(src)
@@ -2166,7 +2243,7 @@ func extractZip(src, destDir string) error {
 			rc.Close()
 			return fmt.Errorf("extractZip: create %s: %w", zf.Name, err)
 		}
-		_, copyErr := io.Copy(out, rc)
+		_, copyErr := io.Copy(budgetWriter{w: out, b: budget}, rc)
 		rc.Close()
 		out.Close()
 		if copyErr != nil {
