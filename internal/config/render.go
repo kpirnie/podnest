@@ -545,6 +545,14 @@ sub vcl_backend_response {
     set beresp.ttl   = %s;
     set beresp.grace = %s;
 
+    # a response that sets a cookie is user-specific — the request-side
+    # bypass list only covers cookies already known to this site's config
+    if (beresp.http.Set-Cookie) {
+        set beresp.uncacheable = true;
+        set beresp.ttl = 0s;
+        return (deliver);
+    }
+
     # do not cache server errors
     if (beresp.status >= 500) {
         set beresp.uncacheable = true;

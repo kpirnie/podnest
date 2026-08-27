@@ -138,7 +138,7 @@ var DefaultVarnish = map[string]string{
 	"between_bytes_timeout": "10s",
 	"bypass_query_strings":  "true",
 	"bypass_paths":          "/wp-admin,/wp-login.php,/xmlrpc.php,/wp-cron.php,/wp-json,/feed",
-	"bypass_cookies":        "wordpress_logged_in,woocommerce_,wp_woocommerce,wordpress_sec",
+	"bypass_cookies":        "wordpress_logged_in,woocommerce_,wp_woocommerce,wordpress_sec,PHPSESSID,laravel_session,ci_session,symfony,SESS,sessionid,connect.sid",
 	"bypass_extensions":     "",
 }
 
