@@ -648,39 +648,6 @@ func (c *Client) ContainerHealthState(ctx context.Context, name string) (string,
 	return inspect.State.Health.Status, nil
 }
 
-// PodStats returns current resource usage for all containers in the named pod.
-func (c *Client) PodStats(ctx context.Context, podName string) ([]ContainerStat, error) {
-	var raw struct {
-		Stats []struct {
-			Name     string  `json:"Name"`
-			CPU      float64 `json:"CPU"`
-			MemUsage uint64  `json:"MemUsage"`
-			MemLimit uint64  `json:"MemLimit"`
-			MemPerc  float64 `json:"MemPerc"`
-		} `json:"Stats"`
-	}
-	if err := c.get(ctx, "/v4.0.0/libpod/containers/stats?stream=false", &raw); err != nil {
-		return nil, err
-	}
-
-	// filter by pod name prefix since Podman's pod filter is unreliable
-	prefix := podName + "-"
-	out := make([]ContainerStat, 0)
-	for _, r := range raw.Stats {
-		if !strings.HasPrefix(r.Name, prefix) {
-			continue
-		}
-		out = append(out, ContainerStat{
-			Name:     r.Name,
-			CPUPerc:  r.CPU,
-			MemUsage: r.MemUsage,
-			MemLimit: r.MemLimit,
-			MemPerc:  r.MemPerc,
-		})
-	}
-	return out, nil
-}
-
 // UpdateContainerResources applies or removes a memory limit on a running container
 // via the Docker-compat update endpoint. Set limitBytes=0 to remove the limit.
 func (c *Client) UpdateContainerResources(ctx context.Context, name string, limitBytes int64) error {
@@ -697,4 +664,46 @@ func (c *Client) UpdateContainerResources(ctx context.Context, name string, limi
 	}
 	logger.Debug("UpdateContainerResources: set limit=%d on %s", limitBytes, name)
 	return nil
+}
+
+// ContainerStats returns resource usage for the named containers. The stats
+// endpoint accepts a repeated containers filter, so the host-wide payload is
+// never serialized for callers that only want a few pods.
+func (c *Client) ContainerStats(ctx context.Context, names []string) ([]ContainerStat, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	var raw struct {
+		Stats []struct {
+			Name     string  `json:"Name"`
+			CPU      float64 `json:"CPU"`
+			MemUsage uint64  `json:"MemUsage"`
+			MemLimit uint64  `json:"MemLimit"`
+			MemPerc  float64 `json:"MemPerc"`
+		} `json:"Stats"`
+	}
+
+	var path strings.Builder
+	path.WriteString("/v4.0.0/libpod/containers/stats?stream=false")
+	for _, n := range names {
+		path.WriteString("&containers=")
+		path.WriteString(url.QueryEscape(n))
+	}
+
+	if err := c.get(ctx, path.String(), &raw); err != nil {
+		return nil, err
+	}
+
+	out := make([]ContainerStat, 0, len(raw.Stats))
+	for _, r := range raw.Stats {
+		out = append(out, ContainerStat{
+			Name:     r.Name,
+			CPUPerc:  r.CPU,
+			MemUsage: r.MemUsage,
+			MemLimit: r.MemLimit,
+			MemPerc:  r.MemPerc,
+		})
+	}
+	return out, nil
 }

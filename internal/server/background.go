@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +33,9 @@ import (
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
 )
+
+// pollStatsConcurrency bounds in-flight Podman calls per poll cycle
+const pollStatsConcurrency = 8
 
 // sessionReaper purges expired sessions and PMA tokens hourly.
 func (s *Server) sessionReaper() {
@@ -652,6 +656,9 @@ func (s *Server) pollStats() {
 			return
 		}
 
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, pollStatsConcurrency)
+
 		for _, site := range sites {
 			// skip site types that have no pod
 			if !modules.TypeModule(site.SiteType).HasPod() {
@@ -661,34 +668,43 @@ func (s *Server) pollStats() {
 				continue
 			}
 
-			podName := podman.PodName(site.Name)
+			wg.Add(1)
+			go func(podName string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 
-			// --- health states ---
-			inspect, err := s.podman.InspectPod(ctx, podName)
-			if err != nil {
-				continue
-			}
-			var healthEntries []models.ContainerHealth
-			for _, c := range inspect.Containers {
-				status, err := s.podman.ContainerHealthState(ctx, c.Name)
+				// --- health states ---
+				inspect, err := s.podman.InspectPod(ctx, podName)
 				if err != nil {
-					status = "none"
+					return
 				}
-				healthEntries = append(healthEntries, models.ContainerHealth{
-					Name:   c.Name,
-					Status: status,
-				})
-			}
-			s.stats.setHealth(podName, healthEntries)
+				names := make([]string, 0, len(inspect.Containers))
+				healthEntries := make([]models.ContainerHealth, 0, len(inspect.Containers))
+				for _, c := range inspect.Containers {
+					names = append(names, c.Name)
+					status, err := s.podman.ContainerHealthState(ctx, c.Name)
+					if err != nil {
+						status = "none"
+					}
+					healthEntries = append(healthEntries, models.ContainerHealth{
+						Name:   c.Name,
+						Status: status,
+					})
+				}
+				s.stats.setHealth(podName, healthEntries)
 
-			// --- resource stats ---
-			cstats, err := s.podman.PodStats(ctx, podName)
-			if err != nil {
-				logger.Debug("pollStats: stats unavailable for pod %s: %v", podName, err)
-				continue
-			}
-			s.stats.setStats(podName, cstats)
+				// --- resource stats ---
+				cstats, err := s.podman.ContainerStats(ctx, names)
+				if err != nil {
+					logger.Debug("pollStats: stats unavailable for pod %s: %v", podName, err)
+					return
+				}
+				s.stats.setStats(podName, cstats)
+			}(podman.PodName(site.Name))
 		}
+
+		wg.Wait()
 	}
 
 	poll()
