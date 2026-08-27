@@ -164,7 +164,7 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// per-site log is already filtered — no domain matching needed
-	stats, err := parseTrafficLog(fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name), nil, false)
+	stats, err := parseTrafficLog(r.Context(), fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name), nil, false)
 	if err != nil {
 		logger.Error("stats: traffic parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -197,7 +197,7 @@ func (h *Handler) apiSiteDrilldown(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logPath := fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)
-	entries, err := parseDrilldown(logPath, hour, statusClass, nil)
+	entries, err := parseDrilldown(r.Context(), logPath, hour, statusClass, nil)
 	if err != nil {
 		logger.Error("stats: drilldown parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -328,7 +328,7 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := parseTrafficLog(h.AppPath+"/logs/proxy-access.log", domains, true)
+	stats, err := parseTrafficLog(r.Context(), h.AppPath+"/logs/proxy-access.log", domains, true)
 	if err != nil {
 		logger.Error("stats: global traffic parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -460,7 +460,7 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 		domains = []string{"\x00"}
 	}
 
-	entries, err := parseDrilldown(h.AppPath+"/logs/proxy-access.log", hour, statusClass, domains)
+	entries, err := parseDrilldown(r.Context(), h.AppPath+"/logs/proxy-access.log", hour, statusClass, domains)
 	if err != nil {
 		logger.Error("stats: global drilldown parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -537,7 +537,7 @@ func (h *Handler) fetchPodStats(ctx context.Context, names []string) (*podStatsR
 // offsets skips the bulk of an old file rather than scanning it to reach the
 // 24h window. Lines that carry no RFC3339 timestamp (WAF entries) are stepped
 // over during probing.
-func seekToCutoff(f *os.File, cutoff time.Time) error {
+func seekToCutoff(ctx context.Context, f *os.File, cutoff time.Time) error {
 	fi, err := f.Stat()
 	if err != nil {
 		return err
@@ -582,6 +582,9 @@ func seekToCutoff(f *os.File, cutoff time.Time) error {
 	lo, hi := int64(0), fi.Size()
 	best := int64(-1)
 	for lo < hi {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		mid := (lo + hi) / 2
 		ts, start, ok := probe(mid)
 		if !ok {
@@ -608,7 +611,7 @@ func seekToCutoff(f *os.File, cutoff time.Time) error {
 // parseTrafficLog reads the proxy-access.log and computes TrafficStats.
 // Pass a non-nil domains slice to filter to a single site; pass nil + global=true
 // for the full-log aggregate (which also populates TopSites).
-func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficStats, error) {
+func parseTrafficLog(ctx context.Context, logPath string, domains []string, global bool) (*TrafficStats, error) {
 	f, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -622,7 +625,10 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 	cutoff := now.Add(-24 * time.Hour)
 
 	// skip past everything older than the window before scanning
-	if err := seekToCutoff(f, cutoff); err != nil {
+	if err := seekToCutoff(ctx, f, cutoff); err != nil {
+		if ctx.Err() != nil {
+			return nil, err
+		}
 		logger.Debug("parseTrafficLog: seek failed, scanning from start: %v", err)
 		if _, serr := f.Seek(0, io.SeekStart); serr != nil {
 			return nil, serr
@@ -643,7 +649,14 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 
 	scanner := bufio.NewScanner(f)
 
+	scanned := 0
 	for scanner.Scan() {
+		scanned++
+		if scanned&8191 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		line := scanner.Text()
 		if line == "" {
 			continue
@@ -781,7 +794,7 @@ func parseTrafficLog(logPath string, domains []string, global bool) (*TrafficSta
 // slice to filter to matching hosts (manager-scoped global drilldown); pass
 // nil when the log is already the correct scope (a per-site file, or the
 // full merged log for an admin).
-func parseDrilldown(logPath, hour, statusClass string, domains []string) ([]DrilldownEntry, error) {
+func parseDrilldown(ctx context.Context, logPath, hour, statusClass string, domains []string) ([]DrilldownEntry, error) {
 	f, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -805,7 +818,14 @@ func parseDrilldown(logPath, hour, statusClass string, domains []string) ([]Dril
 
 	var results []DrilldownEntry
 	scanner := bufio.NewScanner(f)
+	scanned := 0
 	for scanner.Scan() {
+		scanned++
+		if scanned&8191 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		line := scanner.Text()
 		if line == "" {
 			continue
