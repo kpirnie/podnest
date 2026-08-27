@@ -7,6 +7,7 @@ package proxy
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -81,6 +82,37 @@ func compileRedirects(redirects []db.Redirect) []compiledRedirect {
 	return out
 }
 
+// safeRedirectTarget checks that capture substitution did not change where a
+// redirect points. The rule's literal target is the site owner's intent — an
+// off-site redirect is legitimate when they wrote the host into the rule, but a
+// host arriving through $1 came from the request path and is attacker-supplied.
+func safeRedirectTarget(literal, final string) bool {
+	// protocol-relative and backslash forms resolve off-site in browsers
+	trimmed := strings.TrimSpace(final)
+	if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, `/\`) || strings.HasPrefix(trimmed, `\`) {
+		return false
+	}
+
+	lu, err := url.Parse(literal)
+	if err != nil {
+		return false
+	}
+	fu, err := url.Parse(trimmed)
+	if err != nil {
+		return false
+	}
+
+	if fu.Scheme != "" && fu.Scheme != "http" && fu.Scheme != "https" {
+		return false
+	}
+
+	// a relative rule must stay relative; an absolute one must keep its host
+	if lu.Host == "" {
+		return fu.Host == ""
+	}
+	return strings.EqualFold(fu.Host, lu.Host)
+}
+
 // applyRedirects checks redirect rules before security enforcement — redirects
 // are intentional routing decisions, not subject to IP/UA/WAF filtering.
 // Returns true when a redirect was issued and the response has already been written.
@@ -100,6 +132,10 @@ func (p *Proxy) applyRedirects(w http.ResponseWriter, r *http.Request, siteID in
 				if matches := rd.re.FindStringSubmatch(candidate); matches != nil {
 					for i, m := range matches[1:] {
 						target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
+					}
+					if !safeRedirectTarget(rd.target, target) {
+						logger.Warn("proxy: siteID=%d redirect rule %q produced an off-site target after substitution, skipping", siteID, rd.source)
+						break
 					}
 					http.Redirect(w, r, target, rd.code)
 					dur := time.Since(start)
