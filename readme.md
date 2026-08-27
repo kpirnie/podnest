@@ -12,7 +12,7 @@
 [![Kevin Pirnie](https://img.shields.io/badge/-KevinPirnie.com-000d2d?style=for-the-badge&labelColor=000&logoColor=white&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4KICA8ZWxsaXBzZSBjeD0iMTIiIGN5PSIxMiIgcng9IjQuNSIgcnk9IjEwIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxMiIgeDI9IjIyIiB5Mj0iMTIiLz4KICA8bGluZSB4MT0iNC41IiB5MT0iNi41IiB4Mj0iMTkuNSIgeTI9IjYuNSIvPgogIDxsaW5lIHgxPSI0LjUiIHkxPSIxNy41IiB4Mj0iMTkuNSIgeTI9IjE3LjUiLz4KPC9zdmc+Cg==)](https://kevinpirnie.com/)
 [![Support](https://img.shields.io/badge/Support-Available-28a745?logo=handshake&logoColor=white&style=for-the-badge&labelColor=000)](https://kevinpirnie.com/about-kevin-pirnie/lets-talk/)
 
-A hardened, high-performance web hosting pod manager built on Podman. Provision and manage isolated, production-ready site pods from a single web-based management UI — no shell required after initial setup.
+A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js, .NET, static, and reverse-proxy sites — each with its own nginx, PHP-FPM, MariaDB, Redis, Varnish, SFTP account, SSL, backups, cron, and WAF. No shell required after initial setup.
 
 ---
 
@@ -22,7 +22,7 @@ A hardened, high-performance web hosting pod manager built on Podman. Provision 
 
 ## Overview
 
-Each pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
+Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
 
 **Supported site types:**
 

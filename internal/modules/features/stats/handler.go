@@ -580,7 +580,7 @@ func seekToCutoff(f *os.File, cutoff time.Time) error {
 	}
 
 	lo, hi := int64(0), fi.Size()
-	best := int64(0)
+	best := int64(-1)
 	for lo < hi {
 		mid := (lo + hi) / 2
 		ts, start, ok := probe(mid)
@@ -590,10 +590,15 @@ func seekToCutoff(f *os.File, cutoff time.Time) error {
 		}
 		if ts.Before(cutoff) {
 			lo = start + 1
-		} else {
-			best = start
-			hi = start
+			continue
 		}
+		if best < 0 || start < best {
+			best = start
+		}
+		hi = mid
+	}
+	if best < 0 {
+		best = 0
 	}
 
 	_, err = f.Seek(best, io.SeekStart)
