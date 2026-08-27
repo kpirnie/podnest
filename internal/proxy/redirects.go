@@ -23,6 +23,7 @@ type compiledRedirect struct {
 	re     *regexp.Regexp
 	source string
 	target string
+	prefix string
 	code   int
 }
 
@@ -69,6 +70,8 @@ func (p *Proxy) warmRedirectCache() error {
 // compileRedirects pre-compiles a slice of redirect rules so the request hot
 // path never calls regexp.Compile — removing both the per-request compile cost
 // and a per-request ReDoS surface on the user-supplied Source pattern.
+// An anchored pattern also yields a literal prefix, letting the hot path skip
+// rules that cannot match without running the regex at all.
 func compileRedirects(redirects []db.Redirect) []compiledRedirect {
 	out := make([]compiledRedirect, 0, len(redirects))
 	for _, rd := range redirects {
@@ -76,6 +79,10 @@ func compileRedirects(redirects []db.Redirect) []compiledRedirect {
 		// a Source that fails to compile is matched literally at request time
 		if re, err := regexp.Compile(rd.Source); err == nil {
 			cr.re = re
+			// only anchored patterns give a prefix that is a true string prefix
+			if strings.HasPrefix(rd.Source, "^") {
+				cr.prefix, _ = re.LiteralPrefix()
+			}
 		}
 		out = append(out, cr)
 	}
@@ -122,26 +129,33 @@ func (p *Proxy) applyRedirects(w http.ResponseWriter, r *http.Request, siteID in
 		return false
 	}
 
+	// match the path first, then host+path — lets host-aware rules
+	// (canonical-domain redirects) work without breaking existing path-only
+	// patterns. Host has no port on 80/443. Built once, not once per rule.
+	candidates := [2]string{r.URL.Path, r.Host + r.URL.Path}
+
 	for _, rd := range rules.([]compiledRedirect) {
 		target := rd.target
 		if rd.re != nil {
-			// match the path first, then host+path — lets host-aware
-			// rules (canonical-domain redirects) work without breaking
-			// existing path-only patterns. Host has no port on 80/443.
-			for _, candidate := range []string{r.URL.Path, r.Host + r.URL.Path} {
-				if matches := rd.re.FindStringSubmatch(candidate); matches != nil {
-					for i, m := range matches[1:] {
-						target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
-					}
-					if !safeRedirectTarget(rd.target, target) {
-						logger.Warn("proxy: siteID=%d redirect rule %q produced an off-site target after substitution, skipping", siteID, rd.source)
-						break
-					}
-					http.Redirect(w, r, target, rd.code)
-					dur := time.Since(start)
-					p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
-					return true
+			for _, candidate := range candidates {
+				if rd.prefix != "" && !strings.HasPrefix(candidate, rd.prefix) {
+					continue
 				}
+				matches := rd.re.FindStringSubmatch(candidate)
+				if matches == nil {
+					continue
+				}
+				for i, m := range matches[1:] {
+					target = strings.ReplaceAll(target, fmt.Sprintf("$%d", i+1), m)
+				}
+				if !safeRedirectTarget(rd.target, target) {
+					logger.Warn("proxy: siteID=%d redirect rule %q produced an off-site target after substitution, skipping", siteID, rd.source)
+					break
+				}
+				http.Redirect(w, r, target, rd.code)
+				dur := time.Since(start)
+				p.writeAccessLog(r, rd.code, 0, start, dur, clientIPStr, siteID, siteName)
+				return true
 			}
 		} else {
 			if r.URL.Path == rd.source || (rd.source != "/" && strings.HasPrefix(r.URL.Path, rd.source)) {
