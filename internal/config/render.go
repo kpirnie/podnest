@@ -856,12 +856,14 @@ func get(cfg map[string]string, key string, defaults map[string]string) string {
 	return ""
 }
 
-// buildCSVPattern converts a comma-separated list into a VCL alternation pattern
+// buildCSVPattern converts a comma-separated list into a VCL alternation pattern.
+// Each entry is regex-escaped — safeConfigValue permits '.', '+' and '%', so an
+// unescaped entry could widen a bypass rule to match every request.
 func buildCSVPattern(csv string) string {
 	var parts []string
-	for _, p := range strings.Split(csv, ",") {
+	for p := range strings.SplitSeq(csv, ",") {
 		if p = strings.TrimSpace(p); p != "" {
-			parts = append(parts, p)
+			parts = append(parts, regexp.QuoteMeta(p))
 		}
 	}
 	return strings.Join(parts, "|")
@@ -871,10 +873,10 @@ func buildCSVPattern(csv string) string {
 // leading dots) into a VCL alternation pattern
 func buildExtPattern(csv string) string {
 	var parts []string
-	for _, p := range strings.Split(csv, ",") {
+	for p := range strings.SplitSeq(csv, ",") {
 		p = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(p), "."))
 		if p != "" {
-			parts = append(parts, p)
+			parts = append(parts, regexp.QuoteMeta(p))
 		}
 	}
 	return strings.Join(parts, "|")
