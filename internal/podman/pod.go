@@ -439,6 +439,24 @@ func (c *Client) FlushCache(ctx context.Context, containerName string, cachePath
 
 }
 
+// ListPodStates returns the current state of every pod, keyed by pod name.
+// One call replaces a per-pod InspectPod for callers that only need state.
+func (c *Client) ListPodStates(ctx context.Context) (map[string]string, error) {
+	var pods []struct {
+		Name   string `json:"Name"`
+		Status string `json:"Status"`
+	}
+	if err := c.get(ctx, "/v4.0.0/libpod/pods/json", &pods); err != nil {
+		return nil, fmt.Errorf("list pods: %w", err)
+	}
+
+	out := make(map[string]string, len(pods))
+	for _, p := range pods {
+		out[p.Name] = p.Status
+	}
+	return out, nil
+}
+
 // PruneOrphanedPods removes any pods prefixed wp- that are in a degraded or created state
 func (c *Client) PruneOrphanedPods(ctx context.Context) error {
 

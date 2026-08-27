@@ -347,29 +347,37 @@ func (s *Server) startupRestore() {
 // syncPodStatuses periodically reconciles DB site statuses against actual
 // Podman pod states, correcting any drift caused by crashes or manual intervention.
 func (s *Server) syncPodStatuses() {
+
 	fix := func() {
 		sites, err := db.GetAllSites(s.cfg.DB)
 		if err != nil {
 			logger.Error("syncPodStatuses: failed to load sites: %v", err)
 			return
 		}
+
+		// one pod listing per cycle rather than an InspectPod per site
+		states, err := s.podman.ListPodStates(context.Background())
+		if err != nil {
+			logger.Error("syncPodStatuses: failed to list pods: %v", err)
+			return
+		}
+
 		for _, site := range sites {
 			if !modules.TypeModule(site.SiteType).HasPod() {
 				continue
 			}
 
-			podName := podman.PodName(site.Name)
-			inspect, err := s.podman.InspectPod(context.Background(), podName)
-			if err != nil {
+			state, ok := states[podman.PodName(site.Name)]
+			if !ok {
 				if site.SiteStatus != models.StatusStopped {
 					_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
 				}
 				continue
 			}
-			if inspect.State == "Running" && site.SiteStatus != models.StatusRunning {
+			if state == "Running" && site.SiteStatus != models.StatusRunning {
 				logger.Debug("syncPodStatuses: correcting site %d status to running", site.ID)
 				_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusRunning)
-			} else if inspect.State != "Running" && site.SiteStatus == models.StatusRunning {
+			} else if state != "Running" && site.SiteStatus == models.StatusRunning {
 				logger.Debug("syncPodStatuses: correcting site %d status to stopped", site.ID)
 				_ = db.UpdateSiteStatus(s.cfg.DB, site.ID, models.StatusStopped)
 			}
