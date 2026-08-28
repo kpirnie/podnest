@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 // -- ANSI color codes for terminal output ------------------------------------
@@ -63,6 +64,10 @@ var (
 		regexp.MustCompile(`(?i)(password|pass|passwd|pwd|secret|token|key)([=:\s"]+)([^\s"&,]+)`),
 	}
 )
+
+// bound on a logged untrusted value — a long field pushes real records out of
+// a rotated file
+const safeValueMax = 256
 
 // init drains logCh into the circular buffer in a dedicated goroutine,
 // keeping write contention off the hot request path entirely.
@@ -293,6 +298,24 @@ func Warn(format string, v ...interface{}) { getDefaultLogger().Warn(format, v..
 
 // Error logs error-level messages using the default logger
 func Error(format string, v ...interface{}) { getDefaultLogger().Error(format, v...) }
+
+// SafeValue strips CR, LF and other control characters from an untrusted value
+// before it reaches a log line. Without it an attacker-supplied field forges
+// whole log records in a file Fail2Ban parses.
+func SafeValue(s string) string {
+	if len(s) > safeValueMax {
+		s = s[:safeValueMax]
+	}
+	return strings.Map(func(r rune) rune {
+		if r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
 
 // DebugSafe logs a debug message with sensitive values obfuscated
 func DebugSafe(format string, v ...interface{}) {

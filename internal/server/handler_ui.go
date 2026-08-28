@@ -110,7 +110,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// attempt to log in with the provided credentials
 		result, err := auth.Login(s.cfg.DB, uname, password)
 		if err != nil {
-			logger.Error("login failed for user '%s': %v", uname, err)
+			logger.Error("login failed for user '%s': %v", logger.SafeValue(uname), err)
 			if err := web.Templates.ExecuteTemplate(w, "login.html", map[string]any{
 				"Nonce": cspNonce(r),
 				"Error": "Invalid username or password",
