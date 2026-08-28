@@ -129,8 +129,10 @@ func (h *Handler) apiContainerRestart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	role := r.PathValue("container")
-	if role == "" {
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "container role is required")
+	switch role {
+	case "nginx", "php", "db", "redis", "app", "pma", "varnish":
+	default:
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid container role")
 		return
 	}
 
