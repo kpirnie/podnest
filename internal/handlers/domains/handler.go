@@ -110,7 +110,7 @@ func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
-	_, ok := h.Resolve(w, r)
+	site, ok := h.Resolve(w, r)
 	if !ok {
 		logger.Error("failed to resolve site for request to delete domains: %v", r)
 		return
@@ -131,10 +131,18 @@ func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// capture domain state before deletion for the audit trail
-	if domainRecord != nil {
-		*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotAny(domainRecord), ""))
+	if domainRecord == nil {
+		apiutil.ErrorMsg(w, http.StatusNotFound, "domain not found")
+		return
 	}
+	if domainRecord.SiteID != site.ID {
+		logger.Error("domain %d does not belong to site %d", did, site.ID)
+		apiutil.ErrorMsg(w, http.StatusForbidden, "domain does not belong to this site")
+		return
+	}
+
+	// capture domain state before deletion for the audit trail
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), db.SnapshotAny(domainRecord), ""))
 
 	if err := db.DeleteDomain(h.DB, did); err != nil {
 		logger.Error("failed to delete domain %d: %v", did, err)
@@ -142,9 +150,7 @@ func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if domainRecord != nil {
-		h.Proxy.RemoveDomain(domainRecord.Domain)
-	}
+	h.Proxy.RemoveDomain(domainRecord.Domain)
 
 	logger.Debug("deleted domain %d", did)
 	w.WriteHeader(http.StatusNoContent)
