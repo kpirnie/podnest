@@ -420,7 +420,7 @@ func (s *Server) rotateLogs() {
 			dir    string
 			siteID int64
 		}
-		targets := []rotateTarget{{dir: s.cfg.AppPath + "/logs"}}
+		targets := []rotateTarget{{dir: s.cfg.AppPath + "/logs", siteID: 0}}
 
 		sites, err := db.GetAllSites(s.cfg.DB)
 		if err != nil {
@@ -438,9 +438,15 @@ func (s *Server) rotateLogs() {
 			if _, err := os.Stat(t.dir); os.IsNotExist(err) {
 				continue
 			}
+			// the global directory holds proxy-access.log and waf.log; per-site
+			// directories hold access.log and waf.log
+			names := []string{"access.log", "waf.log"}
+			if t.siteID == 0 {
+				names = []string{"proxy-access.log", "waf.log"}
+			}
 			siteID := t.siteID
-			rotateLogDir(t.dir, func() {
-				s.proxy.CloseSiteLogs(siteID)
+			rotateLogDir(t.dir, names, func() {
+				s.proxy.ReopenLogs(siteID)
 			})
 		}
 	}
@@ -457,11 +463,11 @@ func (s *Server) rotateLogs() {
 // non-nil, is called after compression and before the original is unlinked so
 // the proxy can release its cached handle — otherwise it keeps writing to a
 // dead inode.
-func rotateLogDir(dir string, onRotate func()) {
+func rotateLogDir(dir string, names []string, onRotate func()) {
 	cutoffRotate := time.Now().AddDate(0, 0, -2)
 	cutoffDelete := time.Now().AddDate(0, 0, -7)
 
-	for _, name := range []string{"access.log", "waf.log"} {
+	for _, name := range names {
 		path := dir + "/" + name
 		info, err := os.Stat(path)
 		if err != nil {

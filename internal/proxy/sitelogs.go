@@ -24,7 +24,8 @@ type accessLogEntry struct {
 	waf      bool
 }
 
-// closeReq asks the drain to close and forget a site's cached log handles.
+// closeReq asks the drain to release a rotated log's handles — a site's cached
+// pair is closed and forgotten, the global pair is reopened in place.
 // Rotation compresses and unlinks the file; without this the drain keeps
 // writing to the unlinked inode, losing every line after the first rotation
 // and leaking a descriptor per rotation per site.
@@ -81,12 +82,13 @@ func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType str
 	return f
 }
 
-// CloseSiteLogs closes and evicts the cached access and WAF log handles for a
-// site, blocking until the drain has done so. Callers must invoke this before
-// removing or renaming the underlying files. siteID 0 is ignored — the global
-// handles are owned by Shutdown.
-func (p *Proxy) CloseSiteLogs(siteID int64) {
-	if p == nil || p.logCloseCh == nil || siteID <= 0 {
+// ReopenLogs releases the log handles a rotation is about to invalidate,
+// blocking until the drain has done so. Callers must invoke this before
+// removing or renaming the underlying files. A site's cached handles are
+// closed and evicted; siteID 0 means the global pair, which is reopened in
+// place because those handles are fields owned by Shutdown, not cache entries.
+func (p *Proxy) ReopenLogs(siteID int64) {
+	if p == nil || p.logCloseCh == nil || siteID < 0 {
 		return
 	}
 
@@ -95,7 +97,7 @@ func (p *Proxy) CloseSiteLogs(siteID int64) {
 	case p.logCloseCh <- closeReq{siteID: siteID, done: done}:
 		<-done
 	case <-time.After(5 * time.Second):
-		logger.Warn("proxy: CloseSiteLogs timed out siteID=%d", siteID)
+		logger.Warn("proxy: ReopenLogs timed out siteID=%d", siteID)
 	}
 }
 
@@ -109,6 +111,13 @@ func (p *Proxy) drainAccessLogs() {
 	for {
 		select {
 		case req := <-p.logCloseCh:
+			// siteID 0 is the global pair — those handles are fields, not
+			// cache entries, so they are reopened rather than dropped
+			if req.siteID == 0 {
+				p.reopenGlobalLogs()
+				close(req.done)
+				continue
+			}
 			for _, cache := range []*sync.Map{&p.siteAccessLogs, &p.siteWAFLogs} {
 				if v, ok := cache.LoadAndDelete(req.siteID); ok {
 					v.(*os.File).Close()
@@ -187,5 +196,31 @@ func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Ti
 	case p.accessLogCh <- accessLogEntry{siteID: siteID, siteName: siteName, line: line}:
 	default:
 		logger.Warn("proxy: access log channel full — line dropped siteID=%d", siteID)
+	}
+}
+
+// reopenGlobalLogs closes and reopens the two global log handles after the
+// rotator has unlinked the originals. Runs on the drain goroutine, which is
+// the sole writer of both, so no lock is needed.
+func (p *Proxy) reopenGlobalLogs() {
+	for _, l := range []struct {
+		f    **os.File
+		name string
+	}{
+		{&p.accessLog, "proxy-access.log"},
+		{&p.wafLog, "waf.log"},
+	} {
+		if *l.f == nil {
+			continue
+		}
+		path := (*l.f).Name()
+		(*l.f).Close()
+		*l.f = nil
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+		if err != nil {
+			logger.Error("proxy: reopen %s failed: %v", l.name, err)
+			continue
+		}
+		*l.f = f
 	}
 }
