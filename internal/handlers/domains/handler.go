@@ -7,8 +7,11 @@ package domains
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"podnest/internal/apiutil"
 	"podnest/internal/audit"
@@ -31,6 +34,10 @@ type Handler struct {
 	Proxy   ProxyDomains
 	Resolve modules.SiteResolver
 }
+
+// a hostname label: alphanumeric with interior hyphens, 1-63 chars; the full
+// name must carry at least one dot and end in an alphabetic TLD
+var domainValid = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 
 // RegisterRoutes mounts domain management routes onto api.
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
@@ -73,9 +80,24 @@ func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Domain == "" {
-		logger.Error("domain field is required for site %d", site.ID)
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "domain is required")
+	normalized, err := normalizeDomain(req.Domain)
+	if err != nil {
+		logger.Error("invalid domain '%s' for site %d: %v", req.Domain, site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid domain: "+req.Domain)
+		return
+	}
+	req.Domain = normalized
+
+	// the panel's own hostname must not be claimable by a site
+	adminDomain, err := db.GetSetting(h.DB, "admin_domain")
+	if err != nil {
+		logger.Error("failed to read admin_domain for site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if ad := strings.ToLower(strings.TrimSpace(adminDomain)); ad != "" && req.Domain == ad {
+		logger.Error("site %d attempted to claim the panel domain '%s'", site.ID, req.Domain)
+		apiutil.ErrorMsg(w, http.StatusConflict, "domain is reserved for the panel")
 		return
 	}
 
@@ -154,4 +176,22 @@ func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug("deleted domain %d", did)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// normalizeDomain lowercases and trims a requested domain, then validates it as
+// a routable hostname. Wildcards are rejected — the router matches exact hosts
+// and a wildcard entry would issue certs for names the requester may not own.
+func normalizeDomain(domain string) (string, error) {
+
+	// normalize case, strip surrounding whitespace and any trailing root dot
+	clean := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
+
+	// reject rather than mangle — an unroutable entry still triggers ACME
+	// issuance and still consumes the one-site-per-domain slot
+	if len(clean) > 253 || !domainValid.MatchString(clean) {
+		return "", fmt.Errorf("normalizeDomain: invalid domain %q", domain)
+	}
+
+	// return the safe domain
+	return clean, nil
 }
