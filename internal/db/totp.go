@@ -109,6 +109,9 @@ func UseBackupCode(database *sql.DB, uid int64, code string) (bool, error) {
 			return err == nil, err
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
 	return false, nil
 }
 
