@@ -32,7 +32,7 @@ func Open(path string) (*sql.DB, error) {
 	}
 
 	// Open the database with appropriate flags for concurrency and integrity
-	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on&_txlock=immediate")
+	db, err := sql.Open("sqlite3", path+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on&_txlock=immediate&_synchronous=NORMAL")
 	if err != nil {
 		logger.Error("failed to open sqlite: %v", err)
 		return nil, err

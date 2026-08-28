@@ -114,9 +114,7 @@ var errUpstreamStatus = errors.New("upstream returned failover status")
 // 500 is an app bug every upstream in the pool will reproduce, and replaying a
 // POST body to the rest of the pool delivers it to hosts it was never meant for.
 func shouldFailover(method string, status int) bool {
-	switch method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-	default:
+	if !replayableMethod(method) {
 		return false
 	}
 	switch status {
@@ -139,10 +137,16 @@ func tryUpstream(w http.ResponseWriter, r *http.Request, target UpstreamTarget, 
 // bufferReplayBody reads the request body into memory so a failed upstream can
 // be retried with the same payload, and rewinds r.Body for the first attempt.
 // Reports false when the body exceeds rpMaxReplayBytes, in which case r.Body is
-// restored as a stream and the caller must not fail over.
+// restored as a stream and the caller must not fail over. Methods shouldFailover
+// refuses to replay are left streaming — buffering them allocates a copy the
+// cascade would never use.
 func bufferReplayBody(r *http.Request) (bool, []byte) {
 	if r.Body == nil || r.Body == http.NoBody {
 		return true, nil
+	}
+
+	if !replayableMethod(r.Method) {
+		return false, nil
 	}
 
 	buf, err := io.ReadAll(io.LimitReader(r.Body, rpMaxReplayBytes+1))
@@ -249,4 +253,14 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool, 
 			logger.Debug("upstream: target '%s' unavailable: %v", target.Host, err)
 		},
 	}
+}
+
+// replayableMethod reports whether a request body may be sent to a second
+// upstream. Mirrors the method set shouldFailover accepts.
+func replayableMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	return false
 }

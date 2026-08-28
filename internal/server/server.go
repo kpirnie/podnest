@@ -128,6 +128,9 @@ func (s *Server) Start() error {
 	// background session cleanup
 	go s.sessionReaper()
 
+	// truncate the write-ahead log every six hours
+	go s.walCheckpointer()
+
 	// rotate logs daily at midnight
 	go s.rotateLogs()
 

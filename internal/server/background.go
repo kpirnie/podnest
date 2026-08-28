@@ -48,6 +48,19 @@ func (s *Server) sessionReaper() {
 	}
 }
 
+// walCheckpointer truncates the SQLite WAL every six hours. Autocheckpoints
+// only run when no reader holds the WAL open, so a long-lived reader lets the
+// -wal file grow without bound between these passes.
+func (s *Server) walCheckpointer() {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		if _, err := s.cfg.DB.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+			logger.Warn("wal checkpoint failed: %v", err)
+		}
+	}
+}
+
 // crsUpdater checks for updated OWASP CRS rules nightly and recompiles the
 // WAF engine if a new version is downloaded.
 func (s *Server) crsUpdater() {
