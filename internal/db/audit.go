@@ -47,6 +47,10 @@ type AuditFilter struct {
 	PageSize   int   // default 50 if 0
 }
 
+// auditMaxPageSize bounds the rows one query may return — the handler clamps
+// the request value, this is the backstop for any other caller.
+const auditMaxPageSize = 200
+
 // QueryAuditLog returns a page of audit rows matching the given filter,
 // plus the total count of matching rows for pagination.
 func QueryAuditLog(database *sql.DB, f AuditFilter) ([]models.AuditEntry, int, error) {
@@ -55,7 +59,7 @@ func QueryAuditLog(database *sql.DB, f AuditFilter) ([]models.AuditEntry, int, e
 	if f.Page < 1 {
 		f.Page = 1
 	}
-	if f.PageSize < 1 {
+	if f.PageSize < 1 || f.PageSize > auditMaxPageSize {
 		f.PageSize = 50
 	}
 
@@ -77,9 +81,9 @@ func QueryAuditLog(database *sql.DB, f AuditFilter) ([]models.AuditEntry, int, e
 		       target_type, target_id, status, details, prior_state, new_state
 		FROM kppn_audit_log%s
 		ORDER BY ts DESC, id DESC
-		LIMIT %d OFFSET %d`, where, f.PageSize, offset)
+		LIMIT ? OFFSET ?`, where)
 
-	rows, err := database.Query(rowSQL, args...)
+	rows, err := database.Query(rowSQL, append(args, f.PageSize, offset)...)
 	if err != nil {
 		logger.Error("QueryAuditLog: row query failed: %v", err)
 		return nil, 0, err

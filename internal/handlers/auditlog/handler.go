@@ -63,7 +63,7 @@ func (h *Handler) apiQueryAuditLog(w http.ResponseWriter, r *http.Request) {
 
 	// pagination
 	if s := q.Get("page"); s != "" {
-		if n, err := strconv.Atoi(s); err == nil {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
 			f.Page = n
 		}
 	}
