@@ -47,25 +47,33 @@ func (p *Proxy) enqueueWAFLog(siteID int64, siteName, line string) {
 // and its parent logs/ directory on first access. The result is cached in the
 // appropriate sync.Map (cache) so the file is opened at most once per site.
 // logType must be "access" or "waf"; the corresponding filename is derived from it.
+// The cached handle is verified against the current site name — a rename moves
+// the directory out from under it, and the old handle would keep writing there.
 func (p *Proxy) siteLogFile(cache *sync.Map, siteID int64, siteName, logType string) *os.File {
-	// fast path — already open
-	if v, ok := cache.Load(siteID); ok {
-		return v.(*os.File)
-	}
-
-	// slow path — create directory and open file
 	dir := fmt.Sprintf("%s/sites/%s/logs", p.appPath, siteName)
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		logger.Error("proxy: siteLogFile: mkdir %s: %v", dir, err)
-		return nil
-	}
 
 	filename := "access.log"
 	if logType == "waf" {
 		filename = "waf.log"
 	}
-
 	path := dir + "/" + filename
+
+	// fast path — already open, and still pointing at this site's directory
+	if v, ok := cache.Load(siteID); ok {
+		f := v.(*os.File)
+		if f.Name() == path {
+			return f
+		}
+		cache.Delete(siteID)
+		f.Close()
+	}
+
+	// slow path — create directory and open file
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		logger.Error("proxy: siteLogFile: mkdir %s: %v", dir, err)
+		return nil
+	}
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil {
 		logger.Error("proxy: siteLogFile: open %s: %v", path, err)
