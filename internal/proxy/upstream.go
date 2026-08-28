@@ -108,6 +108,24 @@ func (p *UpstreamPool) Targets() []*url.URL {
 // so the cascade can fall through to the next target.
 var errUpstreamStatus = errors.New("upstream returned failover status")
 
+// shouldFailover reports whether an upstream's response means that upstream
+// could not serve the request, as opposed to the app answering. Only the
+// gateway statuses qualify, and only for methods that are safe to replay — a
+// 500 is an app bug every upstream in the pool will reproduce, and replaying a
+// POST body to the rest of the pool delivers it to hosts it was never meant for.
+func shouldFailover(method string, status int) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+	default:
+		return false
+	}
+	switch status {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
 // tryUpstream proxies to w with no buffering — ModifyResponse inspects the status
 // before any bytes reach the client, so a rejected upstream can fall through to
 // the next while an accepted one streams straight through.
@@ -217,7 +235,7 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool, 
 		ModifyResponse: func(resp *http.Response) error {
 
 			// a failover status is not committed — the cascade moves on
-			if resp.StatusCode >= 400 {
+			if resp.Request != nil && shouldFailover(resp.Request.Method, resp.StatusCode) {
 				return errUpstreamStatus
 			}
 			if resp.Request != nil {
