@@ -56,6 +56,14 @@ func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
 			logger.Error("upstream: skipping unparseable upstream '%s': %v", r.upstream, err)
 			continue
 		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			logger.Error("upstream: skipping upstream '%s': unsupported scheme '%s'", r.upstream, parsed.Scheme)
+			continue
+		}
+		if parsed.Host == "" {
+			logger.Error("upstream: skipping upstream '%s': missing host", r.upstream)
+			continue
+		}
 		pool.targets = append(pool.targets, UpstreamTarget{URL: parsed, PassHost: r.passHost})
 	}
 	if len(pool.targets) == 0 {

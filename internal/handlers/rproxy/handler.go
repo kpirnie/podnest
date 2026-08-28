@@ -80,9 +80,22 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "route domain must not be empty")
 			return
 		}
-		if _, err := url.ParseRequestURI(routes[i].Upstream); err != nil || routes[i].Upstream == "" {
+		u, err := url.ParseRequestURI(routes[i].Upstream)
+		if err != nil || routes[i].Upstream == "" {
 			logger.Error("apiUpdateRPRoutes: invalid upstream '%s' at index %d: %v", routes[i].Upstream, i, err)
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid upstream URL: "+routes[i].Upstream)
+			return
+		}
+		// the RP layer proxies over http.Transport, which registers no other
+		// scheme — anything else stores fine and then fails at dial
+		if u.Scheme != "http" && u.Scheme != "https" {
+			logger.Error("apiUpdateRPRoutes: unsupported upstream scheme '%s' at index %d", u.Scheme, i)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must be http or https: "+routes[i].Upstream)
+			return
+		}
+		if u.Host == "" {
+			logger.Error("apiUpdateRPRoutes: upstream missing host at index %d: '%s'", i, routes[i].Upstream)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must include a host: "+routes[i].Upstream)
 			return
 		}
 	}
