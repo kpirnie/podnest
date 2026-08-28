@@ -4,7 +4,10 @@
 
 package proxy
 
-import "podnest/internal/logger"
+import (
+	"podnest/internal/logger"
+	"strings"
+)
 
 // AddDomain inserts a domain→port+siteID mapping into the cache atomically.
 func (p *Proxy) AddDomain(domain string, port int, siteID int64, siteName string) {
@@ -51,9 +54,51 @@ func (p *Proxy) RemoveDomains(domains []string) {
 	logger.Debug("proxy: cache removed %d domains", len(domains))
 }
 
-// RemoveSiteProxy evicts the cached reverse proxy for a port — called on site deletion.
-func (p *Proxy) RemoveSiteProxy(port int) {
+// ForgetSite evicts every piece of per-site proxy state — called on site
+// deletion. Must run after RemoveDomains so the upstream sweep no longer sees
+// this site's pools; anything still reachable through the domain cache is
+// another site's and is left alone.
+func (p *Proxy) ForgetSite(siteID int64, port int) {
 	p.rpCache.Delete(port)
+	p.basicAuthCache.Delete(siteID)
+	p.redirectCache.Delete(siteID)
+	p.ReopenLogs(siteID)
+	p.pruneUpstreamCaches()
+}
+
+// pruneUpstreamCaches drops cached reverse proxies and TLS verdicts for
+// upstreams no longer referenced by any pool in the domain cache.
+func (p *Proxy) pruneUpstreamCaches() {
+	live := make(map[string]struct{})
+	liveTLS := make(map[string]struct{})
+	if ptr := p.cache.Load(); ptr != nil {
+		for _, e := range *ptr {
+			if e.pool == nil {
+				continue
+			}
+			for _, t := range e.pool.Targets() {
+				live[t.String()] = struct{}{}
+				liveTLS[upstreamTLSKey(t)] = struct{}{}
+			}
+		}
+	}
+
+	p.rpProxyCache.Range(func(k, _ any) bool {
+		key, _ := k.(string)
+		target, _, _ := strings.Cut(key, "|ph=")
+		if _, ok := live[target]; !ok {
+			p.rpProxyCache.Delete(k)
+		}
+		return true
+	})
+
+	p.rpTLSVerified.Range(func(k, _ any) bool {
+		key, _ := k.(string)
+		if _, ok := liveTLS[key]; !ok {
+			p.rpTLSVerified.Delete(k)
+		}
+		return true
+	})
 }
 
 // SetAdminDomain updates the admin domain on the running proxy without a restart.

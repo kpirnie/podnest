@@ -49,7 +49,7 @@ type SitesProxy interface {
 	AddDomain(domain string, port int, siteID int64, siteName string)
 	ObtainCert(domain string)
 	RemoveDomains(domains []string)
-	RemoveSiteProxy(port int)
+	ForgetSite(siteID int64, port int)
 	WarmCaches(justTrustedProxies bool) error
 }
 
@@ -697,8 +697,9 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 		h.Proxy.RemoveDomains(domainStrs)
 	}
 
-	// remove the site's proxy configuration from the proxy and log any warnings for errors encountered during removal
-	h.Proxy.RemoveSiteProxy(site.Port)
+	// drop every cached artifact for this site — reverse proxies, basic auth,
+	// redirects, upstream TLS verdicts, and the open log handles
+	h.Proxy.ForgetSite(site.ID, site.Port)
 
 	// remove the site directory from the filesystem and log any warnings for errors encountered during removal
 	if err := os.RemoveAll(siteDir); err != nil {
