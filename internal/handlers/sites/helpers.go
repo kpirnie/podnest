@@ -45,6 +45,40 @@ func NormalizeSiteName(name string) (string, error) {
 	return clean, nil
 }
 
+// ValidateSiteVersions checks that a requested site type has a registered
+// module and that the version selectors resolve to a real image tag. An
+// unregistered type leaves TypeModule returning nil for every later caller to
+// dereference, and an unknown version silently falls back to a default.
+func ValidateSiteVersions(siteType, phpVersion int, runtimeVersion *int) error {
+
+	// the type must be one the registry knows how to provision
+	if modules.TypeModule(siteType) == nil {
+		return fmt.Errorf("ValidateSiteVersions: unknown site type %d", siteType)
+	}
+
+	// php version is a map key, not a free integer
+	if _, ok := models.PHPVersionMap[phpVersion]; phpVersion != 0 && !ok {
+		return fmt.Errorf("ValidateSiteVersions: unknown php version %d", phpVersion)
+	}
+
+	// runtime version only applies to the runtime-backed types
+	if runtimeVersion != nil {
+		switch siteType {
+		case models.SiteTypeNode:
+			if _, ok := models.NodeVersionMap[*runtimeVersion]; !ok {
+				return fmt.Errorf("ValidateSiteVersions: unknown node version %d", *runtimeVersion)
+			}
+		case models.SiteTypeDotNet:
+			if _, ok := models.DotNetVersionMap[*runtimeVersion]; !ok {
+				return fmt.Errorf("ValidateSiteVersions: unknown dotnet version %d", *runtimeVersion)
+			}
+		}
+	}
+
+	// valid
+	return nil
+}
+
 // cloneDatabase copies the database from the source site to the clone site.
 func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) error {
 

@@ -269,6 +269,17 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// an omitted type means WordPress — resolve it before anything dereferences
+	// the module, and reject a type or version the registry cannot provision
+	if req.SiteType == 0 {
+		req.SiteType = models.SiteTypeWordPress
+	}
+	if err := ValidateSiteVersions(req.SiteType, req.PHPVersion, req.RuntimeVersion); err != nil {
+		logger.Error("invalid site parameters for creation: %v", err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site type or version")
+		return
+	}
+
 	// find the next available port for the new site and handle any errors in port allocation
 	port, err := db.NextAvailablePort(h.DB)
 	if err != nil {
@@ -313,7 +324,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//
+	// setup the site model
 	site := &models.Site{
 		UID:            user.ID,
 		Name:           req.Name,
@@ -324,9 +335,6 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		RuntimeVersion: req.RuntimeVersion,
 		StartCommand:   req.StartCommand,
 		PMAPort:        pmaPort,
-	}
-	if site.SiteType == 0 {
-		site.SiteType = models.SiteTypeWordPress
 	}
 	if site.SiteType == models.SiteTypeWordPress && !req.InstallWordPress {
 		site.SiteType = models.SiteTypePHP
@@ -569,15 +577,30 @@ func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 		}
 		site.Name = name
 	}
-	if req.PHPVersion != 0 {
-		site.PHPVersion = req.PHPVersion
-	}
+
+	// resolve the effective values first — a partial update must not be
+	// validated against fields the request did not carry
+	newType := site.SiteType
 	if req.SiteType != 0 {
-		site.SiteType = req.SiteType
+		newType = req.SiteType
 	}
+	newPHP := site.PHPVersion
+	if req.PHPVersion != 0 {
+		newPHP = req.PHPVersion
+	}
+	newRuntime := site.RuntimeVersion
 	if req.RuntimeVersion != nil {
-		site.RuntimeVersion = req.RuntimeVersion
+		newRuntime = req.RuntimeVersion
 	}
+	if err := ValidateSiteVersions(newType, newPHP, newRuntime); err != nil {
+		logger.Error("invalid site parameters for update on site %d: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site type or version")
+		return
+	}
+	site.SiteType = newType
+	site.PHPVersion = newPHP
+	site.RuntimeVersion = newRuntime
+
 	if req.StartCommand != "" {
 		site.StartCommand = req.StartCommand
 	}
