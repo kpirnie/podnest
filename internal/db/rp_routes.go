@@ -72,6 +72,21 @@ func GetAllRPRoutes(db *sql.DB) ([]RPRoute, error) {
 	return routes, rows.Err()
 }
 
+// RPRouteDomainTaken reports whether a domain already has RP routes belonging
+// to a site other than the one given
+func RPRouteDomainTaken(db *sql.DB, domain string, siteID int64) (bool, error) {
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM kppn_rp_routes WHERE domain = ? AND site_id != ?`, domain, siteID,
+	).Scan(&count)
+	if err != nil {
+		logger.Error("RPRouteDomainTaken: failed to check domain '%s': %v", domain, err)
+		return false, err
+	}
+	logger.Debug("RPRouteDomainTaken: domain '%s' taken by another site: %v", domain, count > 0)
+	return count > 0, nil
+}
+
 // ReplaceRPRoutes atomically replaces all routes for a site within a single transaction
 func ReplaceRPRoutes(db *sql.DB, siteID int64, routes []RPRoute) error {
 	tx, err := db.Begin()

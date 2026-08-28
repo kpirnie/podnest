@@ -158,6 +158,24 @@ func DeleteDomainsBySite(db *sql.DB, siteID int64) error {
 	return err
 }
 
+// DomainSiteID returns the site ID owning a registered domain, or 0 when the
+// domain is not registered
+func DomainSiteID(db *sql.DB, domain string) (int64, error) {
+	var siteID int64
+	err := db.QueryRow(`
+		SELECT siteid FROM kppn_domains WHERE domain=?`, domain,
+	).Scan(&siteID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		logger.Error("DomainSiteID: failed to look up domain '%s': %v", domain, err)
+		return 0, err
+	}
+	logger.Debug("domain '%s' is owned by site %d", domain, siteID)
+	return siteID, nil
+}
+
 // DomainExists returns true if the domain string is already registered
 func DomainExists(db *sql.DB, domain string) (bool, error) {
 

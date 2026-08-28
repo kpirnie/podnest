@@ -89,6 +89,57 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 
 	prior := db.SnapshotRPRoutes(h.DB, site.ID)
 
+	// a route claims the domain in the routing cache, so it must not collide
+	// with the panel, another tenant's registered domain, or another tenant's
+	// routes — checked once per unique domain in the payload
+	adminDomain, err := db.GetSetting(h.DB, "admin_domain")
+	if err != nil {
+		logger.Error("apiUpdateRPRoutes: failed to read admin_domain for site %d: %v", site.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	adminDomain = strings.ToLower(strings.TrimSpace(adminDomain))
+
+	seen := make(map[string]struct{}, len(routes))
+	for _, rt := range routes {
+		if _, ok := seen[rt.Domain]; ok {
+			continue
+		}
+		seen[rt.Domain] = struct{}{}
+
+		// check if the domain is the admin panels domain
+		if adminDomain != "" && rt.Domain == adminDomain {
+			logger.Error("apiUpdateRPRoutes: site %d attempted to claim the panel domain '%s'", site.ID, rt.Domain)
+			apiutil.ErrorMsg(w, http.StatusConflict, "domain is reserved for the panel: "+rt.Domain)
+			return
+		}
+
+		// get the domain owner if any
+		ownerID, err := db.DomainSiteID(h.DB, rt.Domain)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		if ownerID != 0 && ownerID != site.ID {
+			logger.Error("apiUpdateRPRoutes: site %d attempted to claim domain '%s' registered to site %d", site.ID, rt.Domain, ownerID)
+			apiutil.ErrorMsg(w, http.StatusConflict, "domain is registered to another site: "+rt.Domain)
+			return
+		}
+
+		// check if the domain is already in the system
+		taken, err := db.RPRouteDomainTaken(h.DB, rt.Domain, site.ID)
+		if err != nil {
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		if taken {
+			logger.Error("apiUpdateRPRoutes: site %d attempted to claim domain '%s' already routed by another site", site.ID, rt.Domain)
+			apiutil.ErrorMsg(w, http.StatusConflict, "domain is already routed by another site: "+rt.Domain)
+			return
+		}
+	}
+
+	// replace the routes
 	if err := db.ReplaceRPRoutes(h.DB, site.ID, routes); err != nil {
 		logger.Error("apiUpdateRPRoutes: failed to replace routes for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
