@@ -88,7 +88,7 @@ type Proxy struct {
 	secCache          atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
 	wafEnabled        atomic.Bool                                  // true when global WAF is on
 	wafEngine         atomic.Pointer[WAFEngine]                    // global compiled engine
-	wafSiteEngines    atomic.Pointer[map[int64]*WAFEngine]         // siteID → compiled engine; swapped whole so no request sees a half-built set	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
+	wafSiteEngines    atomic.Pointer[map[int64]*WAFEngine]         // siteID → compiled engine; swapped whole so no request sees a half-built set
 	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
 	trustedProxies    atomic.Pointer[ipTable]                      // compiled trusted proxy ranges; swapped atomically on refresh
 	bypassNets        atomic.Pointer[ipTable]                      // compiled bypass IP rules; swapped atomically on change
