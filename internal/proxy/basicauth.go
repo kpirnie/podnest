@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 
@@ -74,6 +75,16 @@ func (p *Proxy) enforceBasicAuth(w http.ResponseWriter, r *http.Request, siteID 
 		return true
 	}
 
+	// locked-out IPs are rejected before bcrypt runs — the compare is the
+	// expensive half, and it is what makes an unthrottled 401 path a CPU
+	// exhaustion target against the whole proxy rather than just this site
+	if !auth.LoginAllowed(clientIPStr) {
+		http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+		dur := time.Since(start)
+		p.writeAccessLog(r, http.StatusTooManyRequests, 0, start, dur, clientIPStr, siteID, siteName)
+		return true
+	}
+
 	hash, known := entry.users[user]
 	if !known {
 		// compare against a fixed dummy hash so an unknown user takes the
@@ -81,11 +92,14 @@ func (p *Proxy) enforceBasicAuth(w http.ResponseWriter, r *http.Request, siteID 
 		hash = string(dummyBcryptHash)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil || !known {
+		auth.RecordFailedLogin(clientIPStr)
 		w.Header().Set("WWW-Authenticate", `Basic realm="`+entry.realm+`"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		dur := time.Since(start)
 		p.writeAccessLog(r, http.StatusUnauthorized, 0, start, dur, clientIPStr, siteID, siteName)
 		return true
 	}
+
+	auth.RecordSuccessfulLogin(clientIPStr)
 	return false
 }
