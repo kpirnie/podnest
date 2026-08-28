@@ -483,6 +483,29 @@ func (p *Proxy) realClientIP(r *http.Request) string {
 	return ipStr
 }
 
+// peerTrusted reports whether the immediate peer on this connection is a hop we
+// control — loopback (internal forwarding by the proxy itself) or a configured
+// trusted-proxy range. Only such a peer may supply X-Forwarded-* values.
+func (p *Proxy) peerTrusted(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	addr, ok := toAddr(ip)
+	if !ok {
+		return false
+	}
+	_, hit := p.trustedProxies.Load().lookup(addr)
+	return hit
+}
+
 // normalizeHost strips any port from the request host and lowercases it so
 // routing matches case-insensitively against stored (lowercased) domains.
 func normalizeHost(r *http.Request) string {
@@ -728,6 +751,16 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 			}
 			req.Out.Header = outHeader
 
+			// an untrusted peer's forwarding headers are attacker-controlled —
+			// drop them so SetXForwarded starts a fresh chain and the proto is
+			// derived from this connection rather than the client's claim
+			trusted := p.peerTrusted(req.In)
+			if !trusted {
+				req.Out.Header.Del("X-Forwarded-For")
+				req.Out.Header.Del("X-Forwarded-Proto")
+				req.Out.Header.Del("X-Real-Ip")
+			}
+
 			// set X-Forwarded-* on the cloned map — In.Header is now unaffected
 			req.SetXForwarded()
 
@@ -737,9 +770,8 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 				req.Out.Header.Set("Connection", "Upgrade")
 			}
 
-			// trust X-Forwarded-Proto from upstream proxy if present,
 			// otherwise derive it from the TLS state of this connection
-			if proto := req.In.Header.Get("X-Forwarded-Proto"); proto != "" {
+			if proto := req.Out.Header.Get("X-Forwarded-Proto"); trusted && proto != "" {
 				req.Out.Header.Set("X-Forwarded-Proto", proto)
 			} else if req.In.TLS != nil {
 				req.Out.Header.Set("X-Forwarded-Proto", "https")
