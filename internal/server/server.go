@@ -87,6 +87,9 @@ func (s *Server) Start() error {
 	s.cfg.HostGateway = s.detectHostGateway()
 	logger.Debug("host gateway detected: %s", s.cfg.HostGateway)
 
+	// set the published host IP
+	podman.SetPublishHostIP(s.cfg.HostGateway)
+
 	// push the resolved host path into the SFTP manager & fail2ban manager before Ensure runs
 	s.sftp.SetHostAppPath(s.cfg.HostAppPath)
 	s.fail2ban.SetHostAppPath(s.cfg.HostAppPath)

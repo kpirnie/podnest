@@ -28,8 +28,13 @@ type PodSpec struct {
 type PortMap struct {
 	ContainerPort uint16 `json:"container_port"`
 	HostPort      uint16 `json:"host_port"`
+	HostIP        string `json:"host_ip,omitempty"`
 	Protocol      string `json:"protocol"`
 }
+
+// host address published pod ports bind to; set once at startup from the
+// detected host gateway, which is the same address the proxy dials
+var publishHostIP = "127.0.0.1"
 
 // response from pod creation endpoint, containing the new pod's ID
 type PodCreateResponse struct {
@@ -108,12 +113,19 @@ type ContainerStat struct {
 	MemPerc  float64
 }
 
+// SetPublishHostIP sets the host address that newly created pods publish their
+// ports on. Must be called before any pod is created.
+func SetPublishHostIP(ip string) {
+	if ip != "" {
+		publishHostIP = ip
+	}
+}
+
 // CreatePod creates a new pod with the given name and host port mapping
 func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) (string, error) {
 
-	// define the default port mappings for the pod, including the main site port
 	ports := []PortMap{
-		{ContainerPort: 80, HostPort: uint16(site.Port), Protocol: "tcp"},
+		{ContainerPort: 80, HostPort: uint16(site.Port), HostIP: publishHostIP, Protocol: "tcp"},
 	}
 
 	// if the site is not static, also add a port mapping for phpMyAdmin
@@ -121,6 +133,7 @@ func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) 
 		ports = append(ports, PortMap{
 			ContainerPort: models.PHPMyAdminPort,
 			HostPort:      uint16(site.PMAPort),
+			HostIP:        publishHostIP,
 			Protocol:      "tcp",
 		})
 	}
