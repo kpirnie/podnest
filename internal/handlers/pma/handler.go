@@ -88,7 +88,7 @@ func (h *Handler) apiIssuePMAToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
-	logger.Debug("PMA request: path=%s query=%s", r.URL.Path, r.URL.RawQuery)
+	logger.Debug("PMA request: path=%s", r.URL.Path)
 
 	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/pma/"), "/", 2)
 	if len(parts) == 0 || parts[0] == "" {
