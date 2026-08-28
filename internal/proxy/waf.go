@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	coreruleset "github.com/corazawaf/coraza-coreruleset/v4"
@@ -193,9 +194,23 @@ func (e *WAFEngine) reuse(s db.WAFSettings) *WAFEngine {
 }
 
 // Inspect runs a Coraza transaction against the incoming request.
-// Returns true if the request should proceed to the upstream proxy.
+// Returns true if the request should proceed to the upstream proxy, plus a
+// release func the caller must defer. The inspected body is handed to the
+// upstream and outlives this call, so the memory budget charge is only
+// returned once the caller is finished with the request.
 // On a block decision a 403 has already been written to w.
-func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, sink wafLogSink, siteID int64, siteName string) bool {
+func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP string, sink wafLogSink, siteID int64, siteName string) (bool, func()) {
+	var release func()
+	ok := e.inspect(w, r, clientIP, sink, siteID, siteName, &release)
+	if release == nil {
+		release = func() {}
+	}
+	return ok, release
+}
+
+// inspect runs the transaction. When a request body is buffered the budget
+// charge is stored in release rather than returned here.
+func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP string, sink wafLogSink, siteID int64, siteName string, release *func()) bool {
 	tx := e.waf.NewTransaction()
 	defer func() {
 		tx.ProcessLogging()
@@ -248,7 +263,10 @@ func (e *WAFEngine) Inspect(w http.ResponseWriter, r *http.Request, clientIP str
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 			return false
 		}
-		defer wafBodyBudget.Release(weight)
+		var once sync.Once
+		*release = func() {
+			once.Do(func() { wafBodyBudget.Release(weight) })
+		}
 
 		// read up to wafMaxBodyBytes for inspection, then restore the full stream for
 		// the upstream (inspected prefix + any unread remainder). The buffer is handed

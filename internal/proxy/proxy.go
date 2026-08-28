@@ -393,8 +393,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// enforce the combined global and per-site security rules plus the WAF
-	if p.enforceSiteSecurity(w, r, clientIP, clientIPStr, start, siteID, siteName) {
+	// the WAF's buffered body is forwarded upstream, so its memory budget is
+	// held for the life of the request and released here, not inside Inspect
+	wafRelease := func() {}
+	defer func() { wafRelease() }()
+
+	if p.enforceSiteSecurity(w, r, clientIP, clientIPStr, start, siteID, siteName, &wafRelease) {
 		return
 	}
 
@@ -575,7 +579,7 @@ func (p *Proxy) enforceGlobalSecurity(w http.ResponseWriter, r *http.Request, cl
 // enforceSiteSecurity applies the combined global and per-site IP, UA,
 // country, and ASN rules plus the WAF to a routed request. Bypass-listed IPs
 // skip all enforcement. Returns true when the request was blocked and handled.
-func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clientIP net.IP, clientIPStr string, start time.Time, siteID int64, siteName string) bool {
+func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clientIP net.IP, clientIPStr string, start time.Time, siteID int64, siteName string, wafRelease *func()) bool {
 
 	// bypass list — matching IPs skip all IP, UA, and WAF enforcement
 	if clientIP != nil && isIPBypassed(clientIP, p.bypassNets.Load()) {
@@ -642,7 +646,9 @@ func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clie
 
 	// enforce WAF — admin domain traffic (siteID == 0) bypasses inspection
 	if wafEngine != nil {
-		if !wafEngine.Inspect(w, r, clientIPStr, p.enqueueWAFLog, siteID, siteName) {
+		ok, release := wafEngine.Inspect(w, r, clientIPStr, p.enqueueWAFLog, siteID, siteName)
+		*wafRelease = release
+		if !ok {
 			// WAF wrote the 403; record it in the access log for Fail2Ban
 			// the triggering rule ID is already recorded in waf.log by writeWAFLog
 			p.writeAccessLog(r, http.StatusForbidden, 0, start, time.Since(start), clientIPStr, siteID, siteName, "waf")
@@ -913,7 +919,9 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 		// enforce global WAF — siteID 0, siteName "panel" for log attribution
 		if p.wafEnabled.Load() {
 			if engine := p.wafEngine.Load(); engine != nil {
-				if !engine.Inspect(w, r, clientIPStr, p.enqueueWAFLog, 0, "PODNEST") {
+				ok, release := engine.Inspect(w, r, clientIPStr, p.enqueueWAFLog, 0, "PODNEST")
+				defer release()
+				if !ok {
 					return
 				}
 			}
