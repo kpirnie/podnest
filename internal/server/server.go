@@ -70,10 +70,13 @@ func New(cfg Config) *Server {
 	}
 
 	s.http = &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		ReadTimeout:  120 * time.Second,
-		WriteTimeout: 0,
-		IdleTimeout:  120 * time.Second,
+		Addr: fmt.Sprintf(":%d", cfg.Port),
+		// ReadHeaderTimeout caps the header-send phase on its own so a stalled
+		// peer cannot hold a connection for the full ReadTimeout
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       120 * time.Second,
+		WriteTimeout:      0,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return s
