@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"podnest/internal/logger"
@@ -111,7 +112,7 @@ func RequireAdmin(next http.Handler) http.Handler {
 		// If the user is not an admin, return a 403 Forbidden response.
 		user := UserFromContext(r.Context())
 		if user == nil || user.Role != models.RoleAdmin {
-			logger.Error("user is not an admin: %v", user)
+			logger.Error("user is not an admin: %v", userLabel(user))
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -172,12 +173,12 @@ func RequireAPIAdmin(next http.Handler) http.Handler {
 		// If the user is not an admin, return a 403 Forbidden JSON response.
 		user := UserFromContext(r.Context())
 		if user == nil || user.Role != models.RoleAdmin {
-			logger.Error("user is not an admin: %v", user)
+			logger.Error("user is not an admin: %s", userLabel(user))
 			apiForbidden(w)
 			return
 		}
 
-		logger.Debug("admin user: %v", user)
+		logger.Debug("admin user: %v", user.UName)
 
 		// If the user is an admin, call the next handler.
 		next.ServeHTTP(w, r)
@@ -204,4 +205,13 @@ func apiForbidden(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
 	w.Write([]byte(`{"error":"forbidden"}`))
+}
+
+// userLabel renders a user for logging without exposing the password hash or
+// TOTP secret carried on the struct.
+func userLabel(u *models.User) string {
+	if u == nil {
+		return "<none>"
+	}
+	return fmt.Sprintf("id=%d uname=%s role=%d", u.ID, u.UName, u.Role)
 }
