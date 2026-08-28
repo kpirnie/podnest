@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"strings"
 
 	"podnest/internal/auth"
 	"podnest/internal/handlers/auditlog"
@@ -28,6 +29,38 @@ import (
 	"podnest/internal/modules"
 	"podnest/web"
 )
+
+// apiMaxBodyBytes caps a decoded API request body. Every JSON handler reads
+// r.Body without a limit of its own, so the ceiling is applied once at the mux.
+// Upload routes carry their own, larger caps and are exempt.
+const apiMaxBodyBytes = 16 << 20 // 16 MB
+
+// apiBodyLimitSkipSuffixes are route suffixes that stream a payload and set
+// their own limit — capping them here would truncate a legitimate upload.
+var apiBodyLimitSkipSuffixes = []string{
+	"/files/upload",
+	"/backups/import/upload",
+}
+
+// limitAPIBody bounds the request body for every API route that does not
+// declare its own cap. MaxBytesReader errors the read rather than buffering, so
+// an oversized body never reaches a decoder.
+func limitAPIBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil || r.Body == http.NoBody {
+			next.ServeHTTP(w, r)
+			return
+		}
+		for _, s := range apiBodyLimitSkipSuffixes {
+			if strings.HasSuffix(r.URL.Path, s) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, apiMaxBodyBytes)
+		next.ServeHTTP(w, r)
+	})
+}
 
 // routes registers all HTTP routes and returns the composed handler.
 func (s *Server) routes() http.Handler {
@@ -167,10 +200,10 @@ func (s *Server) routes() http.Handler {
 		f.RegisterRoutes(api, sitesHandler.ResolveSite)
 	}
 
-	// mount the API sub-mux under /api/ — audit wraps outermost (captures unauthed),
-	// auth middleware is inner so identity is resolved independently by each layer
+	// auth middleware is inner so identity is resolved independently by each layer.
+	// the body limit is outermost so no layer buffers an unbounded payload.
 	mux.Handle("/api/", http.StripPrefix("/api",
-		s.auditMiddleware(auth.RequireAPIAuth(s.cfg.DB, api)),
+		limitAPIBody(s.auditMiddleware(auth.RequireAPIAuth(s.cfg.DB, api))),
 	))
 
 	logger.Debug("routes registered")

@@ -79,6 +79,12 @@ func (m Module) apiWrite(w http.ResponseWriter, r *http.Request, site *models.Si
 // apiUpload streams the raw request body to the file at ?path=.
 func (m Module) apiUpload(w http.ResponseWriter, r *http.Request, site *models.Site) {
 	defer r.Body.Close()
+
+	// bound the stream — Upload writes straight to disk, so an unbounded body
+	// fills the site's volume. Anything larger belongs on SFTP.
+	const maxBytes = 512 << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
 	if err := m.worker(site).Upload(r.Context(), r.URL.Query().Get("path"), r.Body); err != nil {
 		writeFileErr(w, "upload", site, err)
 		return
