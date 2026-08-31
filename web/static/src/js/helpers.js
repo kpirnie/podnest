@@ -170,6 +170,59 @@ export function showCloneModal(sourceName) {
     });
 }
 
+// showRenameModal prompts for a new site name and resolves with the entered
+// value, or null if the user cancelled
+export function showRenameModal(currentName) {
+    return new Promise((resolve) => {
+        const id  = "kp-rename-modal";
+        const html = `
+            <div id="${id}" uk-modal>
+                <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:420px">
+                    <h3 class="uk-modal-title">Rename Site</h3>
+                    <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                        Enter a new name for <strong>${currentName}</strong>.  Please have patience, this takes a few minutes.
+                    </p>
+                    <input id="kp-rename-name" class="uk-input kp-input" type="text"
+                        value="${currentName}" autocomplete="off">
+                    <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
+                        <button class="uk-button kp-btn-ghost uk-modal-close" id="kp-rename-cancel">Cancel</button>
+                        <button class="uk-button kp-btn-primary" id="kp-rename-ok">
+                            <span uk-icon="pencil"></span> Rename
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+
+        document.body.insertAdjacentHTML("beforeend", html);
+        const modal  = UIkit.modal(`#${id}`);
+        const input  = document.getElementById("kp-rename-name");
+        const okBtn  = document.getElementById("kp-rename-ok");
+        const cancel = document.getElementById("kp-rename-cancel");
+
+        const cleanup = (val) => {
+            modal.hide();
+            setTimeout(() => document.getElementById(id)?.remove(), 300);
+            resolve(val);
+        };
+
+        okBtn.addEventListener("click", () => cleanup(input.value.trim() || null), { once: true });
+        cancel.addEventListener("click", () => cleanup(null), { once: true });
+
+        // resolve null on backdrop/esc dismiss
+        document.getElementById(id)
+            .addEventListener("hidden", () => cleanup(null), { once: true });
+
+        modal.show();
+        // focus the input after the modal animates in
+        setTimeout(() => input.focus(), 150);
+
+        // allow submitting with Enter
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") okBtn.click();
+        });
+    });
+}
+
 // showSyncModal prompts the user to confirm a destructive Pull or Push sync
 // operation between a clone and its parent site
 export function showSyncModal(direction, cloneName, parentName) {

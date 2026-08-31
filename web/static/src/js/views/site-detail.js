@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { hideProgressModal, showCloneModal, showProgressModal, statusBadge } from '../helpers.js';
+import { hideProgressModal, showCloneModal, showProgressModal, showRenameModal, statusBadge } from '../helpers.js';
 import { showEditSiteModal } from '../modals/edit-site.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
@@ -306,6 +306,7 @@ export async function viewSiteDetail(root, { id }) {
                 <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate" id="sd-recreate" uk-tooltip="Recreate &amp; Update the Pod"><span uk-icon="history"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-clone" uk-tooltip="Clone the Site"><span uk-icon="move"></span></button>
                 ` : ""}
+                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-rename" uk-tooltip="Rename the Site"><span uk-icon="tag"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" id="sd-edit" uk-tooltip="Edit the Site"><span uk-icon="pencil"></span></button>
             </div>
         </div>
@@ -393,6 +394,20 @@ export async function viewSiteDetail(root, { id }) {
 
     document.getElementById("sd-back").addEventListener("click", () => router.go("sites"));
     document.getElementById("sd-edit").addEventListener("click", () => showEditSiteModal(site));
+    document.getElementById("sd-rename").addEventListener("click", async () => {
+        const name = await showRenameModal(site.Name);
+        if (!name || name === site.Name) return;
+        showProgressModal("Renaming Site", "Moving the database, files, and pod — this may take a few minutes...");
+        try {
+            await api.post(`/sites/${id}/rename`, { name }, 1800000);
+            hideProgressModal();
+            toast.success(`Site renamed to '${name}'`);
+            router.go("site-detail", { id });
+        } catch (e) {
+            hideProgressModal();
+            toast.error(e.message);
+        }
+    });
 
     // navigate to selected site when the dropdown changes
     document.getElementById("sd-site-nav")?.addEventListener("change", (e) => {
