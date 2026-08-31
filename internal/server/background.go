@@ -247,10 +247,12 @@ func ensurePerms(path string, uid, gid int, mode os.FileMode) {
 }
 
 // permissionReaper periodically corrects ownership and permissions on all site
-// directories — fires immediately on startup then every 5 minutes. The recursive
-// html tree walk runs on its own 6-hour ticker: drift beneath html only occurs
-// after a restore, clone, or import, each of which now corrects its own tree, so
-// the walk is a safety net rather than the primary mechanism.
+// directories — fires immediately on startup then every 5 minutes, walking the
+// db tree on each pass since drift there stops the pod from starting at all.
+// The recursive html tree walk runs on its own 6-hour ticker: drift beneath
+// html only occurs after a restore, clone, or import, each of which now
+// corrects its own tree, so the walk is a safety net rather than the primary
+// mechanism.
 func (s *Server) permissionReaper() {
 	fix := func() {
 		sites, err := db.GetAllSites(s.cfg.DB)
@@ -272,8 +274,12 @@ func (s *Server) permissionReaper() {
 			for _, d := range []string{"php-fpm", "redis"} {
 				ensurePerms(siteDir+"/"+d, sftpUID, sftpUID, 0755)
 			}
-
+			// the whole db tree, not just its top directory — mariadb runs as
+			// 999 inside the userns and cannot write contents left owned by
+			// another uid, which stalls the pod on start
 			ensurePerms(siteDir+"/db", 999, 999, 0755)
+			fileutil.ChownTree(siteDir+"/db", 999)
+
 			ensurePerms(siteDir+"/backups", 0, sftpUID, 0750)
 		}
 	}
