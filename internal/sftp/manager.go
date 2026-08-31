@@ -169,9 +169,15 @@ func (m *Manager) RemoveUser(ctx context.Context, siteName string) error {
 		return nil
 	}
 
-	// remove the user from the running container via exec
-	if err := m.exec(ctx, []string{"deluser", siteName}); err != nil {
-		logger.Warn("sftp RemoveUser exec: %v", err)
+	// remove the user from the running container via exec — the per-site group
+	// is dropped with it so the gid is free for a re-add at the same uid
+	for _, cmd := range [][]string{
+		{"deluser", siteName},
+		{"delgroup", "sftp-" + siteName},
+	} {
+		if err := m.exec(ctx, cmd); err != nil {
+			logger.Warn("sftp RemoveUser exec %v: %v", cmd, err)
+		}
 	}
 
 	logger.Debug("SFTP user removed: %s", siteName)
