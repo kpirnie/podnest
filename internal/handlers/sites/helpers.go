@@ -159,6 +159,167 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 	return nil
 }
 
+// renameDatabase moves every object in oldDB into newDB inside the site's
+// running DB container and drops the old schema. Base tables move with RENAME
+// TABLE; views and stored routines do not, so whatever is left behind is
+// dumped and replayed into the new schema before the drop.
+func (h *Handler) renameDatabase(ctx context.Context, site *models.Site, oldDB, newDB, dbUser, rootPass string) error {
+
+	// the pod is still up under the old name at this point
+	dbContainer := podman.ContainerName(site.Name, "db")
+	podEnv := append(os.Environ(), "CONTAINER_HOST=unix://"+h.PodmanSock, "TMPDIR=/var/tmp")
+
+	// quote an identifier for use in a statement
+	ident := func(s string) string {
+		return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+	}
+
+	// run a statement batch in the site's DB container
+	run := func(sql string) error {
+		var stderr bytes.Buffer
+		cmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", dbContainer,
+			"mariadb", "-uroot", "-e", sql,
+		)
+		cmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("renameDatabase: mariadb: %w — %s", err, stderr.String())
+		}
+		return nil
+	}
+
+	// the target schema has to exist before anything can move into it
+	if err := run(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", ident(newDB))); err != nil {
+		return err
+	}
+
+	// list the base tables living in the old schema
+	var listStderr bytes.Buffer
+	listCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", dbContainer,
+		"mariadb", "-uroot", "-N", "-B", "-e",
+		fmt.Sprintf(
+			"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA='%s' AND TABLE_TYPE='BASE TABLE'",
+			strings.ReplaceAll(oldDB, "'", "''"),
+		),
+	)
+	listCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+	listCmd.Stderr = &listStderr
+	out, err := listCmd.Output()
+	if err != nil {
+		return fmt.Errorf("renameDatabase: table list: %w — %s", err, listStderr.String())
+	}
+
+	// build a single RENAME TABLE covering every base table so the move is atomic
+	var moves []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		moves = append(moves, fmt.Sprintf("%s.%s TO %s.%s", ident(oldDB), ident(line), ident(newDB), ident(line)))
+	}
+	if len(moves) > 0 {
+		if err := run("RENAME TABLE " + strings.Join(moves, ", ")); err != nil {
+			return err
+		}
+	}
+
+	// whatever remains in the old schema is views and routines — dump it
+	var dumpStderr bytes.Buffer
+	dumpCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", dbContainer,
+		"sh", "-c",
+		fmt.Sprintf(
+			"mysqldump -uroot --no-data --routines --skip-lock-tables %s 2>/dev/null || "+
+				"mariadb-dump -uroot --no-data --routines --skip-lock-tables %s",
+			ident(oldDB), ident(oldDB),
+		),
+	)
+	dumpCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+	dumpCmd.Stderr = &dumpStderr
+	leftovers, err := dumpCmd.Output()
+	if err != nil {
+		return fmt.Errorf("renameDatabase: dump views/routines: %w — %s", err, dumpStderr.String())
+	}
+
+	// replay them into the new schema with the old schema qualifier swapped out
+	replay := strings.ReplaceAll(string(leftovers), ident(oldDB), ident(newDB))
+	if strings.Contains(replay, "CREATE") {
+		var loadStderr bytes.Buffer
+		loadCmd := exec.CommandContext(ctx, "podman", "exec", "-i", "-e", "MYSQL_PWD", dbContainer,
+			"mariadb", "-uroot", newDB,
+		)
+		loadCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+		loadCmd.Stdin = strings.NewReader(replay)
+		loadCmd.Stderr = &loadStderr
+		if err := loadCmd.Run(); err != nil {
+			return fmt.Errorf("renameDatabase: replay views/routines: %w — %s", err, loadStderr.String())
+		}
+	}
+
+	// point the site's DB user at the new schema and drop the old one
+	if err := run(fmt.Sprintf(
+		"GRANT ALL ON %s.* TO '%s'@'%%'; REVOKE ALL PRIVILEGES ON %s.* FROM '%s'@'%%'; DROP DATABASE IF EXISTS %s; FLUSH PRIVILEGES;",
+		ident(newDB), strings.ReplaceAll(dbUser, "'", "''"),
+		ident(oldDB), strings.ReplaceAll(dbUser, "'", "''"),
+		ident(oldDB),
+	)); err != nil {
+		return err
+	}
+
+	// log success and return
+	logger.Debug("renameDatabase: '%s' → '%s' for site %s", oldDB, newDB, site.Name)
+	return nil
+}
+
+// setEnvValue rewrites a single KEY=VALUE line in a site's .env file, leaving
+// every other line and the file's permissions as they were.
+func setEnvValue(path, key, value string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("setEnvValue: read %s: %w", path, err)
+	}
+
+	// replace the matching line in place rather than rewriting the whole file
+	prefix := key + "="
+	lines := strings.Split(string(raw), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(l, prefix) {
+			lines[i] = prefix + value
+		}
+	}
+
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+		return fmt.Errorf("setEnvValue: write %s: %w", path, err)
+	}
+	return nil
+}
+
+// wpDBNamePattern matches the DB_NAME define in a wp-config.php.
+var wpDBNamePattern = regexp.MustCompile(`(define\(\s*['"]DB_NAME['"]\s*,\s*)(['"])(?:[^'"]*)(['"])`)
+
+// setWPConfigDBName repoints an existing wp-config.php at the renamed schema.
+// A site without one — every non-WordPress type — is not an error.
+func setWPConfigDBName(path, dbName string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("setWPConfigDBName: read: %w", err)
+	}
+
+	// keep the file's mode and ownership by writing back over it in place
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("setWPConfigDBName: stat: %w", err)
+	}
+
+	src := wpDBNamePattern.ReplaceAllString(string(raw), "${1}${2}"+dbName+"${3}")
+	if err := os.WriteFile(path, []byte(src), info.Mode().Perm()); err != nil {
+		return fmt.Errorf("setWPConfigDBName: write: %w", err)
+	}
+	return nil
+}
+
 // confirmPodRunning checks if the pod is running within the timeout period for the site type.
 func (h *Handler) confirmPodRunning(ctx context.Context, podName string, siteType int) bool {
 

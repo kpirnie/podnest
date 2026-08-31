@@ -45,6 +45,20 @@ func GetSFTPCredBySite(db *sql.DB, siteID int64) (*models.SFTPCred, error) {
 	return c, nil
 }
 
+// UpdateSFTPCredUsername repoints a site's SFTP credential at a new username
+func UpdateSFTPCredUsername(db *sql.DB, siteID int64, username string) error {
+	_, err := db.Exec(`
+		UPDATE kppn_sftp_creds SET username = ?, updated = ?
+		WHERE site_id = ?`, username, time.Now().UTC(), siteID,
+	)
+	if err != nil {
+		logger.Error("UpdateSFTPCredUsername: %v", err)
+		return err
+	}
+	logger.Debug("SFTP cred username updated for site %d", siteID)
+	return nil
+}
+
 // ListSFTPCreds retrieves every SFTP credential record
 func ListSFTPCreds(db *sql.DB) ([]*models.SFTPCred, error) {
 	rows, err := db.Query(`
