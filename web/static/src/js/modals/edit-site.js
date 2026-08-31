@@ -19,7 +19,7 @@ export async function showEditSiteModal(site) {
                     <div class="uk-grid-small" uk-grid>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Site Name</label>
-                            <input class="uk-input kp-input" name="name" type="text" value="${site.Name}" required>
+                            <input class="uk-input kp-input" name="name" type="text" value="${site.Name}" readonly disabled>
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Site Type</label>
@@ -108,7 +108,6 @@ export async function showEditSiteModal(site) {
         if (siteType === 5) runtimeVersion = parseInt(fd.get("dotnet_version"));
 
         const body = {
-            name:            fd.get("name").trim(),
             php_version:     parseInt(fd.get("php_version")) || 3,
             site_type:       siteType,
             runtime_version: runtimeVersion,

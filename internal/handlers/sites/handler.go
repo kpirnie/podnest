@@ -527,7 +527,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusCreated, site)
 }
 
-// apiUpdateSite handles updates to an existing site's properties, including name, PHP version, site type, runtime version, and start command.
+// apiUpdateSite handles updates to an existing site's properties — PHP version, site type, runtime version, and start command. The name is not updatable here; renames go through apiRenameSite.
 func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 
 	// resolve the site from the request path and ensure the user has access to it
@@ -538,7 +538,6 @@ func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 
 	// define a struct to capture the expected JSON payload for site updates
 	var req struct {
-		Name           string `json:"name"`
 		PHPVersion     int    `json:"php_version"`
 		SiteType       int    `json:"site_type"`
 		RuntimeVersion *int   `json:"runtime_version"`
@@ -550,32 +549,6 @@ func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 		logger.Error("failed to decode request body for site update on site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusBadRequest, err)
 		return
-	}
-
-	// update the site's properties based on the request payload, only modifying fields that are provided
-	if req.Name != "" {
-		name, err := NormalizeSiteName(req.Name)
-		if err != nil {
-			logger.Error("invalid site name for update on site %d: %v", site.ID, err)
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site name")
-			return
-		}
-
-		// a rename must not collide with another site's directory, pod, or logs
-		if name != site.Name {
-			existing, err := db.GetSiteByName(h.DB, name)
-			if err != nil {
-				logger.Error("failed to check site name uniqueness for '%s': %v", name, err)
-				apiutil.Error(w, http.StatusInternalServerError, err)
-				return
-			}
-			if existing != nil {
-				logger.Error("site name '%s' already exists", name)
-				apiutil.ErrorMsg(w, http.StatusConflict, "site name already exists")
-				return
-			}
-		}
-		site.Name = name
 	}
 
 	// resolve the effective values first — a partial update must not be
