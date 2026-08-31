@@ -11,11 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"podnest/internal/db"
 	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/podman"
+	"podnest/internal/sftp"
 	"regexp"
 	"strings"
 	"time"
@@ -410,4 +412,48 @@ func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 
 	// log that the upgrade check is complete
 	logger.Debug("maybeUpgradeMariaDB: upgrade check complete for site %s", site.Name)
+}
+
+// createSitePod builds the site's pod from what is already on disk. It is the
+// pod half of a recreate, factored out so a rename can stand the pod back up
+// under either name.
+func (h *Handler) createSitePod(ctx context.Context, site *models.Site) error {
+
+	// credentials live in the site's .env, which travels with the directory
+	siteDir := h.sitesBase() + "/" + site.Name
+	dbUser, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_USER")
+	dbPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_PASS")
+	dbRootPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
+	redisPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "REDIS_PASS")
+
+	// build the pod against the host-visible path
+	allConfigs, _ := db.GetAllConfigsBySite(h.DB, site.ID)
+	return modules.TypeModule(site.SiteType).Create(ctx, &modules.PodmanClientAdapter{Client: h.PodmanClient}, modules.PodConfig{
+		Site:       site,
+		SiteUID:    sftp.UIDForSite(site.ID),
+		SiteDir:    h.hostSitesBase() + "/" + site.Name,
+		Configs:    allConfigs,
+		DBUser:     dbUser,
+		DBPass:     dbPass,
+		DBRootPass: dbRootPass,
+		RedisPass:  redisPass,
+	})
+}
+
+// refreshSiteDomains repoints the proxy's cached view of a site at its current
+// name, dropping the per-site caches and open log handles that carry the old one.
+func (h *Handler) refreshSiteDomains(site *models.Site) {
+
+	// drop the cached artifacts keyed by this site before re-adding its domains
+	h.Proxy.ForgetSite(site.ID, site.Port)
+
+	// re-add every domain so the entries carry the current name
+	domains, err := db.GetDomainsBySite(h.DB, site.ID)
+	if err != nil {
+		logger.Warn("refreshSiteDomains: site %d: %v", site.ID, err)
+		return
+	}
+	for _, d := range domains {
+		h.Proxy.AddDomain(d.Domain, site.Port, site.ID, site.Name)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -88,6 +89,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	// image pruning is system-wide, not scoped to a single site — admin only
 	api.Handle("POST /sites/prune-images", auth.RequireAPIAdmin(http.HandlerFunc(h.apiPruneImages)))
 	api.HandleFunc("POST /sites/{id}/clone", h.apiSiteClone)
+	api.HandleFunc("POST /sites/{id}/rename", h.apiRenameSite)
 }
 
 // sitesBase returns the base path for site directories on the host.
@@ -991,6 +993,235 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	// update the site status to running in the database and return a JSON response indicating the running status
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
+}
+
+// apiRenameSite renames a site in place — the database schema, the site
+// directory, the pod, the SFTP user, and the on-disk connection settings all
+// move together. The work is synchronous, and a failure at any step is unwound
+// back to the old name.
+func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
+
+	// resolve the site from the request path and ensure the user has access to it
+	site, ok := h.ResolveSite(w, r)
+	if !ok {
+		return
+	}
+
+	// define a struct to capture the expected JSON payload for the rename
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("invalid rename payload for site %d: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	// normalize the requested name and reject anything that cannot map to a pod or directory
+	newName, err := NormalizeSiteName(req.Name)
+	if err != nil {
+		logger.Error("invalid site name for rename on site %d: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site name")
+		return
+	}
+	if newName == site.Name {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "name unchanged")
+		return
+	}
+
+	// a rename must not collide with another site's directory, pod, or logs
+	existing, err := db.GetSiteByName(h.DB, newName)
+	if err != nil {
+		logger.Error("failed to check site name uniqueness for '%s': %v", newName, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if existing != nil {
+		logger.Error("site name '%s' already exists", newName)
+		apiutil.ErrorMsg(w, http.StatusConflict, "site name already exists")
+		return
+	}
+
+	// capture the pre-rename state for the audit trail
+	prior := db.SnapshotSite(h.DB, site.ID)
+	oldName := site.Name
+
+	// a reverse proxy carries no pod, directory, or database — the record and
+	// the proxy's view of it are the whole rename
+	if !modules.TypeModule(site.SiteType).HasPod() {
+		site.Name = newName
+		if err := db.UpdateSite(h.DB, site); err != nil {
+			logger.Error("failed to rename site %d: %v", site.ID, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		h.refreshSiteDomains(site)
+		*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotSite(h.DB, site.ID)))
+		logger.Debug("reverse proxy site '%s' renamed to '%s'", oldName, newName)
+		apiutil.JSON(w, http.StatusOK, site)
+		return
+	}
+
+	// the rename runs to completion regardless of the client connection
+	bgCtx := context.Background()
+	ctx, cancel := context.WithTimeout(bgCtx, 30*time.Minute)
+	defer cancel()
+
+	// the database rename needs the pod up, so start it if it was stopped and
+	// remember to put it back the way it was found
+	wasRunning := site.SiteStatus == models.StatusRunning
+	if !wasRunning {
+		if err := h.Podman.StartPod(ctx, podman.PodName(oldName)); err != nil {
+			logger.Error("rename: failed to start pod for site %d: %v", site.ID, err)
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not start the site to rename it")
+			return
+		}
+		if !h.confirmPodRunning(ctx, podman.PodName(oldName), site.SiteType) {
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "site did not start — rename aborted")
+			return
+		}
+	}
+
+	// take a snapshot before anything moves; without it there is nothing to fall back on
+	if _, err := h.Backup.Backup(ctx, site, "pre-rename"); err != nil {
+		logger.Error("rename: pre-rename backup failed for site %s: %v", oldName, err)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "pre-rename backup failed — rename aborted")
+		return
+	}
+
+	// read the connection settings the rename has to carry across
+	siteDir := h.sitesBase() + "/" + oldName
+	oldDB, err := fileutil.ReadEnvValue(siteDir+"/.env", "DB_NAME")
+	if err != nil || oldDB == "" {
+		oldDB = oldName
+	}
+	dbUser, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_USER")
+	dbRootPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
+	hasDB := modules.TypeModule(site.SiteType).HasDatabase()
+
+	// move the schema first — it is the only step that needs the old pod alive
+	if hasDB {
+		if err := h.renameDatabase(ctx, site, oldDB, newName, dbUser, dbRootPass); err != nil {
+			logger.Error("rename: database rename failed for site %s: %v", oldName, err)
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "database rename failed — rename aborted")
+			return
+		}
+	}
+
+	// unwinds every step that has already landed, in reverse
+	rollback := func(stage string, cause error) {
+		logger.Error("rename: %s failed for site %s: %v — rolling back", stage, oldName, cause)
+		_ = h.Podman.RemoveSitePod(bgCtx, newName)
+		_ = h.Podman.RemoveSitePod(bgCtx, oldName)
+		if _, err := os.Stat(h.sitesBase() + "/" + newName); err == nil {
+			if err := os.Rename(h.sitesBase()+"/"+newName, h.sitesBase()+"/"+oldName); err != nil {
+				logger.Error("rename rollback: restore site directory for %s: %v", oldName, err)
+			}
+		}
+		_ = setEnvValue(h.sitesBase()+"/"+oldName+"/.env", "DB_NAME", oldDB)
+		_ = setWPConfigDBName(h.sitesBase()+"/"+oldName+"/html/wp-config.php", oldDB)
+		site.Name = oldName
+		if err := db.UpdateSite(h.DB, site); err != nil {
+			logger.Error("rename rollback: restore site record for %s: %v", oldName, err)
+		}
+		_ = h.SFTP.RemoveUser(bgCtx, newName)
+		if cred, err := db.GetSFTPCredBySite(h.DB, site.ID); err == nil && cred != nil {
+			_ = h.SFTP.AddUser(bgCtx, oldName, cred.Password, cred.UID)
+			_ = db.UpdateSFTPCredUsername(h.DB, site.ID, oldName)
+		}
+		if err := h.createSitePod(bgCtx, site); err != nil {
+			logger.Error("rename rollback: rebuild pod for %s: %v", oldName, err)
+			_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
+		}
+		h.refreshSiteDomains(site)
+	}
+
+	// the schema is renamed but the pod still points at the old one, so it comes down now
+	_ = h.Podman.StopPod(ctx, podman.PodName(oldName))
+	if err := h.Podman.RemoveSitePod(ctx, oldName); err != nil {
+		logger.Warn("rename: removing old pod for site %s: %v", oldName, err)
+	}
+
+	// move the site directory, which carries html, db, configs, and the local restic repo
+	if err := os.Rename(h.sitesBase()+"/"+oldName, h.sitesBase()+"/"+newName); err != nil {
+		if hasDB {
+			_ = h.renameDatabase(ctx, site, newName, oldDB, dbUser, dbRootPass)
+		}
+		rollback("site directory move", err)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not move the site directory — rename rolled back")
+		return
+	}
+
+	// repoint the on-disk connection settings at the renamed schema
+	newDir := h.sitesBase() + "/" + newName
+	if hasDB {
+		if err := setEnvValue(newDir+"/.env", "DB_NAME", newName); err != nil {
+			rollback("env rewrite", err)
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not rewrite the site's .env — rename rolled back")
+			return
+		}
+		if err := setWPConfigDBName(newDir+"/html/wp-config.php", newName); err != nil {
+			rollback("wp-config rewrite", err)
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not rewrite wp-config.php — rename rolled back")
+			return
+		}
+	}
+
+	// the SFTP account is named for the site and chrooted to its directory
+	if err := h.SFTP.RemoveUser(ctx, oldName); err != nil {
+		logger.Warn("rename: removing old SFTP user for site %s: %v", oldName, err)
+	}
+	cred, err := db.GetSFTPCredBySite(h.DB, site.ID)
+	if err == nil && cred != nil {
+		if err := h.SFTP.AddUser(ctx, newName, cred.Password, cred.UID); err != nil {
+			rollback("sftp user", err)
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not move the SFTP user — rename rolled back")
+			return
+		}
+		if err := db.UpdateSFTPCredUsername(h.DB, site.ID, newName); err != nil {
+			logger.Warn("rename: updating SFTP cred username for site %d: %v", site.ID, err)
+		}
+	}
+
+	// commit the new name before the pod is built, since every name the pod
+	// derives comes from the record
+	site.Name = newName
+	if err := db.UpdateSite(h.DB, site); err != nil {
+		rollback("site record", err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// stand the pod back up under the new name
+	if err := h.createSitePod(ctx, site); err != nil {
+		rollback("pod rebuild", err)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not rebuild the pod — rename rolled back")
+		return
+	}
+	if !h.confirmPodRunning(ctx, podman.PodName(newName), site.SiteType) {
+		rollback("pod startup", fmt.Errorf("pod did not reach running state"))
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "the renamed pod did not start — rename rolled back")
+		return
+	}
+
+	// repoint the proxy at the new name and leave the site as it was found
+	h.refreshSiteDomains(site)
+	go h.Proxy.WarmCaches(false)
+	if wasRunning {
+		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
+		site.SiteStatus = models.StatusRunning
+	} else {
+		if err := h.Podman.StopPod(ctx, podman.PodName(newName)); err != nil {
+			logger.Warn("rename: stopping pod for site %s: %v", newName, err)
+		}
+		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusStopped)
+		site.SiteStatus = models.StatusStopped
+	}
+
+	// record the rename in the audit trail and return the updated site
+	*r = *r.WithContext(audit.WithStateContext(r.Context(), prior, db.SnapshotSite(h.DB, site.ID)))
+	logger.Debug("site '%s' renamed to '%s'", oldName, newName)
+	apiutil.JSON(w, http.StatusOK, site)
 }
 
 // apiPruneImages removes dangling images from the host store — the cleanup
