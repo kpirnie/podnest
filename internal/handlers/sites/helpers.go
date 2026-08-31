@@ -232,7 +232,7 @@ func (h *Handler) renameDatabase(ctx context.Context, site *models.Site, oldDB, 
 		fmt.Sprintf(
 			"mysqldump -uroot --no-data --routines --skip-lock-tables %s 2>/dev/null || "+
 				"mariadb-dump -uroot --no-data --routines --skip-lock-tables %s",
-			ident(oldDB), ident(oldDB),
+			oldDB, oldDB,
 		),
 	)
 	dumpCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
