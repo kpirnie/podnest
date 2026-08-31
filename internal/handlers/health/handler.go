@@ -28,6 +28,8 @@ type HealthCache interface {
 // ContainerRestarter is the subset of podman.Client consumed by this handler.
 type ContainerRestarter interface {
 	RestartContainer(ctx context.Context, name string) error
+	ContainerIsRunning(ctx context.Context, name string) (bool, error)
+	StartContainer(ctx context.Context, name string) error
 }
 
 // Handler handles container health streaming and per-container restart routes.
@@ -136,7 +138,25 @@ func (h *Handler) apiContainerRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// podman rejects a restart against a container that is not running with a
+	// "container state improper" 500 — start it instead of surfacing that
 	containerName := podman.ContainerName(site.Name, role)
+	running, err := h.Podman.ContainerIsRunning(r.Context(), containerName)
+	if err != nil {
+		logger.Error("apiContainerRestart: failed to inspect %s: %v", containerName, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !running {
+		if err := h.Podman.StartContainer(r.Context(), containerName); err != nil {
+			logger.Error("apiContainerRestart: failed to start %s: %v", containerName, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		logger.Debug("apiContainerRestart: started stopped container %s for site %d", containerName, site.ID)
+		apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
 	if err := h.Podman.RestartContainer(r.Context(), containerName); err != nil {
 		logger.Error("apiContainerRestart: failed to restart %s: %v", containerName, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
