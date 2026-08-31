@@ -625,19 +625,27 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 
 	// stop the pod after the backup is complete
 	if modules.TypeModule(site.SiteType).HasPod() {
-		if err := h.Podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
+		stopCtx, stopCancel := context.WithTimeout(bgCtx, 2*time.Minute)
+		if err := h.Podman.StopPod(stopCtx, podman.PodName(site.Name)); err != nil {
 			logger.Warn("stop pod %s: %v", site.Name, err)
 		}
+		stopCancel()
 	}
 
-	// remove the pod and associated resources
+	// remove the pod and associated resources — each call gets its own deadline
+	// so a wedged podman or a hung deluser exec cannot stall the whole delete
 	if modules.TypeModule(site.SiteType).HasPod() {
-		if err := h.Podman.RemoveSitePod(bgCtx, site.Name); err != nil {
+		podCtx, podCancel := context.WithTimeout(bgCtx, 5*time.Minute)
+		if err := h.Podman.RemoveSitePod(podCtx, site.Name); err != nil {
 			logger.Warn("remove pod %s: %v", site.Name, err)
 		}
-		if err := h.SFTP.RemoveUser(bgCtx, site.Name); err != nil {
+		podCancel()
+
+		sftpCtx, sftpCancel := context.WithTimeout(bgCtx, 1*time.Minute)
+		if err := h.SFTP.RemoveUser(sftpCtx, site.Name); err != nil {
 			logger.Warn("failed to remove SFTP user for site %s: %v", site.Name, err)
 		}
+		sftpCancel()
 	}
 
 	// fetch all domains associated with the site for cache eviction and log any errors encountered during retrieval
@@ -648,9 +656,11 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 
 	// invoke any registered feature hooks for site deletion, logging warnings for any errors encountered during feature execution
 	for _, f := range modules.FeaturesFor(site.SiteType) {
-		if err := f.OnSiteDelete(bgCtx, site); err != nil {
+		featCtx, featCancel := context.WithTimeout(bgCtx, 2*time.Minute)
+		if err := f.OnSiteDelete(featCtx, site); err != nil {
 			logger.Warn("OnSiteDelete feature %s for site %s: %v", f.FeatureID(), site.Name, err)
 		}
+		featCancel()
 	}
 
 	// capture full site state before deletion for the audit trail
