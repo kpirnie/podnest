@@ -176,16 +176,6 @@ function siteRow(site, allSites = []) {
                         <span uk-icon="icon: history;"></span>
                     </button>
                     ` : ""}
-                    <button class="uk-button kp-btn-ghost kp-btn-sm"
-                            data-action="clone" data-id="${site.ID}" data-name="${site.Name}"
-                            uk-tooltip="Clone">
-                        <span uk-icon="icon: move;"></span>
-                    </button>
-                    <button class="uk-button kp-btn-ghost kp-btn-sm"
-                            data-action="edit" data-id="${site.ID}"
-                            uk-tooltip="Edit">
-                        <span uk-icon="icon: pencil;"></span>
-                    </button>
                     <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate"
                             data-action="delete" data-id="${site.ID}"
                             uk-tooltip="Delete">
@@ -229,8 +219,6 @@ export function siteCard(site, allSites = []) {
                 <div class="kp-site-actions-break"></div>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="recreate" data-id="${site.ID}" title="Recreate pod" uk-tooltip="Recreate the Pod"><span uk-icon="icon: history;"></span></button>
                 ` : ""}
-                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="clone" data-id="${site.ID}" data-name="${site.Name}" uk-tooltip="Clone"><span uk-icon="icon: move;"></span></button>
-                <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="edit" data-id="${site.ID}" title="Edit" uk-tooltip="Edit the Site"><span uk-icon="icon: pencil;"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="delete" data-id="${site.ID}" title="Delete" uk-tooltip="Delete the Site"><span uk-icon="icon: trash;"></span></button>
             </div>
         </div>`;

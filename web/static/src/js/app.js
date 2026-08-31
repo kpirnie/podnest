@@ -5,8 +5,7 @@
 "use strict";
 
 import { api } from './api.js';
-import { confirm, hideProgressModal, showCloneModal, showProgressModal } from './helpers.js';
-import { showEditSiteModal } from './modals/edit-site.js';
+import { confirm, hideProgressModal, showProgressModal } from './helpers.js';
 import { parseHash, router } from './router.js';
 import { toast } from './toast.js';
 import { viewAdminLogs } from './views/admin-logs.js';
@@ -78,38 +77,6 @@ document.addEventListener("click", async (e) => {
         case "flush":
             await siteAction(id, "flush", "Flushing Caches", "Clearing container caches - please wait...");
             break;
-        case "edit": {
-            const siteData = await api.get(`/sites/${id}`);
-            showEditSiteModal(siteData.site);
-            break;
-        }
-        case "clone": {
-            const name = await showCloneModal(btn.dataset.name ?? id);
-            if (!name) break;
-            showProgressModal("Cloning Site", "Copying files and database — this may take a few minutes...");
-            try {
-                const res = await api.post(`/sites/${id}/clone`, { name });
-                // poll until the cloned site appears in the list
-                let found = false, tries = 0;
-                while (!found && tries < 60) {
-                    await new Promise((r) => setTimeout(r, 3000));
-                    const sites = await api.get("/sites");
-                    found = sites.some((s) => s.ID === res.id && s.SiteStatus === 1);
-                    tries++;
-                }
-                hideProgressModal();
-                if (found) {
-                    toast.success(`Site cloned as '${name}'`);
-                    router.go("sites");
-                } else {
-                    toast.error("Clone timed out — check container logs");
-                }
-            } catch (e) {
-                hideProgressModal();
-                toast.error(e.message);
-            }
-            break;
-        }
         case "delete":
             await deleteSite(id);
             break;
