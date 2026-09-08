@@ -56,7 +56,18 @@ func run(name string, args ...string) error {
 
 // userRun executes a command as the podnest user with the runtime dir set
 func userRun(uname string, uid int, args ...string) error {
-	full := append([]string{"-u", uname, fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid)}, args...)
+	// sudo leaves HOME pointing at root's unless -H is given; rootless podman
+	// derives its graphroot from HOME, so without this it targets /root and
+	// fails with a permission denied on its own storage
+	home := "/home/" + uname
+	if u, err := user.Lookup(uname); err == nil && u.HomeDir != "" {
+		home = u.HomeDir
+	}
+	full := append([]string{
+		"-H", "-u", uname,
+		fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid),
+		"HOME=" + home,
+	}, args...)
 	c := exec.Command("sudo", full...)
 	// run from / — the invoking cwd may not be accessible to the podnest user
 	c.Dir = "/tmp"
