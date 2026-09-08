@@ -6,6 +6,7 @@ package podman
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -112,6 +113,10 @@ type ContainerStat struct {
 	MemLimit uint64
 	MemPerc  float64
 }
+
+// pullImageTimeout bounds a single image pull; the 120s client deadline is far
+// too short for a cold pull of the base images
+const pullImageTimeout = 30 * time.Minute
 
 // SetPublishHostIP sets the host address that newly created pods publish their
 // ports on. Must be called before any pod is created.
@@ -365,22 +370,59 @@ func (c *Client) PullImage(ctx context.Context, image string) error {
 	logger.Debug("pulling image: %s", image)
 
 	path := "/v4.0.0/libpod/images/pull?reference=" + url.QueryEscape(image) + "&quiet=true"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://d"+path, nil)
+
+	// the pull runs on streamClient with its own deadline — c.http's 120s
+	// timeout covers the whole body and aborts large pulls mid-transfer
+	pullCtx, cancel := context.WithTimeout(ctx, pullImageTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(pullCtx, http.MethodPost, "http://d"+path, nil)
 	if err != nil {
 		logger.Error("failed to create request to pull image %s: %v", image, err)
 		return err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.streamClient.Do(req)
 	if err != nil {
 		logger.Error("failed to pull image %s: %v", image, err)
 		return err
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+
 	if resp.StatusCode != 200 {
+		io.Copy(io.Discard, resp.Body)
 		logger.Error("failed to pull image %s: status %d", image, resp.StatusCode)
 		return fmt.Errorf("failed to pull image %s: status %d", image, resp.StatusCode)
+	}
+
+	// libpod answers 200 and reports auth, rate-limit, and manifest failures
+	// inside the streamed body, so the body decides whether the pull succeeded
+	dec := json.NewDecoder(resp.Body)
+	pulled := false
+	for {
+		var report struct {
+			Error  string   `json:"error"`
+			ID     string   `json:"id"`
+			Images []string `json:"images"`
+		}
+		if err := dec.Decode(&report); err != nil {
+			if err == io.EOF {
+				break
+			}
+			logger.Error("failed to pull image %s: decoding pull report: %v", image, err)
+			return fmt.Errorf("failed to pull image %s: decoding pull report: %w", image, err)
+		}
+		if report.Error != "" {
+			logger.Error("failed to pull image %s: %s", image, report.Error)
+			return fmt.Errorf("failed to pull image %s: %s", image, report.Error)
+		}
+		if report.ID != "" || len(report.Images) > 0 {
+			pulled = true
+		}
+	}
+	if !pulled {
+		logger.Error("failed to pull image %s: libpod reported no image", image)
+		return fmt.Errorf("failed to pull image %s: libpod reported no image", image)
 	}
 
 	logger.Debug("pulled image: %s", image)
