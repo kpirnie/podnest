@@ -68,6 +68,9 @@ type Manager struct {
 	appPath     string
 	schedulerCh chan string // send cron expression to reschedule; "" disables
 	restoring   sync.Map    // map[int64]bool
+	jobs        sync.WaitGroup
+	jobCtx      context.Context
+	jobCancel   context.CancelFunc
 }
 
 // s3Config holds the S3 connection settings resolved from global settings
@@ -97,6 +100,10 @@ type budgetWriter struct {
 // New returns a backup Manager
 func New(database *sql.DB, pc *podman.Client, podmanSock, appPath string) *Manager {
 
+	// jobs outlive the request that started them and are only cancelled once
+	// the shutdown drain expires
+	jobCtx, jobCancel := context.WithCancel(context.Background())
+
 	// return the backup manager
 	return &Manager{
 		db:          database,
@@ -104,6 +111,36 @@ func New(database *sql.DB, pc *podman.Client, podmanSock, appPath string) *Manag
 		podmanSock:  podmanSock,
 		appPath:     appPath,
 		schedulerCh: make(chan string, 1),
+		jobCtx:      jobCtx,
+		jobCancel:   jobCancel,
+	}
+}
+
+// Go runs fn as a tracked long-running job on a context that survives the
+// request that started it.
+func (m *Manager) Go(fn func(ctx context.Context)) {
+	m.jobs.Add(1)
+	go func() {
+		defer m.jobs.Done()
+		fn(m.jobCtx)
+	}()
+}
+
+// WaitJobs blocks until every tracked job finishes or d elapses, cancelling the
+// job context either way. It reports whether the jobs drained in time.
+func (m *Manager) WaitJobs(d time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		m.jobs.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		m.jobCancel()
+		return true
+	case <-time.After(d):
+		m.jobCancel()
+		return false
 	}
 }
 
@@ -1070,9 +1107,9 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 		wg.Add(1)
 
 		// run the backup in a separate goroutine
-		go func() {
+		m.Go(func(jctx context.Context) {
 			defer wg.Done()
-			bCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
+			bCtx, cancel := context.WithTimeout(jctx, 2*time.Hour)
 			defer cancel()
 			if _, err := m.Backup(bCtx, site, "scheduled"); err != nil {
 				logger.Error("scheduler: backup failed for site %s: %v", site.Name, err)
@@ -1081,7 +1118,7 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 				logger.Debug("scheduler: backup complete for site %s", site.Name)
 				_ = db.ClearBackupError(m.db, site.ID)
 			}
-		}()
+		})
 	}
 
 	// wait for all backups to complete before returning

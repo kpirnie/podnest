@@ -6,7 +6,10 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"podnest/internal/backup"
@@ -177,6 +180,28 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// log that the server is started and on which port
 	logger.Info("PodNest started on :%d", serverPort)
 
-	// start the server
-	return srv.Start()
+	// run the server on its own goroutine so the signal handler below can
+	// drain instead of the process being dropped mid-write
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.Start()
+	}()
+
+	// drain on SIGINT/SIGTERM
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	case sig := <-sigCh:
+		logger.Info("received %s — draining", sig)
+		srv.Stop()
+		<-errCh
+		logger.Info("PodNest stopped")
+		return nil
+	}
 }

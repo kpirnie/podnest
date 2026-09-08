@@ -92,15 +92,14 @@ func (m Module) apiCreateBackup(w http.ResponseWriter, r *http.Request, site *mo
 	if req.Label == "" {
 		req.Label = "manual"
 	}
-	go func() {
-		ctx := context.Background()
+	m.Manager.Go(func(ctx context.Context) {
 		id, err := m.Manager.Backup(ctx, site, req.Label)
 		if err != nil {
 			logger.Error("apiCreateBackup: site %d: %v", site.ID, err)
 			return
 		}
 		logger.Debug("apiCreateBackup: backup %d complete for site %d", id, site.ID)
-	}()
+	})
 	logger.Debug("apiCreateBackup: queued backup for site %d", site.ID)
 	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "backup started"})
 }
@@ -125,14 +124,13 @@ func (m Module) apiRestoreBackup(w http.ResponseWriter, r *http.Request, site *m
 		apiutil.ErrorMsg(w, http.StatusForbidden, "backup does not belong to this site")
 		return
 	}
-	go func() {
-		ctx := context.Background()
+	m.Manager.Go(func(ctx context.Context) {
 		if err := m.Manager.Restore(ctx, site, backup); err != nil {
 			logger.Error("apiRestoreBackup: site %d backup %d: %v", site.ID, bid, err)
 			return
 		}
 		logger.Debug("apiRestoreBackup: restore complete for site %d from backup %d", site.ID, bid)
-	}()
+	})
 	logger.Debug("apiRestoreBackup: queued restore for site %d from backup %d", site.ID, bid)
 	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "restore started"})
 }
@@ -360,14 +358,13 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 	out.Close()
 
 	// kick off the restore asynchronously
-	go func() {
-		ctx := context.Background()
+	m.Manager.Go(func(ctx context.Context) {
 		if err := m.Manager.ImportRestore(ctx, targetSite, destPath); err != nil {
 			logger.Error("apiImportUpload: ImportRestore site %d: %v", targetSite.ID, err)
 			return
 		}
 		logger.Debug("apiImportUpload: import complete for site %s", targetSite.Name)
-	}()
+	})
 
 	logger.Debug("apiImportUpload: queued import restore for site %d → target %d", site.ID, targetSite.ID)
 	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "import started"})
@@ -424,14 +421,13 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 		}
 	}
 
-	go func() {
-		ctx := context.Background()
+	m.Manager.Go(func(ctx context.Context) {
 		if err := m.Manager.ImportRestore(ctx, targetSite, archivePath); err != nil {
 			logger.Error("apiImportSFTP: ImportRestore site %d: %v", targetSite.ID, err)
 			return
 		}
 		logger.Debug("apiImportSFTP: import complete for site %s", targetSite.Name)
-	}()
+	})
 
 	logger.Debug("apiImportSFTP: queued SFTP import for site %d → target %d", site.ID, targetSite.ID)
 	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "import started"})

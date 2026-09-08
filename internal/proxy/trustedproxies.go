@@ -5,6 +5,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -303,22 +304,25 @@ func RefreshTrustedProxyRanges(database *goDb.DB) error {
 	return nil
 }
 
-// StartTrustedProxyRefresher runs RefreshTrustedProxyRanges immediately then
-// repeats on the given interval for the lifetime of the process.
+// RunTrustedProxyRefresher runs RefreshTrustedProxyRanges immediately then
+// repeats on the given interval until ctx is cancelled. It blocks.
 // px is used to reload the compiled ranges into the running proxy after each fetch.
-func StartTrustedProxyRefresher(px *Proxy, interval time.Duration) {
-	go func() {
-		if err := RefreshTrustedProxyRanges(px.database); err != nil {
-			logger.Warn("trusted proxy initial refresh: %v", err)
-		} else {
-			// reload the freshly fetched ranges into the running proxy
-			if err := px.WarmCaches(true); err != nil {
-				logger.Warn("trusted proxy initial warm failed: %v", err)
-			}
+func RunTrustedProxyRefresher(ctx context.Context, px *Proxy, interval time.Duration) {
+	if err := RefreshTrustedProxyRanges(px.database); err != nil {
+		logger.Warn("trusted proxy initial refresh: %v", err)
+	} else {
+		// reload the freshly fetched ranges into the running proxy
+		if err := px.WarmCaches(true); err != nil {
+			logger.Warn("trusted proxy initial warm failed: %v", err)
 		}
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 			if err := RefreshTrustedProxyRanges(px.database); err != nil {
 				logger.Warn("trusted proxy refresh: %v", err)
 			} else {
@@ -327,5 +331,5 @@ func StartTrustedProxyRefresher(px *Proxy, interval time.Duration) {
 				}
 			}
 		}
-	}()
+	}
 }

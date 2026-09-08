@@ -41,7 +41,7 @@ const pollStatsConcurrency = 8
 func (s *Server) sessionReaper() {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		_ = auth.PurgeExpiredSessions(s.cfg.DB)
 		_ = db.DeleteExpiredPMATokens(s.cfg.DB)
 		_ = db.DeleteExpiredPMASessions(s.cfg.DB)
@@ -54,7 +54,7 @@ func (s *Server) sessionReaper() {
 func (s *Server) walCheckpointer() {
 	ticker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		if _, err := s.cfg.DB.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
 			logger.Warn("wal checkpoint failed: %v", err)
 		}
@@ -79,7 +79,7 @@ func (s *Server) crsUpdater() {
 	run()
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		run()
 	}
 }
@@ -111,7 +111,7 @@ func (s *Server) geoUpdater() {
 	run()
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		run()
 	}
 }
@@ -136,9 +136,9 @@ func (s *Server) dropUpdater() {
 
 	for {
 		jitter := time.Duration(rand.Int63n(int64(2 * time.Hour)))
-		timer := time.NewTimer(24*time.Hour + jitter)
-		<-timer.C
-		timer.Stop()
+		if !s.sleep(24*time.Hour + jitter) {
+			return
+		}
 
 		if err := proxy.UpdateSpamhausDrop(s.cfg.AppPath); err != nil {
 			logger.Warn("drop: update check failed: %v", err)
@@ -302,6 +302,8 @@ func (s *Server) permissionReaper() {
 	defer sweepTicker.Stop()
 	for {
 		select {
+		case <-s.ctx.Done():
+			return
 		case <-ticker.C:
 			fix()
 		case <-sweepTicker.C:
@@ -313,7 +315,9 @@ func (s *Server) permissionReaper() {
 // startupRestore queries the database for all sites that were running at last
 // shutdown and attempts to restart their pods.
 func (s *Server) startupRestore() {
-	time.Sleep(5 * time.Second)
+	if !s.sleep(5 * time.Second) {
+		return
+	}
 
 	sites, err := db.GetAllSites(s.cfg.DB)
 	if err != nil {
@@ -417,8 +421,10 @@ func (s *Server) rotateLogs() {
 	// wait until next midnight to start, then tick every 24h
 	now := time.Now()
 	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
-	time.Sleep(time.Until(next))
-
+	if !s.sleep(time.Until(next)) {
+		return
+	}
+	
 	run := func() {
 		// collect all log directories to rotate, pairing each site's directory
 		// with the ID whose cached handles have to be released first
@@ -460,7 +466,7 @@ func (s *Server) rotateLogs() {
 	run()
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		run()
 	}
 }
@@ -532,7 +538,9 @@ func (s *Server) auditMaintenance() {
 	// wait until next midnight to start, then tick every 24h
 	now := time.Now()
 	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 1, 0, 0, now.Location())
-	time.Sleep(time.Until(next))
+	if !s.sleep(time.Until(next)) {
+		return
+	}
 
 	run := func() {
 		// archive yesterday's completed day
@@ -549,7 +557,7 @@ func (s *Server) auditMaintenance() {
 	run()
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		run()
 	}
 }
@@ -681,7 +689,7 @@ func compressLogFile(src, dst string) error {
 // Fires immediately on startup then every 10 seconds.
 func (s *Server) pollStats() {
 	poll := func() {
-		ctx := context.Background()
+		ctx := s.ctx
 
 		sites, err := db.GetAllSites(s.cfg.DB)
 		if err != nil {
@@ -743,7 +751,7 @@ func (s *Server) pollStats() {
 	poll()
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		poll()
 	}
 }
@@ -769,7 +777,7 @@ func readEnvFile(path, key string) (string, error) {
 // Fires once at startup then every 24 hours.
 func (s *Server) mariadbUpgradeChecker() {
 	run := func() {
-		ctx := context.Background()
+		ctx := s.ctx
 
 		sites, err := db.GetAllSites(s.cfg.DB)
 		if err != nil {
@@ -831,7 +839,7 @@ func (s *Server) mariadbUpgradeChecker() {
 	run()
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		run()
 	}
 }

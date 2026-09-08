@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
 	"time"
 
 	"podnest/internal/audit"
@@ -22,6 +24,16 @@ import (
 	"podnest/internal/podman"
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
+)
+
+// shutdownDrainTimeout bounds the panel, proxy, and background goroutine drain
+const shutdownDrainTimeout = 30 * time.Second
+
+// bounds for the shutdown_job_timeout setting, in minutes
+const (
+	shutdownJobTimeoutDefault = 5
+	shutdownJobTimeoutMin     = 1
+	shutdownJobTimeoutMax     = 60
 )
 
 // Config holds server dependencies
@@ -53,10 +65,14 @@ type Server struct {
 	stats    *statsCache
 	resource *resourceState
 	audit    *audit.Recorder
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
 }
 
 // New initialises the server and registers all routes
 func New(cfg Config) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		cfg:      cfg,
 		podman:   podman.New(cfg.PodmanSock),
@@ -67,6 +83,8 @@ func New(cfg Config) *Server {
 		stats:    newStatsCache(),
 		resource: newResourceState(),
 		audit:    audit.New(cfg.DB),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 
 	s.http = &http.Server{
@@ -114,7 +132,7 @@ func (s *Server) Start() error {
 	}
 
 	// start background goroutine that retries until both global containers are running
-	go s.ensureGlobalContainers()
+	s.goTracked(s.ensureGlobalContainers)
 
 	// clean up orphaned pods from previous failed runs
 	if err := s.podman.PruneOrphanedPods(context.Background()); err != nil {
@@ -123,41 +141,41 @@ func (s *Server) Start() error {
 
 	// restore pods that were running before the last shutdown or host reboot,
 	// then start the status checker so it cannot flip restorable sites to stopped first
-	go func() {
+	s.goTracked(func() {
 		s.startupRestore()
 		s.syncPodStatuses()
-	}()
+	})
 
 	// background session cleanup
-	go s.sessionReaper()
+	s.goTracked(s.sessionReaper)
 
 	// truncate the write-ahead log every six hours
-	go s.walCheckpointer()
+	s.goTracked(s.walCheckpointer)
 
 	// rotate logs daily at midnight
-	go s.rotateLogs()
+	s.goTracked(s.rotateLogs)
 
 	// archive yesterday's audit rows and prune the live table daily just after midnight
-	go s.auditMaintenance()
+	s.goTracked(s.auditMaintenance)
 
 	// background permission fixer
-	go s.permissionReaper()
+	s.goTracked(s.permissionReaper)
 
 	// poll container health and resource stats every 10 seconds
-	go s.pollStats()
+	s.goTracked(s.pollStats)
 
 	// monitor host resource usage and throttle offending pods when threshold is breached
-	go s.resourceWatcher()
+	s.goTracked(s.resourceWatcher)
 
 	// check for and auto-fix mariadb-upgrade requirement on all DB sites
-	go s.mariadbUpgradeChecker()
+	s.goTracked(s.mariadbUpgradeChecker)
 
 	// start the backup scheduler
-	s.backup.StartScheduler(context.Background())
+	s.backup.StartScheduler(s.ctx)
 
 	// start the per-site cron scheduler
-	s.cron.Start(context.Background())
-
+	s.cron.Start(s.ctx)
+	
 	// read the admin domain from the database, falling back to the flag value
 	adminDomain := s.cfg.AdminDomain
 	if dbDomain, err := db.GetSetting(s.cfg.DB, "admin_domain"); err == nil && dbDomain != "" {
@@ -179,13 +197,13 @@ func (s *Server) Start() error {
 	s.http.Handler = s.routes()
 
 	// nightly CRS rule update — runs immediately on startup then every 24 hours
-	go s.crsUpdater()
+	s.goTracked(s.crsUpdater)
 
 	// nightly GEO-IP rule update — runs immediately on startup then every 24 hours
-	go s.geoUpdater()
+	s.goTracked(s.geoUpdater)
 
 	// Spamhaus DROP feed — loads from disk on startup, refreshes daily
-	go s.dropUpdater()
+	s.goTracked(s.dropUpdater)
 
 	// try to grab a cert
 	if adminDomain != "" {
@@ -199,14 +217,16 @@ func (s *Server) Start() error {
 	}
 
 	// start the daily trusted proxy CIDR auto-refresh
-	proxy.StartTrustedProxyRefresher(px, 24*time.Hour)
+	s.goTracked(func() {
+		proxy.RunTrustedProxyRefresher(s.ctx, px, 24*time.Hour)
+	})
 
 	// run the proxy
-	go func() {
+	s.goTracked(func() {
 		if err := px.Start(); err != nil && err != http.ErrServerClosed {
 			logger.Error("proxy: %v", err)
 		}
-	}()
+	})
 
 	logger.Debug("PodNest server is started")
 	return s.http.ListenAndServe()
@@ -216,7 +236,7 @@ func (s *Server) Start() error {
 // It backs off to a 30-second tick after the first attempt so startup failures
 // do not spin — it stops once both report running.
 func (s *Server) ensureGlobalContainers() {
-	ctx := context.Background()
+	ctx := s.ctx
 
 	attempt := func() (sftpOK, f2bOK bool) {
 		if err := s.sftp.Ensure(ctx); err != nil {
@@ -241,7 +261,7 @@ func (s *Server) ensureGlobalContainers() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for s.tick(ticker) {
 		sftpOK, f2bOK = attempt()
 		if sftpOK && f2bOK {
 			logger.Debug("ensureGlobalContainers: both global containers confirmed running")
@@ -281,6 +301,84 @@ func (s *Server) notify(subject, body, message string) {
 // shutdown gracefully drains connections
 func (s *Server) shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
+}
+
+// Stop drains the panel and proxy, waits for every tracked background
+// goroutine, then waits out in-flight backup and import jobs.
+func (s *Server) Stop() {
+	s.cancel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownDrainTimeout)
+	defer cancel()
+
+	if err := s.shutdown(ctx); err != nil {
+		logger.Warn("shutdown: panel drain: %v", err)
+	}
+
+	if s.proxy != nil {
+		s.proxy.Shutdown(ctx)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		logger.Warn("shutdown: background goroutines did not exit within %s", shutdownDrainTimeout)
+	}
+
+	if s.backup != nil {
+		d := s.jobDrainTimeout()
+		logger.Info("shutdown: waiting up to %s for in-flight backup and import jobs", d)
+		if !s.backup.WaitJobs(d) {
+			logger.Warn("shutdown: jobs still running after %s — cancelling", d)
+		}
+	}
+}
+
+// jobDrainTimeout resolves the shutdown_job_timeout setting
+func (s *Server) jobDrainTimeout() time.Duration {
+	mins := shutdownJobTimeoutDefault
+	if v, err := db.GetSetting(s.cfg.DB, "shutdown_job_timeout"); err == nil && v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= shutdownJobTimeoutMin && n <= shutdownJobTimeoutMax {
+			mins = n
+		}
+	}
+	return time.Duration(mins) * time.Minute
+}
+
+// goTracked launches fn as a background goroutine Stop can wait on
+func (s *Server) goTracked(fn func()) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		fn()
+	}()
+}
+
+// tick blocks until the next tick, reporting false once shutdown is signalled
+func (s *Server) tick(t *time.Ticker) bool {
+	select {
+	case <-s.ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// sleep waits out d, reporting false if shutdown is signalled first
+func (s *Server) sleep(d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-s.ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 // WarmCaches triggers a full proxy cache rewarm via the proxy.

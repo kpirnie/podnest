@@ -63,7 +63,7 @@ func (rs *resourceState) clearWarning() {
 // and dispatches notifications. Fires immediately then on the configured interval.
 func (s *Server) resourceWatcher() {
 	poll := func() int {
-		ctx := context.Background()
+		ctx := s.ctx
 
 		// one settings read per cycle rather than a query per key; changes still
 		// take effect without a restart
@@ -184,7 +184,7 @@ func (s *Server) resourceWatcher() {
 	intervalSec := poll()
 	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
+	for s.tick(ticker) {
 		if n := poll(); n != intervalSec {
 			intervalSec = n
 			ticker.Reset(time.Duration(intervalSec) * time.Second)

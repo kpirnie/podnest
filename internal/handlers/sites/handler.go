@@ -1513,8 +1513,8 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusAccepted, map[string]any{"id": clone.ID, "name": clone.Name})
 
 	// create the pod for the cloned site in a separate goroutine, ensuring it is created with the appropriate configurations and credentials, and handle any errors during pod creation by cleaning up the clone record and directory
-	go func() {
-		podCtx, podCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	h.Backup.Go(func(jobCtx context.Context) {
+		podCtx, podCancel := context.WithTimeout(jobCtx, 10*time.Minute)
 		defer podCancel()
 
 		// create the pod for the cloned site using the appropriate module for the site type, passing in the necessary configurations and credentials, and handle any errors during pod creation by cleaning up the clone record and directory
@@ -1546,5 +1546,5 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		// confirm the pod is running after creation, logging an error and cleaning up the clone record and directory if the pod does not reach a running state
 		logger.Debug("apiSiteClone: clone '%s' created from source '%s'", clone.Name, src.Name)
 		_ = db.UpdateSiteStatus(h.DB, clone.ID, models.StatusRunning)
-	}()
+	})
 }

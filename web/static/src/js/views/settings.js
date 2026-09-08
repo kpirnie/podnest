@@ -11,11 +11,11 @@ import { toast } from '../toast.js';
 // sslIcon returns the appropriate colored icon span for a given ssl status
 function sslIcon(status) {
     switch (status) {
-        case "valid":       return `<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>`;
+        case "valid": return `<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>`;
         case "self-signed": return `<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>`;
-        case "expired":     return `<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Expired certificate"></span>`;
-        case "mismatch":    return `<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Certificate does not match this domain"></span>`;
-        default:            return `<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>`;
+        case "expired": return `<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Expired certificate"></span>`;
+        case "mismatch": return `<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Certificate does not match this domain"></span>`;
+        default: return `<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>`;
     }
 }
 
@@ -324,6 +324,15 @@ export async function viewSettings(root) {
                             HTTP POST with JSON payload on threshold breach and resolution. Compatible with Uptime Kuma, PagerDuty, Slack, etc.
                         </p>
                     </div>
+                    <div class="uk-margin">
+                        <label class="kp-label" for="shutdown-job-timeout">Shutdown Job Drain (minutes)</label>
+                        <input class="uk-input kp-input" id="shutdown-job-timeout" name="shutdown_job_timeout" type="number"
+                            min="1" max="60" step="1" placeholder="5"
+                            value="${resourceSettings.shutdown_job_timeout ?? '5'}">
+                        <p class="kp-muted uk-text-small uk-margin-small-top">
+                            How long to wait for in-flight backups, restores, and imports to finish before the process exits on stop or restart.
+                        </p>
+                    </div>
                     <div class="uk-flex uk-flex-right uk-margin-top">
                         <button type="submit" class="uk-button kp-btn-primary">
                             <span uk-icon="check"></span> Save
@@ -346,12 +355,12 @@ export async function viewSettings(root) {
     // -- panel configuration form --------------------------------------------
     document.getElementById("settings-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd   = new FormData(e.target);
+        const fd = new FormData(e.target);
         const body = {
             admin_domain: fd.get("admin_domain").trim(),
         };
@@ -375,7 +384,7 @@ export async function viewSettings(root) {
         const fd = new FormData();
         fd.append("file", file);
         try {
-            const res  = await fetch("/api/settings/import", { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
+            const res = await fetch("/api/settings/import", { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
             const data = res.status === 204 ? null : await res.json().catch(() => null);
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
             toast.success("Settings imported");
@@ -389,14 +398,14 @@ export async function viewSettings(root) {
     // -- backup schedule / retention form ------------------------------------
     document.getElementById("backup-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd   = new FormData(e.target);
+        const fd = new FormData(e.target);
         const body = {
-            backup_schedule:    fd.get("backup_schedule").trim(),
+            backup_schedule: fd.get("backup_schedule").trim(),
             backup_retain_days: fd.get("backup_retain_days").trim(),
         };
 
@@ -414,7 +423,7 @@ export async function viewSettings(root) {
     // -- S3 settings form ----------------------------------------------------
     document.getElementById("s3-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
@@ -423,9 +432,9 @@ export async function viewSettings(root) {
 
         // always send these fields
         const body = {
-            s3_endpoint:   fd.get("s3_endpoint").trim(),
-            s3_bucket:     fd.get("s3_bucket").trim(),
-            s3_region:     fd.get("s3_region").trim(),
+            s3_endpoint: fd.get("s3_endpoint").trim(),
+            s3_bucket: fd.get("s3_bucket").trim(),
+            s3_region: fd.get("s3_region").trim(),
             s3_access_key: fd.get("s3_access_key").trim(),
         };
 
@@ -447,18 +456,18 @@ export async function viewSettings(root) {
     // -- smtp notification settings form -------------------------------------
     document.getElementById("smtp-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd   = new FormData(e.target);
+        const fd = new FormData(e.target);
         const body = {
-            smtp_host:     fd.get("smtp_host").trim(),
-            smtp_port:     fd.get("smtp_port").trim(),
+            smtp_host: fd.get("smtp_host").trim(),
+            smtp_port: fd.get("smtp_port").trim(),
             smtp_username: fd.get("smtp_username").trim(),
-            smtp_from:     fd.get("smtp_from").trim(),
-            smtp_tls:      fd.get("smtp_tls") ? "true" : "false",
+            smtp_from: fd.get("smtp_from").trim(),
+            smtp_tls: fd.get("smtp_tls") ? "true" : "false",
         };
 
         // only include password if a new value was entered
@@ -479,15 +488,15 @@ export async function viewSettings(root) {
     // -- aws sns notification settings form ----------------------------------
     document.getElementById("sns-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd   = new FormData(e.target);
+        const fd = new FormData(e.target);
         const body = {
-            aws_access_key:    fd.get("aws_access_key").trim(),
-            aws_region:        fd.get("aws_region").trim(),
+            aws_access_key: fd.get("aws_access_key").trim(),
+            aws_region: fd.get("aws_region").trim(),
             aws_sns_sender_id: fd.get("aws_sns_sender_id").trim(),
         };
 
@@ -509,17 +518,18 @@ export async function viewSettings(root) {
     // -- host resource watcher settings form ---------------------------------
     document.getElementById("resource-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd   = new FormData(e.target);
+        const fd = new FormData(e.target);
         const body = {
             resource_ram_reserve_gb: fd.get("resource_ram_reserve_gb").trim(),
-            resource_poll_interval:  fd.get("resource_poll_interval").trim(),
-            resource_throttle_pct:   fd.get("resource_throttle_pct").trim(),
-            resource_webhook_url:    fd.get("resource_webhook_url").trim(),
+            resource_poll_interval: fd.get("resource_poll_interval").trim(),
+            resource_throttle_pct: fd.get("resource_throttle_pct").trim(),
+            resource_webhook_url: fd.get("resource_webhook_url").trim(),
+            shutdown_job_timeout: fd.get("shutdown_job_timeout").trim(),
         };
 
         try {

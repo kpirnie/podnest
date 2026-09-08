@@ -348,6 +348,7 @@ func (h *Handler) apiUpdateResourceSettings(w http.ResponseWriter, r *http.Reque
 		"resource_poll_interval":  true,
 		"resource_throttle_pct":   true,
 		"resource_webhook_url":    true,
+		"shutdown_job_timeout":    true,
 	}
 	for k, v := range incoming {
 		if !allowed[k] {
