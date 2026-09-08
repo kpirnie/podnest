@@ -510,6 +510,12 @@ func (p *Proxy) peerTrusted(r *http.Request) bool {
 	return hit
 }
 
+// PeerTrusted exposes peerTrusted so the auth and pma cookie paths share one
+// definition of a trusted hop.
+func (p *Proxy) PeerTrusted(r *http.Request) bool {
+	return p.peerTrusted(r)
+}
+
 // normalizeHost strips any port from the request host and lowercases it so
 // routing matches case-insensitively against stored (lowercased) domains.
 func normalizeHost(r *http.Request) string {

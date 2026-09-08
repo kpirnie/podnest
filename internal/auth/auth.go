@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"podnest/internal/db"
@@ -51,10 +52,37 @@ type LoginResult struct {
 	TOTPKey      []byte
 }
 
-// isSecure reports whether the request arrived over a secure connection,
-// either directly via TLS or via a TLS-terminating proxy.
-func isSecure(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+// trustedPeerFn is installed by the proxy at startup. It reports whether the
+// immediate peer on a connection is a hop we control, and so whether that peer's
+// X-Forwarded-* headers may be believed. Unset means trust nothing.
+var trustedPeerFn atomic.Pointer[func(*http.Request) bool]
+
+// SetTrustedPeerFunc installs the predicate used to decide whether a request's
+// X-Forwarded-Proto may be trusted.
+func SetTrustedPeerFunc(fn func(*http.Request) bool) {
+	trustedPeerFn.Store(&fn)
+}
+
+// PeerTrusted reports whether the immediate peer may supply X-Forwarded-* values
+func PeerTrusted(r *http.Request) bool {
+	fn := trustedPeerFn.Load()
+	if fn == nil {
+		return false
+	}
+	return (*fn)(r)
+}
+
+// IsSecure reports whether the request arrived over a secure connection, either
+// directly via TLS or via a TLS-terminating proxy. The forwarded header is only
+// believed when the immediate peer is one we control.
+func IsSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if !PeerTrusted(r) {
+		return false
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // GeneratePassword returns a cryptographically random SFTP password
@@ -191,7 +219,7 @@ func SetTOTPPendingCookie(w http.ResponseWriter, r *http.Request, token string) 
 		Value:    token,
 		Path:     "/login",
 		HttpOnly: true,
-		Secure:   isSecure(r),
+		Secure:   IsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(TOTPPendingDuration.Seconds()),
 	})
@@ -301,7 +329,7 @@ func SetSessionCookie(w http.ResponseWriter, r *http.Request, sessionID string) 
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   isSecure(r),
+		Secure:   IsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(SessionDuration.Seconds()),
 	})
@@ -319,7 +347,7 @@ func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   isSecure(r),
+		Secure:   IsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})

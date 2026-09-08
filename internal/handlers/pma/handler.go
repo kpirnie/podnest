@@ -135,7 +135,7 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 			Value:    sess,
 			Path:     "/pma/" + idStr,
 			HttpOnly: true,
-			Secure:   isSecureReq(r),
+			Secure:   auth.IsSecure(r),
 			SameSite: http.SameSiteStrictMode,
 			MaxAge:   int(pmaCookieTTL.Seconds()),
 		})

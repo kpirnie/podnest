@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"podnest/internal/audit"
+	"podnest/internal/auth"
 	"podnest/internal/backup"
 	"podnest/internal/cron"
 	"podnest/internal/db"
@@ -192,6 +193,10 @@ func (s *Server) Start() error {
 		AppPath:     s.cfg.AppPath,
 	})
 	s.proxy = px
+
+	// let the auth and pma cookie paths gate X-Forwarded-Proto on the proxy's
+	// own trusted-peer check
+	auth.SetTrustedPeerFunc(px.PeerTrusted)
 
 	// set the handler to our routes
 	s.http.Handler = s.routes()
