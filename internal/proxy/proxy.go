@@ -379,7 +379,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	siteName := ""
 	if siteID > 0 {
 		siteName = entry.siteName
-		logger.Debug("proxy: siteID=%d siteName=%q", siteID, siteName)
 	}
 
 	// check redirect rules before security enforcement — redirects are intentional
