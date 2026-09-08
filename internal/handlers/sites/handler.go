@@ -508,8 +508,10 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 
 		// if pod creation fails, log the error, stop and remove the pod, delete the site record from the database, remove the site directory, and return an internal server error response
 		logger.Error("creating pod for site %s: %v", site.Name, err)
-		_ = h.Podman.StopPod(context.Background(), podman.PodName(site.Name))
-		_ = h.Podman.RemoveSitePod(context.Background(), site.Name)
+		rbCtx, rbCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		_ = h.Podman.StopPod(rbCtx, podman.PodName(site.Name))
+		_ = h.Podman.RemoveSitePod(rbCtx, site.Name)
+		rbCancel()
 		_ = db.DeleteSite(h.DB, site.ID)
 		_ = os.RemoveAll(siteDir)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -801,12 +803,16 @@ func (h *Handler) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRestarting)
 
 	// stop the pod before restarting, logging a warning if stopping fails but continuing with the restart process
-	if err := h.Podman.StopPod(context.Background(), podman.PodName(site.Name)); err != nil {
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer stopCancel()
+	if err := h.Podman.StopPod(stopCtx, podman.PodName(site.Name)); err != nil {
 		logger.Warn("could not stop pod before restart for site %d: %v", site.ID, err)
 	}
 
 	// start the pod after stopping, logging an error and returning an internal server error response if starting fails
-	if err := h.Podman.StartPod(context.Background(), podman.PodName(site.Name)); err != nil {
+	startCtx, startCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer startCancel()
+	if err := h.Podman.StartPod(startCtx, podman.PodName(site.Name)); err != nil {
 		logger.Error("failed to restart pod for site %d: %v", site.ID, err)
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -904,11 +910,13 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	bgCtx := context.Background()
 
 	// pull fresh images — skips if already up to date
+	pullCtx, pullCancel := context.WithTimeout(bgCtx, 45*time.Minute)
 	for _, img := range modules.TypeModule(site.SiteType).Images(site) {
-		if err := h.Podman.PullImage(bgCtx, img); err != nil {
+		if err := h.Podman.PullImage(pullCtx, img); err != nil {
 			logger.Warn("recreate: failed to pull image %s for site %d: %v", img, site.ID, err)
 		}
 	}
+	pullCancel()
 
 	// if the site type is WordPress and the request specifies not to install WordPress, clear the html directory and update the site type to PHP
 	if site.SiteType == models.SiteTypeWordPress && recreateReq.InstallWordPress != nil && !*recreateReq.InstallWordPress {
@@ -1536,8 +1544,10 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 			RedisPass:  redisPass,
 		}); err != nil {
 			logger.Error("apiSiteClone: creating pod for clone %s: %v", clone.Name, err)
-			_ = h.Podman.StopPod(context.Background(), podman.PodName(clone.Name))
-			_ = h.Podman.RemoveSitePod(context.Background(), clone.Name)
+			rbCtx, rbCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			_ = h.Podman.StopPod(rbCtx, podman.PodName(clone.Name))
+			_ = h.Podman.RemoveSitePod(rbCtx, clone.Name)
+			rbCancel()
 			_ = db.DeleteSite(h.DB, clone.ID)
 			_ = os.RemoveAll(cloneSiteDir)
 			return
