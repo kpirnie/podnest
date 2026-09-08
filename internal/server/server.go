@@ -42,6 +42,7 @@ type Config struct {
 	DB              *sql.DB
 	Port            int
 	PodmanSock      string
+	Podman          *podman.Client
 	AppPath         string
 	HostAppPath     string
 	HostGateway     string
@@ -77,6 +78,7 @@ func New(cfg Config) *Server {
 	s := &Server{
 		cfg:      cfg,
 		podman:   podman.New(cfg.PodmanSock),
+		podman:   cfg.Podman,
 		sftp:     cfg.SFTPManager,
 		fail2ban: cfg.Fail2BanManager,
 		backup:   cfg.BackupManager,

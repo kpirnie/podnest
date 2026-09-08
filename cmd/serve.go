@@ -99,17 +99,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// one podman client is shared by every consumer — they all talk to the same
+	// socket and a second client only adds another connection pool
+	podmanClient := podman.New(podmanSock)
+
 	// create the sftp server
-	sftpMgr := sftpmanager.New(podman.New(podmanSock), database, appPath, "")
+	sftpMgr := sftpmanager.New(podmanClient, database, appPath, "")
 
 	// create the fail2ban manager
-	f2bMgr := fail2ban.New(podman.New(podmanSock), appPath, "")
+	f2bMgr := fail2ban.New(podmanClient, appPath, "")
 
 	// create the backup manager
-	backupMgr := backup.New(database, podman.New(podmanSock), podmanSock, appPath)
+	backupMgr := backup.New(database, podmanClient, podmanSock, appPath)
 
 	// create the cron manager
-	cronMgr := cron.New(database, podman.New(podmanSock))
+	cronMgr := cron.New(database, podmanClient)
 
 	// register site type modules
 	modules.RegisterType(wordpress.Module{})
@@ -124,6 +128,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		DB:              database,
 		Port:            serverPort,
 		PodmanSock:      podmanSock,
+		Podman:          podmanClient,
 		AppPath:         appPath,
 		SFTPManager:     sftpMgr,
 		Fail2BanManager: f2bMgr,
@@ -162,7 +167,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(stats.Module{
 		DB:      database,
 		AppPath: appPath,
-		Podman:  podman.New(podmanSock),
+		Podman:  podmanClient,
 	})
 
 	// register the basic auth module
@@ -173,7 +178,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// register the file manager module
 	modules.RegisterFeature(files.Module{
-		Podman: podman.New(podmanSock),
+		Podman: podmanClient,
 		SFTP:   sftpMgr,
 	})
 
