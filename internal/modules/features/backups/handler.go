@@ -201,7 +201,7 @@ func (m Module) apiDownloadBackup(w http.ResponseWriter, r *http.Request, site *
 		backup.ID,
 	)
 	logger.Debug("apiDownloadBackup: streaming backup %d for site %s as %s", bid, site.Name, filename)
-	dw := &deferredDownloadWriter{w: w, filename: filename, token: downloadToken(r.URL.Query().Get("dl"))}
+	dw := &deferredDownloadWriter{w: w, filename: filename, token: downloadToken(r.URL.Query().Get("dl")), secure: auth.IsSecure(r)}
 	if err := m.Manager.Export(r.Context(), site, backup, dw); err != nil {
 		logger.Error("apiDownloadBackup: export failed for backup %d: %v", bid, err)
 		if !dw.ready {
@@ -217,6 +217,7 @@ type deferredDownloadWriter struct {
 	w        http.ResponseWriter
 	filename string
 	token    string
+	secure   bool
 	ready    bool
 }
 
@@ -232,10 +233,12 @@ func (d *deferredDownloadWriter) ExportReady() {
 	// readable cookie here — the UI polls for it to dismiss its progress modal
 	if d.token != "" {
 		http.SetCookie(d.w, &http.Cookie{
-			Name:   "kp_dl_" + d.token,
-			Value:  "1",
-			Path:   "/",
-			MaxAge: 600,
+			Name:     "kp_dl_" + d.token,
+			Value:    "1",
+			Path:     "/",
+			Secure:   d.secure,
+			SameSite: http.SameSiteStrictMode,
+			MaxAge:   600,
 		})
 	}
 
