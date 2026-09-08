@@ -118,6 +118,14 @@ type ContainerStat struct {
 // too short for a cold pull of the base images
 const pullImageTimeout = 30 * time.Minute
 
+// shortDigest truncates a digest for logging without assuming its length
+func shortDigest(d string) string {
+	if len(d) > 12 {
+		return d[:12]
+	}
+	return d
+}
+
 // SetPublishHostIP sets the host address that newly created pods publish their
 // ports on. Must be called before any pod is created.
 func SetPublishHostIP(ip string) {
@@ -363,7 +371,7 @@ func (c *Client) PullImage(ctx context.Context, image string) error {
 				logger.Debug("image already up to date, skipping pull: %s", image)
 				return nil
 			}
-			logger.Debug("image digest changed (%s → %s), pulling: %s", localDigest[:12], remote.Digest[:12], image)
+			logger.Debug("image digest changed (%s → %s), pulling: %s", shortDigest(localDigest), shortDigest(remote.Digest), image)
 		}
 	}
 
