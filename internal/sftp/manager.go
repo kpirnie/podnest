@@ -97,6 +97,19 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	return m.create(ctx)
 }
 
+// setPassword sets a user's password inside the running SFTP container, piping
+// the credential in on stdin so it never appears in argv or in a shell string
+func (m *Manager) setPassword(ctx context.Context, siteName, password string) error {
+	res, err := m.client.ExecStream(ctx, GlobalContainerName, "", []string{"chpasswd"}, strings.NewReader(siteName+":"+password+"\n"))
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("chpasswd for %s exited %d: %s", siteName, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
 // AddUser adds a user to the running SFTP container with zero downtime
 func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid int) error {
 
@@ -120,12 +133,17 @@ func (m *Manager) AddUser(ctx context.Context, siteName, password string, uid in
 	for _, cmd := range [][]string{
 		{"addgroup", "-g", fmt.Sprintf("%d", gid), fmt.Sprintf("sftp-%s", siteName)},
 		{"adduser", "-D", "-u", fmt.Sprintf("%d", uid), "-G", "sftpusers", "-h", "/home/" + siteName, "-s", "/usr/lib/openssh/sftp-server", siteName},
-		{"sh", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", siteName, password)},
 	} {
 		if err := m.exec(ctx, cmd); err != nil {
 			logger.Error("sftp AddUser exec %v failed: %v", cmd, err)
 			return fmt.Errorf("sftp add user %s: %w", siteName, err)
 		}
+	}
+
+	// set the password over stdin rather than through the shell
+	if err := m.setPassword(ctx, siteName, password); err != nil {
+		logger.Error("failed to set password for SFTP user %s: %v", siteName, err)
+		return err
 	}
 
 	// ownership fixups — the site directories may not be scaffolded yet, so
@@ -201,7 +219,7 @@ func (m *Manager) RegeneratePassword(ctx context.Context, siteName, newPassword 
 	}
 
 	// update the password in the running container via chpasswd — no restart needed
-	if err := m.exec(ctx, []string{"sh", "-c", fmt.Sprintf("echo '%s:%s' | chpasswd", siteName, newPassword)}); err != nil {
+	if err := m.setPassword(ctx, siteName, newPassword); err != nil {
 		logger.Error("sftp RegeneratePassword exec failed for %s: %v", siteName, err)
 		return err
 	}
