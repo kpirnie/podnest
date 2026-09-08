@@ -1595,10 +1595,11 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 
 // CreateFinalBackup creates a complete tar.gz archive of the site immediately
 // before deletion. If S3 is configured the archive is uploaded directly;
-// otherwise the raw bytes are returned for the caller to stream to the browser.
-// Returns a human-readable destination label and the archive bytes when S3 is
-// not configured (nil bytes when uploaded to S3).
-func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (dest string, archive []byte, err error) {
+// otherwise the open temp file is returned for the caller to stream to the
+// browser — the caller owns closing and removing it.
+// Returns a human-readable destination label and the archive file when S3 is
+// not configured (nil file when uploaded to S3).
+func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (dest string, archive *os.File, err error) {
 
 	// generate a filename with the site name and timestamp for either S3 key or browser download
 	now := time.Now().UTC()
@@ -1704,15 +1705,38 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 		return "", nil, fmt.Errorf("CreateFinalBackup: get backup record: %w", err)
 	}
 
-	var buf bytes.Buffer
-	if err := m.Export(ctx, site, stored, &buf); err != nil {
+	// spill the export to a temp file — a full site archive must never be
+	// materialised in RAM
+	tmp, err := os.CreateTemp(resticTmpDir, "podnest-final-*.tar.gz")
+	if err != nil {
+		return "", nil, fmt.Errorf("CreateFinalBackup: create temp file: %w", err)
+	}
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}
+
+	if err := m.Export(ctx, site, stored, tmp); err != nil {
+		cleanup()
 		return "", nil, fmt.Errorf("CreateFinalBackup: export: %w", err)
 	}
 
-	// if S3 is configured, upload the archive there; otherwise return the bytes for browser download
+	size, err := tmp.Seek(0, io.SeekEnd)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("CreateFinalBackup: size archive: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("CreateFinalBackup: rewind archive: %w", err)
+	}
+
+	// if S3 is configured, upload the archive there; otherwise hand the open
+	// file back for the caller to stream to the browser
 	if s3 != nil {
+		defer cleanup()
 		key := site.Name + "/" + filename
-		if err := s3PutObject(ctx, s3, key, buf.Bytes()); err != nil {
+		if err := s3PutObject(ctx, s3, key, tmp, size); err != nil {
 			return "", nil, fmt.Errorf("CreateFinalBackup: s3 upload: %w", err)
 		}
 		logger.Debug("CreateFinalBackup: uploaded %s to S3 bucket %s", key, s3.bucket)
@@ -1720,12 +1744,13 @@ func (m *Manager) CreateFinalBackup(ctx context.Context, site *models.Site) (des
 	}
 
 	logger.Debug("CreateFinalBackup: returning archive %s for browser download", filename)
-	return "browser:" + filename, buf.Bytes(), nil
+	return "browser:" + filename, tmp, nil
 }
 
-// s3PutObject uploads data to an S3-compatible bucket using AWS Signature V4.
-// Uses only stdlib — no AWS SDK.
-func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) error {
+// s3PutObject uploads an object to an S3-compatible bucket using AWS Signature
+// V4. Uses only stdlib — no AWS SDK. body is read twice: once to hash for the
+// signature, once as the request body, so it is never held in memory.
+func s3PutObject(ctx context.Context, s3 *s3Config, key string, body *os.File, size int64) error {
 
 	// build the raw URL for the object
 	ep := strings.TrimRight(s3.endpoint, "/")
@@ -1736,7 +1761,15 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	dateStamp := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
 
-	bodyHash := fmt.Sprintf("%x", sha256.Sum256(data))
+	// hash the payload off disk, then rewind for the request body
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, body); err != nil {
+		return fmt.Errorf("s3PutObject: hash body: %w", err)
+	}
+	if _, err := body.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("s3PutObject: rewind body: %w", err)
+	}
+	bodyHash := hex.EncodeToString(hasher.Sum(nil))
 
 	// canonical headers (must be sorted)
 	canonHeaders := map[string]string{
@@ -1816,7 +1849,7 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	)
 
 	// make the HTTP PUT request with the signed headers and the archive data as the body
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rawURL, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rawURL, body)
 	if err != nil {
 		return fmt.Errorf("s3PutObject: new request: %w", err)
 	}
@@ -1824,7 +1857,7 @@ func s3PutObject(ctx context.Context, s3 *s3Config, key string, data []byte) err
 	req.Header.Set("X-Amz-Date", amzDate)
 	req.Header.Set("X-Amz-Content-Sha256", bodyHash)
 	req.Header.Set("Content-Type", "application/gzip")
-	req.ContentLength = int64(len(data))
+	req.ContentLength = size
 
 	// perform the request
 	resp, err := http.DefaultClient.Do(req)

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -613,13 +614,19 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	siteDir := h.sitesBase() + "/" + site.Name
 
 	// create the final backup while the pod is still running
-	var archiveBytes []byte
+	var archiveFile *os.File
 	var backupDest string
 	if h.Backup != nil {
 		var berr error
-		backupDest, archiveBytes, berr = h.Backup.CreateFinalBackup(bgCtx, site)
+		backupDest, archiveFile, berr = h.Backup.CreateFinalBackup(bgCtx, site)
 		if berr != nil {
 			logger.Warn("apiDeleteSite: final backup failed for site %s (deletion continues): %v", site.Name, berr)
+		}
+		if archiveFile != nil {
+			defer func() {
+				archiveFile.Close()
+				os.Remove(archiveFile.Name())
+			}()
 		}
 	}
 
@@ -694,14 +701,14 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Site %s deleted successfully", site.Name)
 
 	// if S3 is not configured, stream the archive as a one-time browser download
-	if archiveBytes != nil {
+	if archiveFile != nil {
 		filename := strings.TrimPrefix(backupDest, "browser:")
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(archiveBytes); err != nil {
+		if _, err := io.Copy(w, archiveFile); err != nil {
 			logger.Warn("apiDeleteSite: write final backup to browser for site %s: %v", site.Name, err)
 		}
 		return
