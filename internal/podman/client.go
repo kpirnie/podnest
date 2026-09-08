@@ -5,6 +5,7 @@
 package podman
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -102,7 +103,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 
 		// container create specs carry DB_ROOT_PASS, DB_PASS, and REDIS_PASS as env values
 		logger.DebugSafe("POST %s with body: %s", path, string(b))
-		r = strings.NewReader(string(b))
+		r = bytes.NewReader(b)
 	}
 
 	// setup the POST request to the Podman API
@@ -279,7 +280,7 @@ func (c *Client) StreamPost(ctx context.Context, path string, body any) (io.Read
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://d"+path, strings.NewReader(string(b)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://d"+path, bytes.NewReader(b))
 	if err != nil {
 		logger.Error("StreamPost: failed to create request for %s: %v", path, err)
 		return nil, err

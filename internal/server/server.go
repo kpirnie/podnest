@@ -77,7 +77,6 @@ func New(cfg Config) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		cfg:      cfg,
-		podman:   podman.New(cfg.PodmanSock),
 		podman:   cfg.Podman,
 		sftp:     cfg.SFTPManager,
 		fail2ban: cfg.Fail2BanManager,
