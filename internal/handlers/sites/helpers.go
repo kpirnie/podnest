@@ -106,13 +106,13 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 
 	// run mysqldump inside the source DB container
 	var dumpStderr bytes.Buffer
+	// the schema name is a positional arg, never interpolated into the script
 	dumpCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", srcDBContainer,
 		"sh", "-c",
-		fmt.Sprintf(
-			"mysqldump -uroot --single-transaction --quick --routines %s 2>/dev/null || "+
-				"mariadb-dump -uroot --single-transaction --quick --routines %s",
-			src.Name, src.Name,
-		),
+		`mysqldump -uroot --single-transaction --quick --routines "$1" 2>/dev/null || `+
+			`mariadb-dump -uroot --single-transaction --quick --routines "$1"`,
+		"sh",
+		src.Name,
 	)
 
 	// capped append forces a new backing array so dump/restore envs don't alias;
@@ -140,10 +140,9 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 	var mysqlStderr bytes.Buffer
 	mysqlCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", cloneDBContainer,
 		"sh", "-c",
-		fmt.Sprintf(
-			"mariadb -uroot %s < /tmp/podnest-clone.sql && rm /tmp/podnest-clone.sql",
-			clone.Name,
-		),
+		`mariadb -uroot "$1" < /tmp/podnest-clone.sql && rm /tmp/podnest-clone.sql`,
+		"sh",
+		clone.Name,
 	)
 	mysqlCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+cloneRootPass)
 	mysqlCmd.Stderr = &mysqlStderr
