@@ -206,7 +206,8 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 		ModifyResponse: func(resp *http.Response) error {
 			if loc := resp.Header.Get("Location"); loc != "" {
 				loc = strings.TrimPrefix(loc, fmt.Sprintf("http://%s:%d", h.HostGateway, site.PMAPort))
-				if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, "/pma/") {
+				// protocol-relative and backslash forms lead with a slash but resolve off-site in browsers
+				if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, "//") && !strings.HasPrefix(loc, `/\`) && !strings.HasPrefix(loc, "/pma/") {
 					loc = fmt.Sprintf("/pma/%d%s", id, loc)
 					resp.Header.Set("Location", loc)
 					logger.Debug("PMA proxy rewrote Location header: %s", loc)
