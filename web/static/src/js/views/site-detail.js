@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { hideProgressModal, showCloneModal, showProgressModal, showRenameModal, statusBadge } from '../helpers.js';
+import { escapeHtml, hideProgressModal, showCloneModal, showProgressModal, showRenameModal, statusBadge } from '../helpers.js';
 import { showEditSiteModal } from '../modals/edit-site.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
@@ -31,10 +31,10 @@ let _healthWS = null;
 
 // initPillTabs wires the 4-pill nav to the uk-switcher and manages the manage dropdown
 function initPillTabs(root) {
-    const pills    = root.querySelector("#kp-site-pills");
+    const pills = root.querySelector("#kp-site-pills");
     const switcher = root.querySelector("#kp-site-switcher");
     const managePill = root.querySelector("#kp-manage-pill");
-    const dropdown   = root.querySelector("#kp-manage-dropdown");
+    const dropdown = root.querySelector("#kp-manage-dropdown");
     if (!pills || !switcher) return;
 
     // show the nth switcher panel and update pill active states
@@ -156,13 +156,13 @@ function wireRoutesTab(root, id) {
         }
         if (!e.target.closest("#rp-save-btn")) return;
 
-        const btn  = e.target.closest("#rp-save-btn");
+        const btn = e.target.closest("#rp-save-btn");
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
         const routes = [...document.querySelectorAll(".rp-route-row")].map(row => ({
-            Domain:   row.querySelector('[data-field="domain"]').value.trim(),
+            Domain: row.querySelector('[data-field="domain"]').value.trim(),
             Upstream: row.querySelector('[data-field="upstream"]').value.trim(),
             PassHost: row.querySelector('[data-field="pass_host"]').checked,
         })).filter(r => r.Domain && r.Upstream);
@@ -181,13 +181,13 @@ function wireRoutesTab(root, id) {
 
 // containerIcon maps a container role suffix to a UIkit icon name
 function containerIcon(name) {
-    if (name.endsWith("-nginx"))   return "world";
-    if (name.endsWith("-php"))     return "code";
-    if (name.endsWith("-db"))      return "database";
-    if (name.endsWith("-redis"))   return "server";
+    if (name.endsWith("-nginx")) return "world";
+    if (name.endsWith("-php")) return "code";
+    if (name.endsWith("-db")) return "database";
+    if (name.endsWith("-redis")) return "server";
     if (name.endsWith("-varnish")) return "grid";
-    if (name.endsWith("-pma"))     return "table";
-    if (name.endsWith("-app"))     return "laptop";
+    if (name.endsWith("-pma")) return "table";
+    if (name.endsWith("-app")) return "laptop";
     return "bolt";
 }
 
@@ -204,10 +204,10 @@ function containerLabel(name) {
 // healthColor maps a Podman health status to a CSS color variable
 function healthColor(status) {
     switch (status) {
-        case "healthy":   return "var(--kp-success)";
+        case "healthy": return "var(--kp-success)";
         case "unhealthy": return "var(--kp-danger)";
-        case "starting":  return "var(--kp-warning)";
-        default:          return "var(--kp-text-dim)";
+        case "starting": return "var(--kp-warning)";
+        default: return "var(--kp-text-dim)";
     }
 }
 
@@ -218,11 +218,11 @@ function renderHealthBadges(containers) {
         .filter(c => !c.name.endsWith("-infra"))
         .map(c => `
             <span class="kp-health-badge"
-                data-container="${c.name}"
+                data-container="${escapeHtml(c.name)}"
                 title="Restart the Container"
                 style="cursor:pointer;color:${healthColor(c.status)}">
                 <span uk-icon="icon: ${containerIcon(c.name)}; ratio: 1.1"></span>
-                <span class="kp-health-badge-label">${containerLabel(c.name)}</span>
+                <span class="kp-health-badge-label">${escapeHtml(containerLabel(c.name))}</span>
             </span>
         `).join("");
 }
@@ -263,7 +263,7 @@ function wireHealthBadges(root, id) {
         } catch (_) { /* ignore malformed frames */ }
     };
 
-    _healthWS.onerror = () => {};
+    _healthWS.onerror = () => { };
     _healthWS.onclose = () => { _healthWS = null; };
 }
 
@@ -276,7 +276,7 @@ export async function viewSiteDetail(root, { id }) {
     ]);
     const allSites = Array.isArray(rawSites) ? rawSites : [];
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
-    const isRP    = site.SiteType === 6;
+    const isRP = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5].includes(site.SiteType);
 
     // reset the shared listener abort before the waf/routes wiring attaches
@@ -300,7 +300,7 @@ export async function viewSiteDetail(root, { id }) {
                 ${site.SiteStatus === 1
                 ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-action="stop" data-id="${id}" uk-tooltip="Stop the Site"><span uk-icon="ban"></span></button>`
                 : `<button class="uk-button kp-btn-ghost kp-btn-sm" data-action="start" data-id="${id}" uk-tooltip="Start the Site"><span uk-icon="play"></span></button>`
-                }
+            }
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="restart" data-id="${id}" uk-tooltip="Restart the Site"><span uk-icon="refresh"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="flush" data-id="${id}" uk-tooltip="Flush the Caches"><span uk-icon="bolt"></span></button>
                 <button class="uk-button kp-btn-ghost kp-btn-sm kp-btn-recreate" id="sd-recreate" uk-tooltip="Recreate &amp; Update the Pod"><span uk-icon="history"></span></button>
