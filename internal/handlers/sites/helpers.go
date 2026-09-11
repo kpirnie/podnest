@@ -129,7 +129,11 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 	tmp.Close()
 
 	// copy the dump file into the clone DB container
-	cloneDBContainer := podman.ContainerName(clone.Name, "db")
+	cloneName, err := NormalizeSiteName(clone.Name)
+	if err != nil {
+		return fmt.Errorf("cloneDatabase: clone name: %w", err)
+	}
+	cloneDBContainer := podman.ContainerName(cloneName, "db")
 	cpCmd := exec.CommandContext(ctx, "podman", "cp", tmp.Name(), cloneDBContainer+":/tmp/podnest-clone.sql")
 	cpCmd.Env = podEnv
 	if out, err := cpCmd.CombinedOutput(); err != nil {
@@ -142,7 +146,7 @@ func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) er
 		"sh", "-c",
 		`mariadb -uroot "$1" < /tmp/podnest-clone.sql && rm /tmp/podnest-clone.sql`,
 		"sh",
-		clone.Name,
+		cloneName,
 	)
 	mysqlCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+cloneRootPass)
 	mysqlCmd.Stderr = &mysqlStderr
