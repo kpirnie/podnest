@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"podnest/internal/db"
 	"podnest/internal/fileutil"
 	"podnest/internal/logger"
@@ -84,16 +83,12 @@ func ValidateSiteVersions(siteType, phpVersion int, runtimeVersion *int) error {
 // cloneDatabase copies the database from the source site to the clone site.
 func (h *Handler) cloneDatabase(ctx context.Context, src, clone *models.Site) error {
 
-	// setup paths
-	srcSiteDir := h.sitesBase() + "/" + src.Name
-	cloneSiteDir := h.sitesBase() + "/" + clone.Name
-
 	// read DB_ROOT_PASS from .env files
-	srcRootPass, err := fileutil.ReadEnvValue(srcSiteDir+"/.env", "DB_ROOT_PASS")
+	srcRootPass, err := fileutil.ReadEnvValue(h.sitesBase(), src.Name, "DB_ROOT_PASS")
 	if err != nil {
 		return fmt.Errorf("cloneDatabase: read src DB_ROOT_PASS: %w", err)
 	}
-	cloneRootPass, err := fileutil.ReadEnvValue(cloneSiteDir+"/.env", "DB_ROOT_PASS")
+	cloneRootPass, err := fileutil.ReadEnvValue(h.sitesBase(), clone.Name, "DB_ROOT_PASS")
 	if err != nil {
 		return fmt.Errorf("cloneDatabase: read clone DB_ROOT_PASS: %w", err)
 	}
@@ -375,9 +370,7 @@ func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 	}
 
 	// read DB_ROOT_PASS from the site's .env file
-	rootPass, err := fileutil.ReadEnvValue(
-		filepath.Join(h.sitesBase(), site.Name, ".env"), "DB_ROOT_PASS",
-	)
+	rootPass, err := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_ROOT_PASS")
 	if err != nil {
 		logger.Warn("maybeUpgradeMariaDB: site %s: read DB_ROOT_PASS: %v", site.Name, err)
 		return
@@ -420,18 +413,21 @@ func (h *Handler) maybeUpgradeMariaDB(ctx context.Context, site *models.Site) {
 func (h *Handler) createSitePod(ctx context.Context, site *models.Site) error {
 
 	// credentials live in the site's .env, which travels with the directory
-	siteDir := h.sitesBase() + "/" + site.Name
-	dbUser, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_USER")
-	dbPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_PASS")
-	dbRootPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
-	redisPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "REDIS_PASS")
+	hostSiteDir, err := fileutil.SiteDir(h.hostSitesBase(), site.Name)
+	if err != nil {
+		return err
+	}
+	dbUser, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_USER")
+	dbPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_PASS")
+	dbRootPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_ROOT_PASS")
+	redisPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "REDIS_PASS")
 
 	// build the pod against the host-visible path
 	allConfigs, _ := db.GetAllConfigsBySite(h.DB, site.ID)
 	return modules.TypeModule(site.SiteType).Create(ctx, &modules.PodmanClientAdapter{Client: h.PodmanClient}, modules.PodConfig{
 		Site:       site,
 		SiteUID:    sftp.UIDForSite(site.ID),
-		SiteDir:    h.hostSitesBase() + "/" + site.Name,
+		SiteDir:    hostSiteDir,
 		Configs:    allConfigs,
 		DBUser:     dbUser,
 		DBPass:     dbPass,

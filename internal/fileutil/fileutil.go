@@ -6,6 +6,7 @@ package fileutil
 
 import (
 	"bufio"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +15,21 @@ import (
 
 	"podnest/internal/logger"
 )
+
+// ErrPathEscape is returned when a name resolves outside its base directory.
+var ErrPathEscape = errors.New("path escapes base directory")
+
+// SiteDir joins name onto base and returns the result only if it lands strictly
+// inside base. A name of "." or ".." cleans back to base itself, which would
+// hand the caller the entire sites tree, so equality with base is rejected too.
+func SiteDir(base, name string) (string, error) {
+	dir := filepath.Join(base, filepath.Clean("/"+name))
+	if !strings.HasPrefix(dir, base+"/") {
+		logger.Warn("fileutil: rejected site directory %q under %q", name, base)
+		return "", ErrPathEscape
+	}
+	return dir, nil
+}
 
 // WriteFile writes content to path with the given file permissions.
 func WriteFile(path, content string, perm os.FileMode) error {
@@ -26,7 +42,12 @@ func WriteFile(path, content string, perm os.FileMode) error {
 }
 
 // ReadEnvValue reads a KEY=VALUE .env file and returns the value for the given key.
-func ReadEnvValue(path, key string) (string, error) {
+func ReadEnvValue(base, name, key string) (string, error) {
+	dir, err := SiteDir(base, name)
+	if err != nil {
+		return "", err
+	}
+	path := dir + "/.env"
 	f, err := os.Open(path)
 	if err != nil {
 		logger.Error("failed to open env file %s: %v", path, err)

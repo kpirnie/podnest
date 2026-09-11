@@ -296,7 +296,10 @@ func (h *Handler) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob string) error {
-	siteDir := h.sitesBase() + "/" + site.Name
+	siteDir, err := fileutil.SiteDir(h.sitesBase(), site.Name)
+	if err != nil {
+		return err
+	}
 
 	switch configType {
 	case models.ConfigNginx:
@@ -365,7 +368,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		return nil
 
 	case models.ConfigRedis:
-		redisPass, err := fileutil.ReadEnvValue(siteDir+"/.env", "REDIS_PASS")
+		redisPass, err := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "REDIS_PASS")
 		if err != nil {
 			logger.Error("failed to read REDIS_PASS from .env for site %d: %v", site.ID, err)
 			return err

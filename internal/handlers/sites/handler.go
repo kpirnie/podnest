@@ -470,8 +470,18 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// define the site directory paths for scaffolding and pod creation, and retrieve the SFTP UID for the site
-	siteDir := h.sitesBase() + "/" + site.Name
-	hostSiteDir := h.hostSitesBase() + "/" + site.Name
+	siteDir, err := fileutil.SiteDir(h.sitesBase(), site.Name)
+	if err != nil {
+		_ = db.DeleteSite(h.DB, site.ID)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	hostSiteDir, err := fileutil.SiteDir(h.hostSitesBase(), site.Name)
+	if err != nil {
+		_ = db.DeleteSite(h.DB, site.ID)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	sftpUID := sftp.UIDForSite(site.ID)
 
 	// scaffold the site directory structure and configuration files based on the site type and handle any errors during scaffolding
@@ -613,7 +623,11 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 	// log the deletion action and prepare the context and site directory path for cleanup operations
 	log.Printf("Deleting site %s — stopping and removing pod", site.Name)
 	bgCtx := context.Background()
-	siteDir := h.sitesBase() + "/" + site.Name
+	siteDir, err := fileutil.SiteDir(h.sitesBase(), site.Name)
+	if err != nil {
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
 
 	// create the final backup while the pod is still running
 	var archiveFile *os.File
@@ -847,7 +861,7 @@ func (h *Handler) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 
 	// flush Redis cache if the site type supports Redis, reading the REDIS_PASS from the site's .env file and logging warnings for any errors encountered during flushing
 	if modules.TypeModule(site.SiteType).HasRedis() {
-		redisPass, err := fileutil.ReadEnvValue(h.sitesBase()+"/"+site.Name+"/.env", "REDIS_PASS")
+		redisPass, err := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "REDIS_PASS")
 		if err != nil {
 			logger.Warn("apiSiteFlush: could not read REDIS_PASS for site %d: %v", site.ID, err)
 		} else {
@@ -905,8 +919,16 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&recreateReq) //nolint — body is optional
 
 	// define the site directory paths for scaffolding and pod recreation, and create a background context for operations
-	siteDir := h.sitesBase() + "/" + site.Name
-	hostSiteDir := h.hostSitesBase() + "/" + site.Name
+	siteDir, err := fileutil.SiteDir(h.sitesBase(), site.Name)
+	if err != nil {
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	hostSiteDir, err := fileutil.SiteDir(h.hostSitesBase(), site.Name)
+	if err != nil {
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
 	bgCtx := context.Background()
 
 	// pull fresh images — skips if already up to date
@@ -934,10 +956,10 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	defer podCancel()
 
 	// read database and Redis credentials from the site's .env file for use in pod recreation
-	dbUser, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_USER")
-	dbPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_PASS")
-	dbRootPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
-	redisPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "REDIS_PASS")
+	dbUser, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_USER")
+	dbPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_PASS")
+	dbRootPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_ROOT_PASS")
+	redisPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "REDIS_PASS")
 
 	// fetch the Varnish configuration for the site from the database, and if not present, seed default values and write the VCL file
 	varnishKV, _ := db.GetConfigsBySiteAndType(h.DB, site.ID, models.ConfigVarnish)
@@ -1115,13 +1137,22 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// read the connection settings the rename has to carry across
-	siteDir := h.sitesBase() + "/" + oldName
-	oldDB, err := fileutil.ReadEnvValue(siteDir+"/.env", "DB_NAME")
+	oldDir, err := fileutil.SiteDir(h.sitesBase(), oldName)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid current site name — rename aborted")
+		return
+	}
+	newDir, err := fileutil.SiteDir(h.sitesBase(), newName)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid new site name — rename aborted")
+		return
+	}
+	oldDB, err := fileutil.ReadEnvValue(h.sitesBase(), oldName, "DB_NAME")
 	if err != nil || oldDB == "" {
 		oldDB = oldName
 	}
-	dbUser, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_USER")
-	dbRootPass, _ := fileutil.ReadEnvValue(siteDir+"/.env", "DB_ROOT_PASS")
+	dbUser, _ := fileutil.ReadEnvValue(h.sitesBase(), oldName, "DB_USER")
+	dbRootPass, _ := fileutil.ReadEnvValue(h.sitesBase(), oldName, "DB_ROOT_PASS")
 	hasDB := modules.TypeModule(site.SiteType).HasDatabase()
 
 	// move the schema first — it is the only step that needs the old pod alive
@@ -1138,13 +1169,13 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 		logger.Error("rename: %s failed for site %s: %v — rolling back", stage, oldName, cause)
 		_ = h.Podman.RemoveSitePod(bgCtx, newName)
 		_ = h.Podman.RemoveSitePod(bgCtx, oldName)
-		if _, err := os.Stat(h.sitesBase() + "/" + newName); err == nil {
-			if err := os.Rename(h.sitesBase()+"/"+newName, h.sitesBase()+"/"+oldName); err != nil {
+		if _, err := os.Stat(newDir); err == nil {
+			if err := os.Rename(newDir, oldDir); err != nil {
 				logger.Error("rename rollback: restore site directory for %s: %v", oldName, err)
 			}
 		}
-		_ = setEnvValue(h.sitesBase()+"/"+oldName+"/.env", "DB_NAME", oldDB)
-		_ = setWPConfigDBName(h.sitesBase()+"/"+oldName+"/html/wp-config.php", oldDB)
+		_ = setEnvValue(oldDir+"/.env", "DB_NAME", oldDB)
+		_ = setWPConfigDBName(oldDir+"/html/wp-config.php", oldDB)
 		site.Name = oldName
 		if err := db.UpdateSite(h.DB, site); err != nil {
 			logger.Error("rename rollback: restore site record for %s: %v", oldName, err)
@@ -1168,7 +1199,7 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// move the site directory, which carries html, db, configs, and the local restic repo
-	if err := os.Rename(h.sitesBase()+"/"+oldName, h.sitesBase()+"/"+newName); err != nil {
+	if err := os.Rename(oldDir, newDir); err != nil {
 		if hasDB {
 			_ = h.renameDatabase(ctx, site, newName, oldDB, dbUser, dbRootPass)
 		}
@@ -1178,7 +1209,6 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// repoint the on-disk connection settings at the renamed schema
-	newDir := h.sitesBase() + "/" + newName
 	if hasDB {
 		if err := setEnvValue(newDir+"/.env", "DB_NAME", newName); err != nil {
 			rollback("env rewrite", err)
@@ -1475,9 +1505,24 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// scaffold the clone site directory using the appropriate module for the site type, passing in the necessary configurations and credentials, and handle any errors during scaffolding by cleaning up the clone record and directory
-	cloneSiteDir := h.sitesBase() + "/" + clone.Name
-	hostCloneSiteDir := h.hostSitesBase() + "/" + clone.Name
-	srcSiteDir := h.sitesBase() + "/" + src.Name
+	cloneSiteDir, err := fileutil.SiteDir(h.sitesBase(), clone.Name)
+	if err != nil {
+		_ = db.DeleteSite(h.DB, clone.ID)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	hostCloneSiteDir, err := fileutil.SiteDir(h.hostSitesBase(), clone.Name)
+	if err != nil {
+		_ = db.DeleteSite(h.DB, clone.ID)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
+	srcSiteDir, err := fileutil.SiteDir(h.sitesBase(), src.Name)
+	if err != nil {
+		_ = db.DeleteSite(h.DB, clone.ID)
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	}
 
 	// scaffold the clone site directory using the appropriate module for the site type, passing in the necessary configurations and credentials, and handle any errors during scaffolding by cleaning up the clone record and directory
 	cm := modules.TypeModule(clone.SiteType)
