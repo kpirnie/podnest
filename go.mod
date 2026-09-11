@@ -10,7 +10,7 @@ require (
 	github.com/corazawaf/coraza/v3 v3.7.0
 	github.com/gaissmai/bart v0.29.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/mattn/go-sqlite3 v1.14.50
+	github.com/mattn/go-sqlite3 v1.14.52
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/quic-go/quic-go v0.61.0
 	github.com/spf13/cobra v1.10.2
