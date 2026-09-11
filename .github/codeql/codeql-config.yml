@@ -1,0 +1,32 @@
+name: "PodNest CodeQL config"
+
+paths-ignore:
+  # built bundles — every src finding is otherwise counted twice
+  - "web/static/js/**"
+  - "web/static/css/**"
+  - "node_modules"
+
+query-filters:
+  # Secure is set from IsSecure(r); CodeQL only accepts a literal true.
+  # Hardcoding it breaks logout and TOTP clearing over plain HTTP.
+  - exclude:
+      id: go/cookie-secure-not-set
+
+  # kp_dl_<token> is deliberately JS-readable so the UI can dismiss its
+  # download modal. HttpOnly would defeat its only purpose.
+  - exclude:
+      id: go/cookie-httponly-not-set
+
+  # RP upstreams are user-defined; ssl.checkSSL opens the connection
+  # specifically to inspect an untrusted chain.
+  - exclude:
+      id: go/disabled-certificate-check
+
+  # sha256 pre-hash ahead of bcrypt (72-byte limit) and blowfish_secret
+  # derivation — neither is password storage.
+  - exclude:
+      id: go/weak-sensitive-data-hashing
+
+  # safeRedirectTarget() is a real barrier CodeQL does not model.
+  - exclude:
+      id: go/unvalidated-url-redirection
