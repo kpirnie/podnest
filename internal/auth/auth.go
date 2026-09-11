@@ -226,12 +226,13 @@ func SetTOTPPendingCookie(w http.ResponseWriter, r *http.Request, token string) 
 }
 
 // ClearTOTPPendingCookie expires the TOTP pending cookie.
-func ClearTOTPPendingCookie(w http.ResponseWriter) {
+func ClearTOTPPendingCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     TOTPPendingCookieName,
 		Value:    "",
 		Path:     "/login",
 		HttpOnly: true,
+		Secure:   IsSecure(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})

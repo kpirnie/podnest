@@ -183,7 +183,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		}
 		pending, err := db.GetTOTPPending(s.cfg.DB, pendingToken)
 		if err != nil || pending == nil {
-			auth.ClearTOTPPendingCookie(w)
+			auth.ClearTOTPPendingCookie(w, r)
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -218,7 +218,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 
 		pending, err := db.GetTOTPPending(s.cfg.DB, pendingToken)
 		if err != nil || pending == nil {
-			auth.ClearTOTPPendingCookie(w)
+			auth.ClearTOTPPendingCookie(w, r)
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -232,7 +232,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		// load the user's TOTP secret
 		user, err := db.GetUserByID(s.cfg.DB, pending.UID)
 		if err != nil || user == nil {
-			auth.ClearTOTPPendingCookie(w)
+			auth.ClearTOTPPendingCookie(w, r)
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -242,7 +242,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		secret, decErr := auth.DecryptTOTPSecret(totpKey, user.TOTPSecret)
 		if decErr != nil {
 			logger.Warn("unable to decrypt TOTP secret for user %d: %v", user.ID, decErr)
-			auth.ClearTOTPPendingCookie(w)
+			auth.ClearTOTPPendingCookie(w, r)
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -284,7 +284,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 
 		// TOTP verified — consume the pending token and create a full session
 		_ = db.DeleteTOTPPending(s.cfg.DB, pendingToken)
-		auth.ClearTOTPPendingCookie(w)
+		auth.ClearTOTPPendingCookie(w, r)
 		auth.RecordSuccessfulLogin(ip)
 
 		// lazily encrypt a plaintext secret now that the password-derived key is in hand
