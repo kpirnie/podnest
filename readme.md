@@ -1,6 +1,6 @@
 # <img src="https://c.pdn.st/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy" width="64" valign="middle"> PodNest
 
-## Secure. Manage. Deploy.
+## Secure. Manage. Deploy
 
 [![Build Main](https://img.shields.io/github/actions/workflow/status/kpirnie/podnest/build.yml?branch=main&label=Main&logoColor=white&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/podnest/actions?query=workflow%3A%22Build+and+Push%22+branch%3Amain)
 [![Build Develop](https://img.shields.io/github/actions/workflow/status/kpirnie/podnest/build.yml?branch=develop&label=Develop&logoColor=white&logo=github&labelColor=000&style=for-the-badge)](https://github.com/kpirnie/podnest/actions?query=workflow%3A%22Build+and+Push%22+branch%3Adevelop)
@@ -12,7 +12,7 @@
 [![Kevin Pirnie](https://img.shields.io/badge/-KevinPirnie.com-000d2d?style=for-the-badge&labelColor=000&logoColor=white&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIxLjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+CiAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiLz4KICA8ZWxsaXBzZSBjeD0iMTIiIGN5PSIxMiIgcng9IjQuNSIgcnk9IjEwIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxMiIgeDI9IjIyIiB5Mj0iMTIiLz4KICA8bGluZSB4MT0iNC41IiB5MT0iNi41IiB4Mj0iMTkuNSIgeTI9IjYuNSIvPgogIDxsaW5lIHgxPSI0LjUiIHkxPSIxNy41IiB4Mj0iMTkuNSIgeTI9IjE3LjUiLz4KPC9zdmc+Cg==)](https://kevinpirnie.com/)
 [![Support](https://img.shields.io/badge/Support-Available-28a745?logo=handshake&logoColor=white&style=for-the-badge&labelColor=000)](https://kevinpirnie.com/about-kevin-pirnie/lets-talk/)
 
-A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js, .NET, static, and reverse-proxy sites — each with its own nginx, PHP-FPM, MariaDB, Redis, Varnish, SFTP account, SSL, backups, cron, and WAF. No shell required after initial setup.
+A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js, .NET, Python, static, and reverse-proxy sites — each with its own nginx, PHP-FPM, MariaDB, Redis, Varnish, SFTP account, SSL, backups, cron, and WAF. No shell required after initial setup.
 
 ---
 
@@ -22,17 +22,18 @@ A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js,
 
 ## Overview
 
-Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js and .NET sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
+Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js, .NET, and Python sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
 
 **Supported site types:**
 
 | Type | Runtimes Available |
-|---|---|
+| --- | --- |
 | WordPress | PHP 8.2, 8.3, 8.4, 8.5 |
 | PHP | PHP 8.2, 8.3, 8.4, 8.5 |
 | Static HTML | nginx only |
 | Node.js | Node 22, 24, 25, 26 |
 | .NET | .NET 8.0, 9.0, 10.0 |
+| Python | Python 3.11, 3.12, 3.13, 3.14 |
 | Reverse Proxy | Routes to an upstream URL — no pod provisioned |
 
 All sites share a single global SFTP container for file management. The same container also backs a per-site web file manager — browse, upload, download, in-browser text editing, and permission changes scoped to each site's `html` directory, performed as the site's own user. A global Fail2Ban container monitors SFTP access and automatically bans IPs that repeatedly fail authentication.
@@ -46,11 +47,13 @@ The recommended and fully supported deployment method is as a container. The bin
 ## Requirements
 
 **For container deployment (recommended):**
+
 - Podman installed and running on the host
 - The Podman socket exposed and accessible (see notes below)
 - Docker Compose, Podman Compose, or equivalent for compose-based deployments
 
 **For binary deployment:**
+
 - Go 1.26 or later
 - `gcc` and `musl-dev` (CGO is required for SQLite)
 - Podman installed and accessible via socket on the host
@@ -102,7 +105,7 @@ Once running, the UI is available at: `http://your-host:9000`
 ### Commands
 
 | Command | Description |
-|---|---|
+| --- | --- |
 | `pdnctl install --user <name> --version <latest\|dev\|beta>` | Fresh rootless setup under a dedicated user |
 | `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
 | `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
@@ -124,7 +127,7 @@ Prefer to deploy and manage the container yourself instead of using `pdnctl`? A 
 ### Available Image Tags
 
 | Tag | Description |
-|---|---|
+| --- | --- |
 | `latest` | Latest stable release — use this for production |
 | `dev` | Tracks the `develop` branch — use at your own risk |
 | `beta` | Tracks the `beta` branch — preview features, not production-ready |
@@ -270,7 +273,7 @@ You will be prompted for username, name, email, phone, and a password. This only
 Both `init` and `serve` share the following persistent flags:
 
 | Flag | Default | Description |
-|---|---|---|
+| --- | --- | --- |
 | `--app-path` | `/opt/podnest` | Base path for the database, site configs, and all application data |
 | `--port` | `8080` | Port the management UI listens on |
 | `--socket` | `/run/user/<uid>/podman/podman.sock` | Path to the Podman socket |
@@ -300,7 +303,7 @@ There is also a `security` command for recovering panel access when a security r
 When the container starts for the first time with no existing database, a default admin account is automatically created:
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Username | `admin` |
 | Password | `podnest1234@` |
 
