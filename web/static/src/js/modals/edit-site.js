@@ -24,37 +24,47 @@ export async function showEditSiteModal(site) {
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Site Type</label>
                             <select class="uk-select kp-select" name="site_type" id="es-site-type">
-                                <option value="1" ${site.SiteType===1?"selected":""}>PHP</option>
-                                <option value="3" ${site.SiteType===3?"selected":""}>Static HTML</option>
-                                <option value="4" ${site.SiteType===4?"selected":""}>Node.js</option>
-                                <option value="5" ${site.SiteType===5?"selected":""}>.NET</option>
-                                <option value="6" ${site.SiteType===6?"selected":""}>Reverse Proxy</option>
+                                <option value="1" ${site.SiteType === 1 ? "selected" : ""}>PHP</option>
+                                <option value="3" ${site.SiteType === 3 ? "selected" : ""}>Static HTML</option>
+                                <option value="4" ${site.SiteType === 4 ? "selected" : ""}>Node.js</option>
+                                <option value="5" ${site.SiteType === 5 ? "selected" : ""}>.NET</option>
+                                <option value="7" ${site.SiteType === 7 ? "selected" : ""}>Python</option>
+                                <option value="6" ${site.SiteType === 6 ? "selected" : ""}>Reverse Proxy</option>
                             </select>
                         </div>
                         <div class="uk-width-1-2@s" id="es-php-version-wrap">
                             <label class="kp-label">PHP Version</label>
                             <select class="uk-select kp-select" name="php_version">
-                                <option value="3" ${site.PHPVersion===3?"selected":""}>PHP 8.2</option>
-                                <option value="4" ${site.PHPVersion===4?"selected":""}>PHP 8.3</option>
-                                <option value="5" ${site.PHPVersion===5?"selected":""}>PHP 8.4</option>
-                                <option value="6" ${site.PHPVersion===6?"selected":""}>PHP 8.5</option>
+                                <option value="3" ${site.PHPVersion === 3 ? "selected" : ""}>PHP 8.2</option>
+                                <option value="4" ${site.PHPVersion === 4 ? "selected" : ""}>PHP 8.3</option>
+                                <option value="5" ${site.PHPVersion === 5 ? "selected" : ""}>PHP 8.4</option>
+                                <option value="6" ${site.PHPVersion === 6 ? "selected" : ""}>PHP 8.5</option>
                             </select>
                         </div>
                         <div class="uk-width-1-2@s uk-hidden" id="es-node-version-wrap">
                             <label class="kp-label">Node.js Version</label>
                             <select class="uk-select kp-select" name="node_version">
-                                <option value="2" ${site.RuntimeVersion===2?"selected":""}>Node 22 (LTS)</option>
-                                <option value="4" ${site.RuntimeVersion===4?"selected":""}>Node 24</option>
-                                <option value="5" ${site.RuntimeVersion===5?"selected":""}>Node 25</option>
-                                <option value="6" ${site.RuntimeVersion===6?"selected":""}>Node 26</option>                                
+                                <option value="2" ${site.RuntimeVersion === 2 ? "selected" : ""}>Node 22 (LTS)</option>
+                                <option value="4" ${site.RuntimeVersion === 4 ? "selected" : ""}>Node 24</option>
+                                <option value="5" ${site.RuntimeVersion === 5 ? "selected" : ""}>Node 25</option>
+                                <option value="6" ${site.RuntimeVersion === 6 ? "selected" : ""}>Node 26</option>                                
                             </select>
                         </div>
                         <div class="uk-width-1-2@s uk-hidden" id="es-dotnet-version-wrap">
                             <label class="kp-label">.NET Version</label>
                             <select class="uk-select kp-select" name="dotnet_version">
-                                <option value="1" ${site.RuntimeVersion===1?"selected":""}>.NET 8.0 (LTS)</option>
-                                <option value="2" ${site.RuntimeVersion===2?"selected":""}>.NET 9.0</option>
-                                <option value="3" ${site.RuntimeVersion===3?"selected":""}>.NET 10.0 (LTS)</option>
+                                <option value="1" ${site.RuntimeVersion === 1 ? "selected" : ""}>.NET 8.0 (LTS)</option>
+                                <option value="2" ${site.RuntimeVersion === 2 ? "selected" : ""}>.NET 9.0</option>
+                                <option value="3" ${site.RuntimeVersion === 3 ? "selected" : ""}>.NET 10.0 (LTS)</option>
+                            </select>
+                        </div>
+                        <div class="uk-width-1-2@s uk-hidden" id="es-python-version-wrap">
+                            <label class="kp-label">Python Version</label>
+                            <select class="uk-select kp-select" name="python_version">
+                                <option value="1" ${site.SiteType === 7 && site.RuntimeVersion === 1 ? "selected" : ""}>Python 3.11</option>
+                                <option value="2" ${site.SiteType === 7 && site.RuntimeVersion === 2 ? "selected" : ""}>Python 3.12</option>
+                                <option value="3" ${site.SiteType === 7 && site.RuntimeVersion === 3 ? "selected" : ""}>Python 3.13</option>
+                                <option value="4" ${site.SiteType !== 7 || site.RuntimeVersion === 4 ? "selected" : ""}>Python 3.14</option>
                             </select>
                         </div>
                         <div class="uk-width-1-1 uk-hidden" id="es-start-command-wrap">
@@ -74,21 +84,24 @@ export async function showEditSiteModal(site) {
         </div>`;
 
     document.body.insertAdjacentHTML("beforeend", html);
-    const modal         = UIkit.modal("#kp-edit-site-modal");
-    const typeSelect    = document.getElementById("es-site-type");
-    const phpWrap       = document.getElementById("es-php-version-wrap");
-    const nodeWrap      = document.getElementById("es-node-version-wrap");
-    const dotnetWrap    = document.getElementById("es-dotnet-version-wrap");
-    const startWrap     = document.getElementById("es-start-command-wrap");
+    const modal = UIkit.modal("#kp-edit-site-modal");
+    const typeSelect = document.getElementById("es-site-type");
+    const phpWrap = document.getElementById("es-php-version-wrap");
+    const nodeWrap = document.getElementById("es-node-version-wrap");
+    const dotnetWrap = document.getElementById("es-dotnet-version-wrap");
+    const pythonWrap = document.getElementById("es-python-version-wrap");
+    const startWrap = document.getElementById("es-start-command-wrap");
     const wordpressWrap = document.getElementById("es-wordpress-wrap");
 
     modal.show();
 
     const updateVisibility = (t) => {
-        phpWrap.classList.toggle("uk-hidden",       (t !== 1 && t !== 2) || t === 6);
-        nodeWrap.classList.toggle("uk-hidden",      t !== 4);
-        dotnetWrap.classList.toggle("uk-hidden",    t !== 5);
-        startWrap.classList.toggle("uk-hidden",     t !== 4 && t !== 5);
+        phpWrap.classList.toggle("uk-hidden", (t !== 1 && t !== 2) || t === 6);
+        nodeWrap.classList.toggle("uk-hidden", t !== 4);
+        dotnetWrap.classList.toggle("uk-hidden", t !== 5);
+        pythonWrap.classList.toggle("uk-hidden", t !== 7);
+        startWrap.classList.toggle("uk-hidden", t !== 4 && t !== 5 && t !== 7);
+        startWrap.querySelector("input").required = t === 7;
         wordpressWrap.classList.toggle("uk-hidden", t !== 1);
     };
     updateVisibility(site.SiteType);
@@ -96,22 +109,23 @@ export async function showEditSiteModal(site) {
 
     document.getElementById("edit-site-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd       = new FormData(e.target);
+        const fd = new FormData(e.target);
         const siteType = parseInt(fd.get("site_type"));
         let runtimeVersion = null;
         if (siteType === 4) runtimeVersion = parseInt(fd.get("node_version"));
         if (siteType === 5) runtimeVersion = parseInt(fd.get("dotnet_version"));
+        if (siteType === 7) runtimeVersion = parseInt(fd.get("python_version"));
 
         const body = {
-            php_version:     parseInt(fd.get("php_version")) || 3,
-            site_type:       siteType,
+            php_version: parseInt(fd.get("php_version")) || 3,
+            site_type: siteType,
             runtime_version: runtimeVersion,
-            start_command:   fd.get("start_command")?.trim() || "",
+            start_command: fd.get("start_command")?.trim() || "",
         };
 
         const installWordPress = siteType === 1 ? fd.get("install_wordpress") === "on" : false;

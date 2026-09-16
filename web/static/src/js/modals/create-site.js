@@ -28,6 +28,7 @@ export function showCreateSiteModal() {
                                 <option value="3">Static HTML</option>
                                 <option value="4">Node.js</option>
                                 <option value="5">.NET</option>
+                                <option value="7">Python</option>                                
                                 <option value="6">Reverse Proxy</option>
                             </select>
                         </div>
@@ -57,9 +58,18 @@ export function showCreateSiteModal() {
                                 <option value="3" selected>.NET 10.0 (LTS)</option>
                             </select>
                         </div>
+                        <div class="uk-width-1-2@s uk-hidden" id="cs-python-version-wrap">
+                            <label class="kp-label">Python Version</label>
+                            <select class="uk-select kp-select" name="python_version">
+                                <option value="1">Python 3.11</option>
+                                <option value="2">Python 3.12</option>
+                                <option value="3">Python 3.13</option>
+                                <option value="4" selected>Python 3.14</option>
+                            </select>
+                        </div>
                         <div class="uk-width-1-1 uk-hidden" id="cs-start-command-wrap">
                             <label class="kp-label">Start Command</label>
-                            <input class="uk-input kp-input" name="start_command" type="text" placeholder="node server.js or dotnet MyApp.dll">
+                            <input class="uk-input kp-input" name="start_command" type="text" placeholder="node server.js, dotnet MyApp.dll, or gunicorn -b 0.0.0.0:8000 app:app">
                         </div>
                         <div class="uk-width-1-1" id="cs-wordpress-wrap">
                             <label><input class="uk-checkbox" type="checkbox" name="install_wordpress" checked> Install WordPress</label>
@@ -83,25 +93,28 @@ export function showCreateSiteModal() {
         </div>`;
 
     document.body.insertAdjacentHTML("beforeend", html);
-    const modal         = UIkit.modal("#kp-create-site-modal");
-    const typeSelect    = document.getElementById("cs-site-type");
-    const phpWrap       = document.getElementById("cs-php-version-wrap");
-    const nodeWrap      = document.getElementById("cs-node-version-wrap");
-    const dotnetWrap    = document.getElementById("cs-dotnet-version-wrap");
-    const startWrap     = document.getElementById("cs-start-command-wrap");
+    const modal = UIkit.modal("#kp-create-site-modal");
+    const typeSelect = document.getElementById("cs-site-type");
+    const phpWrap = document.getElementById("cs-php-version-wrap");
+    const nodeWrap = document.getElementById("cs-node-version-wrap");
+    const dotnetWrap = document.getElementById("cs-dotnet-version-wrap");
+    const pythonWrap = document.getElementById("cs-python-version-wrap");
+    const startWrap = document.getElementById("cs-start-command-wrap");
     const wordpressWrap = document.getElementById("cs-wordpress-wrap");
 
     modal.show();
 
     const domainsWrap = document.getElementById("cs-domains-wrap");
-    const rpNote      = document.getElementById("cs-rp-note");
+    const rpNote = document.getElementById("cs-rp-note");
 
     typeSelect.addEventListener("change", () => {
         const t = parseInt(typeSelect.value);
-        phpWrap.classList.toggle("uk-hidden",       t !== 1 && t !== 2 || t === 6);
-        nodeWrap.classList.toggle("uk-hidden",      t !== 4);
-        dotnetWrap.classList.toggle("uk-hidden",    t !== 5);
-        startWrap.classList.toggle("uk-hidden",     t !== 4 && t !== 5);
+        phpWrap.classList.toggle("uk-hidden", t !== 1 && t !== 2 || t === 6);
+        nodeWrap.classList.toggle("uk-hidden", t !== 4);
+        dotnetWrap.classList.toggle("uk-hidden", t !== 5);
+        pythonWrap.classList.toggle("uk-hidden", t !== 7);
+        startWrap.classList.toggle("uk-hidden", t !== 4 && t !== 5 && t !== 7);
+        startWrap.querySelector("input").required = t === 7;
         wordpressWrap.classList.toggle("uk-hidden", t !== 1 || t === 6);
         domainsWrap.classList.toggle("uk-hidden", t === 6);
         rpNote.classList.toggle("uk-hidden", t !== 6);
@@ -109,24 +122,25 @@ export function showCreateSiteModal() {
 
     document.getElementById("create-site-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Creating...';
 
-        const fd       = new FormData(e.target);
+        const fd = new FormData(e.target);
         const siteType = parseInt(fd.get("site_type"));
         let runtimeVersion = null;
         if (siteType === 4) runtimeVersion = parseInt(fd.get("node_version"));
         if (siteType === 5) runtimeVersion = parseInt(fd.get("dotnet_version"));
+        if (siteType === 7) runtimeVersion = parseInt(fd.get("python_version"));
 
         const body = {
-            name:              fd.get("name").trim(),
-            php_version:       parseInt(fd.get("php_version")) || 3,
-            site_type:         siteType,
-            runtime_version:   runtimeVersion,
-            start_command:     fd.get("start_command")?.trim() || "",
-            domains:           fd.get("domains").split("\n").map((d) => d.trim()).filter(Boolean),
+            name: fd.get("name").trim(),
+            php_version: parseInt(fd.get("php_version")) || 3,
+            site_type: siteType,
+            runtime_version: runtimeVersion,
+            start_command: fd.get("start_command")?.trim() || "",
+            domains: fd.get("domains").split("\n").map((d) => d.trim()).filter(Boolean),
             install_wordpress: siteType === 1 ? fd.get("install_wordpress") === "on" : false,
         };
 

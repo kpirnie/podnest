@@ -16,10 +16,10 @@ export const escapeHtml = (s) =>
 
 // fmtBytes formats a raw byte count into a human-readable string
 export function fmtBytes(bytes) {
-    if (bytes === 0)           return '0 B';
-    if (bytes < 1024)          return `${bytes} B`;
-    if (bytes < 1048576)       return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1073741824)    return `${(bytes / 1048576).toFixed(1)} MB`;
+    if (bytes === 0) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1073741824) return `${(bytes / 1048576).toFixed(1)} MB`;
     return `${(bytes / 1073741824).toFixed(2)} GB`;
 }
 
@@ -40,10 +40,10 @@ export const emptyState = (icon, text) =>
 
 export const statusBadge = (status) => {
     const map = {
-        1: ["running",    "Running"],
-        2: ["stopped",    "Stopped"],
+        1: ["running", "Running"],
+        2: ["stopped", "Stopped"],
         3: ["restarting", "Restarting"],
-        4: ["error",      "Error"],
+        4: ["error", "Error"],
     };
     const [cls, label] = map[status] || ["stopped", "Unknown"];
     return `<span class="kp-status kp-status-${cls}">${label}</span>`;
@@ -53,7 +53,7 @@ const phpLabel = (v) =>
     ({ 3: "8.2", 4: "8.3", 5: "8.4", 6: "8.5" })[v] || "?";
 
 export const siteTypeLabel = (t) =>
-    ({ 1: "WordPress", 2: "PHP", 3: "Static", 4: "Node.js", 5: ".NET", 6: "Reverse Proxy" })[t] || "?";
+    ({ 1: "WordPress", 2: "PHP", 3: "Static", 4: "Node.js", 5: ".NET", 6: "Reverse Proxy", 7: "Python" })[t] || "?";
 
 export const isAdmin = () => window.KP.user.role === window.KP.roles.admin;
 
@@ -62,24 +62,25 @@ export const versionLabel = (site) => {
         case 1: case 2: return `PHP ${phpLabel(site.PHPVersion)}`;
         case 4: return `Node ${{ 2: "22", 4: "24", 5: "25", 6: "26" }[site.RuntimeVersion] || "?"}`;
         case 5: return `.NET ${{ 1: "8.0", 2: "9.0", 3: "10.0" }[site.RuntimeVersion] || "?"}`;
+        case 7: return `Python ${{ 1: "3.11", 2: "3.12", 3: "3.13", 4: "3.14" }[site.RuntimeVersion] || "?"}`;
         case 6: return "Reverse Proxy";
         default: return "";
     }
 };
 
 export const normalizeUser = (u) => ({
-    id:           u.id           ?? u.ID,
-    uname:        u.uname        ?? u.UName,
-    uhash:        u.uhash        ?? u.UHash,
-    fname:        u.fname        ?? u.FName,
-    lname:        u.lname        ?? u.LName,
-    email:        u.email        ?? u.Email,
-    phone:        u.phone        ?? u.Phone,
-    role:         u.role         ?? u.Role,
+    id: u.id ?? u.ID,
+    uname: u.uname ?? u.UName,
+    uhash: u.uhash ?? u.UHash,
+    fname: u.fname ?? u.FName,
+    lname: u.lname ?? u.LName,
+    email: u.email ?? u.Email,
+    phone: u.phone ?? u.Phone,
+    role: u.role ?? u.Role,
     totp_enabled: u.totp_enabled ?? false,
     notify_email: u.notify_email ?? false,
-    notify_sms:   u.notify_sms   ?? false,
-    created:      u.created      ?? u.Created,
+    notify_sms: u.notify_sms ?? false,
+    created: u.created ?? u.Created,
 });
 
 export function confirm(title, message) {
@@ -87,7 +88,7 @@ export function confirm(title, message) {
         document.getElementById("kp-confirm-title").textContent = title;
         document.getElementById("kp-confirm-message").textContent = message;
         const modal = UIkit.modal("#kp-confirm-modal");
-        const btn   = document.getElementById("kp-confirm-ok");
+        const btn = document.getElementById("kp-confirm-ok");
         btn.addEventListener("click", () => { modal.hide(); resolve(true); }, { once: true });
         modal.show();
         document.getElementById("kp-confirm-modal")
@@ -120,7 +121,7 @@ export function hideProgressModal() {
 // or null if the user cancelled
 export function showCloneModal(sourceName) {
     return new Promise((resolve) => {
-        const id  = "kp-clone-modal";
+        const id = "kp-clone-modal";
         const html = `
             <div id="${id}" uk-modal>
                 <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:420px">
@@ -141,9 +142,9 @@ export function showCloneModal(sourceName) {
             </div>`;
 
         document.body.insertAdjacentHTML("beforeend", html);
-        const modal  = UIkit.modal(`#${id}`);
-        const input  = document.getElementById("kp-clone-name");
-        const okBtn  = document.getElementById("kp-clone-ok");
+        const modal = UIkit.modal(`#${id}`);
+        const input = document.getElementById("kp-clone-name");
+        const okBtn = document.getElementById("kp-clone-ok");
         const cancel = document.getElementById("kp-clone-cancel");
 
         const cleanup = (val) => {
@@ -174,7 +175,7 @@ export function showCloneModal(sourceName) {
 // value, or null if the user cancelled
 export function showRenameModal(currentName) {
     return new Promise((resolve) => {
-        const id  = "kp-rename-modal";
+        const id = "kp-rename-modal";
         const html = `
             <div id="${id}" uk-modal>
                 <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:420px">
@@ -194,9 +195,9 @@ export function showRenameModal(currentName) {
             </div>`;
 
         document.body.insertAdjacentHTML("beforeend", html);
-        const modal  = UIkit.modal(`#${id}`);
-        const input  = document.getElementById("kp-rename-name");
-        const okBtn  = document.getElementById("kp-rename-ok");
+        const modal = UIkit.modal(`#${id}`);
+        const input = document.getElementById("kp-rename-name");
+        const okBtn = document.getElementById("kp-rename-ok");
         const cancel = document.getElementById("kp-rename-cancel");
 
         const cleanup = (val) => {
@@ -227,12 +228,12 @@ export function showRenameModal(currentName) {
 // operation between a clone and its parent site
 export function showSyncModal(direction, cloneName, parentName) {
     return new Promise((resolve) => {
-        const id       = "kp-sync-modal";
-        const isPull   = direction === "pull";
-        const title    = isPull ? "Pull From Parent" : "Push To Parent";
-        const icon     = isPull ? "cloud-download" : "cloud-upload";
-        const srcName  = isPull ? parentName : cloneName;
-        const dstName  = isPull ? cloneName  : parentName;
+        const id = "kp-sync-modal";
+        const isPull = direction === "pull";
+        const title = isPull ? "Pull From Parent" : "Push To Parent";
+        const icon = isPull ? "cloud-download" : "cloud-upload";
+        const srcName = isPull ? parentName : cloneName;
+        const dstName = isPull ? cloneName : parentName;
         const html = `
             <div id="${id}" uk-modal>
                 <div class="uk-modal-dialog kp-modal uk-modal-body" style="max-width:460px">
@@ -256,8 +257,8 @@ export function showSyncModal(direction, cloneName, parentName) {
             </div>`;
 
         document.body.insertAdjacentHTML("beforeend", html);
-        const modal  = UIkit.modal(`#${id}`);
-        const okBtn  = document.getElementById("kp-sync-ok");
+        const modal = UIkit.modal(`#${id}`);
+        const okBtn = document.getElementById("kp-sync-ok");
         const cancel = document.getElementById("kp-sync-cancel");
 
         const cleanup = (val) => {
@@ -266,10 +267,10 @@ export function showSyncModal(direction, cloneName, parentName) {
             resolve(val);
         };
 
-        okBtn.addEventListener("click",    () => cleanup(true),  { once: true });
-        cancel.addEventListener("click",   () => cleanup(false), { once: true });
+        okBtn.addEventListener("click", () => cleanup(true), { once: true });
+        cancel.addEventListener("click", () => cleanup(false), { once: true });
         document.getElementById(id)
-            .addEventListener("hidden",    () => cleanup(false), { once: true });
+            .addEventListener("hidden", () => cleanup(false), { once: true });
 
         modal.show();
     });

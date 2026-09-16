@@ -15,9 +15,10 @@ export function renderLogsTab(siteId, siteType) {
     const runtimeOption = () => {
         switch (siteType) {
             case 1: case 2: return `<option value="php">PHP-FPM</option>`;
-            case 4:         return `<option value="app">Node.js</option>`;
-            case 5:         return `<option value="app">.NET</option>`;
-            default:        return "";
+            case 4: return `<option value="app">Node.js</option>`;
+            case 5: return `<option value="app">.NET</option>`;
+            case 7: return `<option value="app">Python</option>`;
+            default: return "";
         }
     };
 
@@ -67,22 +68,22 @@ export function renderLogsTab(siteId, siteType) {
 export function wireLogsTab(root, siteId) {
     let ws = null, connected = false;
 
-    const output     = root.querySelector("#log-output");
+    const output = root.querySelector("#log-output");
     const connectBtn = root.querySelector("#log-connect");
     const disconnBtn = root.querySelector("#log-disconnect");
-    const clearBtn   = root.querySelector("#log-clear");
+    const clearBtn = root.querySelector("#log-clear");
     const autoScroll = root.querySelector("#log-autoscroll");
-    const logStatus  = root.querySelector("#log-status");
+    const logStatus = root.querySelector("#log-status");
 
     function appendLog(text) {
         text.split("\n").forEach((line) => {
             if (!line) return;
             const div = document.createElement("div");
-            div.className = line.match(/WAF BLOCK/i)  ? "kp-log-line-err"
-                : line.match(/WAF DETECT/i)           ? "kp-log-line-warn"
-                : line.match(/error|crit|emerg/i)     ? "kp-log-line-err"
-                : line.match(/warn/i)                 ? "kp-log-line-warn"
-                : line.match(/info|notice/i)          ? "kp-log-line-info" : "";
+            div.className = line.match(/WAF BLOCK/i) ? "kp-log-line-err"
+                : line.match(/WAF DETECT/i) ? "kp-log-line-warn"
+                    : line.match(/error|crit|emerg/i) ? "kp-log-line-err"
+                        : line.match(/warn/i) ? "kp-log-line-warn"
+                            : line.match(/info|notice/i) ? "kp-log-line-info" : "";
             div.textContent = line;
             output.appendChild(div);
         });
@@ -106,16 +107,16 @@ export function wireLogsTab(root, siteId) {
     connectBtn.addEventListener("click", () => {
         disconnect();
         const container = root.querySelector("#log-container").value;
-        const tail      = root.querySelector("#log-tail").value;
+        const tail = root.querySelector("#log-tail").value;
         const proto = location.protocol === "https:" ? "wss" : "ws";
         // route to the correct WebSocket endpoint based on container selection
         const wsUrl = container === "waf"
             ? `${proto}://${location.host}/api/sites/${siteId}/logs/waf?tail=${tail}`
             : container === "proxy"
-            ? `${proto}://${location.host}/api/sites/${siteId}/logs/proxy?tail=${tail}`
-            : container === "access"
-            ? `${proto}://${location.host}/api/sites/${siteId}/logs/proxy?tail=${tail}`
-            : `${proto}://${location.host}/api/sites/${siteId}/logs?container=${container}&tail=${tail}`;
+                ? `${proto}://${location.host}/api/sites/${siteId}/logs/proxy?tail=${tail}`
+                : container === "access"
+                    ? `${proto}://${location.host}/api/sites/${siteId}/logs/proxy?tail=${tail}`
+                    : `${proto}://${location.host}/api/sites/${siteId}/logs?container=${container}&tail=${tail}`;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
@@ -125,8 +126,8 @@ export function wireLogsTab(root, siteId) {
             if (logStatus) logStatus.textContent = `Connected — ${container}`;
         };
         ws.onmessage = (e) => appendLog(e.data);
-        ws.onerror   = () => { if (connected) return; };
-        ws.onclose   = () => {
+        ws.onerror = () => { if (connected) return; };
+        ws.onclose = () => {
             connected = false;
             connectBtn.disabled = false;
             disconnBtn.disabled = true;
