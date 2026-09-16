@@ -229,6 +229,11 @@ func DownloadWordPress(htmlDir string, siteUID int, recreate bool) error {
 	}
 	defer resp.Body.Close()
 
+	// make sure we have a good response
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("downloading WordPress: unexpected status %s", resp.Status)
+	}
+
 	gz, err := gzip.NewReader(resp.Body)
 	if err != nil {
 		return fmt.Errorf("reading gzip stream: %w", err)
