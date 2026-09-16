@@ -202,8 +202,8 @@ var hcTests = map[string][]string{
 	HCRoleRedis:     {"CMD-SHELL", "redis-cli ping 2>&1 | grep -qiE 'PONG|NOAUTH|WRONGPASS' || exit 1"},
 	HCRoleVarnish:   {"CMD-SHELL", "curl -sf http://localhost/ -o /dev/null || exit 1"},
 	HCRolePMA:       {"CMD-SHELL", "curl -sf http://localhost:8082/ -o /dev/null || exit 1"},
-	HCRoleAppNode:   {"CMD-SHELL", "curl -sf http://localhost:3000/ -o /dev/null || exit 1"},
-	HCRoleAppDotNet: {"CMD-SHELL", "curl -sf http://localhost:8080/ -o /dev/null || exit 1"},
+	HCRoleAppNode:   {"CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/ || exit 1"},
+	HCRoleAppDotNet: {"CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/ || exit 1"},
 }
 
 // RegisterType registers a site type module; called once per module at startup.
