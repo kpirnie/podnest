@@ -171,6 +171,9 @@ func RenderNginxSite(configJSON string, siteType int, varnishEnabled bool) (stri
 	case models.SiteTypeDotNet:
 		logger.Debug("rendering nginx.conf for .NET site")
 		return renderNginxProxy(configJSON, models.DotNetInternalPort, listenPort)
+	case models.SiteTypePython:
+		logger.Debug("rendering nginx.conf for Python site")
+		return renderNginxProxy(configJSON, models.PythonInternalPort, listenPort)
 	case models.SiteTypeStatic:
 		logger.Debug("rendering nginx.conf for static site")
 		return renderNginxStatic(configJSON, listenPort)

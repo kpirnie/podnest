@@ -28,6 +28,7 @@ import (
 	"podnest/internal/modules/types/dotnet"
 	"podnest/internal/modules/types/node"
 	"podnest/internal/modules/types/php"
+	"podnest/internal/modules/types/python"
 	"podnest/internal/modules/types/reverseproxy"
 	"podnest/internal/modules/types/static"
 	"podnest/internal/modules/types/wordpress"
@@ -121,6 +122,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterType(static.Module{})
 	modules.RegisterType(node.Module{})
 	modules.RegisterType(dotnet.Module{})
+	modules.RegisterType(python.Module{})
 	modules.RegisterType(reverseproxy.Module{})
 
 	// create the server
