@@ -25,6 +25,7 @@ const (
 	ImgRedis   = "docker.io/library/redis:alpine"
 	ImgPMA     = "docker.io/phpmyadmin/phpmyadmin:latest"
 	ImgNode    = "docker.io/library/node:"
+	ImgPython  = "docker.io/library/python:"
 	ImgVarnish = "docker.io/library/varnish:latest"
 
 	// from Microsoft Container Registry
@@ -74,6 +75,7 @@ const (
 	SiteTypeNode         = 4
 	SiteTypeDotNet       = 5
 	SiteTypeReverseProxy = 6
+	SiteTypePython       = 7
 )
 
 var SiteTypeMap = map[int]string{
@@ -83,6 +85,7 @@ var SiteTypeMap = map[int]string{
 	SiteTypeNode:         "Node.js",
 	SiteTypeDotNet:       ".NET",
 	SiteTypeReverseProxy: "Reverse Proxy",
+	SiteTypePython:       "Python",
 }
 
 // config types
@@ -109,11 +112,20 @@ var DotNetVersionMap = map[int]string{
 	3: "10.0",
 }
 
+// python versions
+var PythonVersionMap = map[int]string{
+	1: "3.11",
+	2: "3.12",
+	3: "3.13",
+	4: "3.14",
+}
+
 // internal service ports
 const (
 	NodeInternalPort   = 3000
 	DotNetInternalPort = 8080
 	PHPMyAdminPort     = 8082
+	PythonInternalPort = 8000
 )
 
 // nginx internal listen port when Varnish sits in front of it; safe within
@@ -358,6 +370,16 @@ func DotNetImage(version int) string {
 	return ImgDotNet + ver
 }
 
+// PythonImage returns the python slim image for a given runtime_version int
+func PythonImage(version int) string {
+	ver, ok := PythonVersionMap[version]
+	if !ok {
+		ver = "3.14"
+	}
+	logger.Debug("Generated Python image tag")
+	return ImgPython + ver + "-slim"
+}
+
 // StatusLabel returns the string label for a site_status int
 func StatusLabel(status int) string {
 	if label, ok := SiteStatusMap[status]; ok {
@@ -385,6 +407,11 @@ func RuntimeImage(site *Site) string {
 			return DotNetImage(*site.RuntimeVersion)
 		}
 		return DotNetImage(1)
+	case SiteTypePython:
+		if site.RuntimeVersion != nil {
+			return PythonImage(*site.RuntimeVersion)
+		}
+		return PythonImage(4)
 	}
 	return ""
 }

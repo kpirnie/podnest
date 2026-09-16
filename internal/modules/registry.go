@@ -192,6 +192,7 @@ const (
 	HCRolePMA       = "pma"
 	HCRoleAppNode   = "app-node"
 	HCRoleAppDotNet = "app-dotnet"
+	HCRoleAppPython = "app-python"
 )
 
 // hcTests maps each container role to its healthcheck test command.
@@ -204,6 +205,7 @@ var hcTests = map[string][]string{
 	HCRolePMA:       {"CMD-SHELL", "curl -sf http://localhost:8082/ -o /dev/null || exit 1"},
 	HCRoleAppNode:   {"CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/ || exit 1"},
 	HCRoleAppDotNet: {"CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/ || exit 1"},
+	HCRoleAppPython: {"CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=5)\" || exit 1"},
 }
 
 // RegisterType registers a site type module; called once per module at startup.
