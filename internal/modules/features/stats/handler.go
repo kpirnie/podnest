@@ -965,7 +965,7 @@ func statsRoles(siteType int) []string {
 	switch siteType {
 	case models.SiteTypeWordPress, models.SiteTypePHP:
 		return []string{"nginx", "php", "db", "redis"}
-	case models.SiteTypeNode, models.SiteTypeDotNet:
+	case models.SiteTypeNode, models.SiteTypeDotNet, models.SiteTypePython:
 		return []string{"nginx", "db", "redis"}
 	case models.SiteTypeStatic:
 		return []string{"nginx"}

@@ -303,6 +303,11 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "name and port are required")
 		return
 	}
+	if req.SiteType == models.SiteTypePython && strings.TrimSpace(req.StartCommand) == "" {
+		logger.Error("missing start command for python site creation: name=%s", req.Name)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "start command is required for Python sites")
+		return
+	}
 	name, err := NormalizeSiteName(req.Name)
 	if err != nil {
 		logger.Error("invalid site name for creation: %v", err)
@@ -591,6 +596,12 @@ func (h *Handler) apiUpdateSite(w http.ResponseWriter, r *http.Request) {
 
 	if req.StartCommand != "" {
 		site.StartCommand = req.StartCommand
+	}
+
+	if site.SiteType == models.SiteTypePython && strings.TrimSpace(site.StartCommand) == "" {
+		logger.Error("missing start command for python site update on site %d", site.ID)
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "start command is required for Python sites")
+		return
 	}
 
 	// capture prior state before mutating

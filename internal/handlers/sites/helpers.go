@@ -73,6 +73,10 @@ func ValidateSiteVersions(siteType, phpVersion int, runtimeVersion *int) error {
 			if _, ok := models.DotNetVersionMap[*runtimeVersion]; !ok {
 				return fmt.Errorf("ValidateSiteVersions: unknown dotnet version %d", *runtimeVersion)
 			}
+		case models.SiteTypePython:
+			if _, ok := models.PythonVersionMap[*runtimeVersion]; !ok {
+				return fmt.Errorf("ValidateSiteVersions: unknown python version %d", *runtimeVersion)
+			}
 		}
 	}
 
