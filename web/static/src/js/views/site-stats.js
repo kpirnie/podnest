@@ -182,7 +182,7 @@ async function loadStatsTraffic(siteId) {
     // hits per hour chart
     const canvas = document.getElementById('stats-chart');
     if (canvas && window.Chart) {
-        const labels  = (data.hits_per_hour ?? []).map((b) => {
+        const labels = (data.hits_per_hour ?? []).map((b) => {
             const d = new Date(b.hour);
             return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         });
@@ -200,7 +200,7 @@ async function loadStatsTraffic(siteId) {
                         label: '2xx',
                         data: (data.hits_per_hour ?? []).map((b) => b['2xx']),
                         backgroundColor: 'rgba(39,174,96,0.75)',
-                        borderColor:     'rgba(39,174,96,1)',
+                        borderColor: 'rgba(39,174,96,1)',
                         borderWidth: 1,
                         borderRadius: 3,
                     },
@@ -208,7 +208,7 @@ async function loadStatsTraffic(siteId) {
                         label: '3xx',
                         data: (data.hits_per_hour ?? []).map((b) => b['3xx']),
                         backgroundColor: 'rgba(43,142,255,0.75)',
-                        borderColor:     'rgba(43,142,255,1)',
+                        borderColor: 'rgba(43,142,255,1)',
                         borderWidth: 1,
                         borderRadius: 3,
                     },
@@ -216,7 +216,7 @@ async function loadStatsTraffic(siteId) {
                         label: '4xx',
                         data: (data.hits_per_hour ?? []).map((b) => b['4xx']),
                         backgroundColor: 'rgba(255,171,0,0.75)',
-                        borderColor:     'rgba(255,171,0,1)',
+                        borderColor: 'rgba(255,171,0,1)',
                         borderWidth: 1,
                         borderRadius: 3,
                     },
@@ -224,7 +224,7 @@ async function loadStatsTraffic(siteId) {
                         label: '5xx',
                         data: (data.hits_per_hour ?? []).map((b) => b['5xx']),
                         backgroundColor: 'rgba(235,59,90,0.75)',
-                        borderColor:     'rgba(235,59,90,1)',
+                        borderColor: 'rgba(235,59,90,1)',
                         borderWidth: 1,
                         borderRadius: 3,
                     },
@@ -272,22 +272,22 @@ async function loadStatsTraffic(siteId) {
                     tooltip: {
                         mode: 'index',
                         backgroundColor: '#0c1530',
-                        borderColor:     '#1a2a4a',
+                        borderColor: '#1a2a4a',
                         borderWidth: 1,
                         titleColor: '#dde8f5',
-                        bodyColor:  '#6b8cae',
+                        bodyColor: '#6b8cae',
                     },
                 },
                 scales: {
                     x: {
                         stacked: true,
                         ticks: { color: '#6b8cae', font: { size: 10 }, maxRotation: 45 },
-                        grid:  { color: 'rgba(26,42,74,0.6)' },
+                        grid: { color: 'rgba(26,42,74,0.6)' },
                     },
                     y: {
                         stacked: true,
                         ticks: { color: '#6b8cae', font: { size: 10 } },
-                        grid:  { color: 'rgba(26,42,74,0.6)' },
+                        grid: { color: 'rgba(26,42,74,0.6)' },
                         beginAtZero: true,
                     },
                 },
@@ -365,7 +365,7 @@ function renderPodTable(containers) {
             ? ((c.mem_used / c.mem_limit) * 100).toFixed(1)
             : 0;
         const isHot = memPct > 80;
-        const role  = c.name.split('-').pop();
+        const role = c.name.split('-').pop();
         return `
             <tr>
                 <td class="kp-stats-pod-role kp-stats-pod-role-btn"
@@ -417,20 +417,20 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
     const sorted = [...entries].sort((a, b) => {
         let av, bv;
         switch (sortCol) {
-            case 'time':   av = a.time;      bv = b.time;      break;
-            case 'method': av = a.method;    bv = b.method;    break;
-            case 'site':   av = a.site_name; bv = b.site_name; break;
-            case 'ip':     av = a.client_ip; bv = b.client_ip; break;
-            default:       av = a.status;    bv = b.status;    break;
+            case 'time': av = a.time; bv = b.time; break;
+            case 'method': av = a.method; bv = b.method; break;
+            case 'site': av = a.site_name; bv = b.site_name; break;
+            case 'ip': av = a.client_ip; bv = b.client_ip; break;
+            default: av = a.status; bv = b.status; break;
         }
         if (av < bv) return sortDesc ? 1 : -1;
         if (av > bv) return sortDesc ? -1 : 1;
         return 0;
     });
 
-    const pageSize   = 50;
+    const pageSize = 50;
     const totalPages = Math.ceil(sorted.length / pageSize);
-    const slice      = sorted.slice(page * pageSize, (page + 1) * pageSize);
+    const slice = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
     const rows = slice.map((e) => {
         // show full UA — CSS handles wrapping in the cell; all log-derived
@@ -462,12 +462,12 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
         <div class="kp-table-wrap uk-overflow-auto">
             <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                 <thead><tr>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="time">Time ${sortCol==='time' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
-                    ${showSite ? `<th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="site">Site ${sortCol==='site' ? (sortDesc ? '↓' : '↑') : '↕'}</th>` : ''}
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="method">Method ${sortCol==='method' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="time">Time ${sortCol === 'time' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    ${showSite ? `<th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="site">Site ${sortCol === 'site' ? (sortDesc ? '↓' : '↑') : '↕'}</th>` : ''}
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="method">Method ${sortCol === 'method' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">Path</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="status">Status ${sortCol==='status' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
-                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="ip">IP ${sortCol==='ip' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="status">Status ${sortCol === 'status' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
+                    <th style="color:var(--kp-text-dim);font-size:0.75rem;cursor:pointer;user-select:none" data-dd-col="ip">IP ${sortCol === 'ip' ? (sortDesc ? '↓' : '↑') : '↕'}</th>
                     <th style="color:var(--kp-text-dim);font-size:0.75rem">UA</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
@@ -481,7 +481,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
 export async function openDrilldown(endpoint, hour, statusClass, showSite = false) {
     const modal = document.getElementById('stats-drilldown-modal');
     const title = document.getElementById('stats-drilldown-title');
-    const body  = document.getElementById('stats-drilldown-body');
+    const body = document.getElementById('stats-drilldown-body');
     if (!modal || !body) return;
 
     title.textContent = `${statusClass} Requests — ${new Date(hour).toLocaleString([], {
@@ -490,13 +490,12 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
     body.innerHTML = `<div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>`;
     UIkit.modal(modal).show();
 
-    let entries  = [];
-    let page     = 0;
-    let sortCol  = 'time';
+    let entries = [];
+    let page = 0;
+    let sortCol = 'time';
     let sortDesc = true;
 
     function redraw() {
-        console.log(showSite);
         body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc, showSite);
 
         // sort column buttons
@@ -506,7 +505,7 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
                 if (sortCol === col) {
                     sortDesc = !sortDesc;
                 } else {
-                    sortCol  = col;
+                    sortCol = col;
                     sortDesc = true;
                 }
                 page = 0;
@@ -538,7 +537,7 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
 // wireStatsTab attaches all event listeners and starts the WS pod stream
 export function wireStatsTab(root, siteId, siteType) {
     const isRP = siteType === 6;
-    let podWS   = null;
+    let podWS = null;
 
     // start WebSocket pod stream for non-RP sites
     function startPodStream() {
