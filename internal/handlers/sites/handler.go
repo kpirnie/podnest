@@ -990,7 +990,7 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 
 	// if the site type is WordPress, download the latest WordPress files into the html directory, logging errors if the download fails
 	if site.SiteType == models.SiteTypeWordPress {
-		if err := wordpress.DownloadWordPress(siteDir+"/html", int(site.UID)); err != nil {
+		if err := wordpress.DownloadWordPress(siteDir+"/html", int(site.UID), true); err != nil {
 			logger.Error("failed to download WordPress for site %s: %v", site.Name, err)
 		}
 	}

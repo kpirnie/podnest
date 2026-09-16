@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -133,7 +134,7 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 		logger.Warn("could not chown wp-config.php: %v", err)
 	}
 
-	if err := DownloadWordPress(dir+"/html", cfg.SiteUID); err != nil {
+	if err := DownloadWordPress(dir+"/html", cfg.SiteUID, false); err != nil {
 		return fmt.Errorf("download WordPress: %w", err)
 	}
 
@@ -218,9 +219,9 @@ require_once ABSPATH . 'wp-settings.php';
 	)
 }
 
-// downloadWordPress fetches the latest WordPress release from wordpress.org and
-// extracts it directly into htmlDir, stripping the top-level "wordpress/" prefix.
-func DownloadWordPress(htmlDir string, siteUID int) error {
+// On a fresh install every bundled theme except WP_DEFAULT_THEME is removed; on
+// a recreate the bundled themes and plugins are skipped so existing ones are left alone.
+func DownloadWordPress(htmlDir string, siteUID int, recreate bool) error {
 	dlClient := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := dlClient.Get("https://wordpress.org/latest.tar.gz")
 	if err != nil {
@@ -234,6 +235,7 @@ func DownloadWordPress(htmlDir string, siteUID int) error {
 	}
 	defer gz.Close()
 
+	themes := make(map[string]struct{})
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -252,6 +254,19 @@ func DownloadWordPress(htmlDir string, siteUID int) error {
 
 		// guard against path traversal via crafted entry names
 		if target != htmlDir && !strings.HasPrefix(target, htmlDir+string(os.PathSeparator)) {
+			continue
+		}
+
+		rel := strings.TrimPrefix(target, htmlDir+string(os.PathSeparator))
+		if rest, ok := strings.CutPrefix(rel, "wp-content/themes/"); ok {
+			if recreate {
+				continue
+			}
+			if theme, _, found := strings.Cut(rest, "/"); found {
+				themes[theme] = struct{}{}
+			}
+		}
+		if recreate && strings.HasPrefix(rel, "wp-content/plugins/") {
 			continue
 		}
 
@@ -275,6 +290,39 @@ func DownloadWordPress(htmlDir string, siteUID int) error {
 				return fmt.Errorf("writing %s: %w", target, copyErr)
 			}
 			_ = os.Chown(target, siteUID, siteUID)
+		}
+	}
+
+	if recreate {
+		return nil
+	}
+	return pruneBundledThemes(htmlDir, themes)
+}
+
+var defaultThemeRe = regexp.MustCompile(`define\(\s*'WP_DEFAULT_THEME'\s*,\s*'([^']+)'`)
+
+// pruneBundledThemes removes every bundled theme extracted from the release
+// archive except the one named by WP_DEFAULT_THEME in
+// wp-includes/default-constants.php. If the constant cannot be read, all
+// bundled themes are kept.
+func pruneBundledThemes(htmlDir string, themes map[string]struct{}) error {
+	b, err := os.ReadFile(filepath.Join(htmlDir, "wp-includes", "default-constants.php"))
+	if err != nil {
+		logger.Warn("could not read default-constants.php, keeping bundled themes: %v", err)
+		return nil
+	}
+	m := defaultThemeRe.FindSubmatch(b)
+	if m == nil {
+		logger.Warn("could not find WP_DEFAULT_THEME, keeping bundled themes")
+		return nil
+	}
+	keep := string(m[1])
+	for t := range themes {
+		if t == keep {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(htmlDir, "wp-content", "themes", t)); err != nil {
+			return fmt.Errorf("removing bundled theme %s: %w", t, err)
 		}
 	}
 	return nil
