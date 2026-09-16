@@ -789,7 +789,7 @@ func parseTrafficLog(ctx context.Context, logPath string, domains []string, glob
 	return &stats, nil
 }
 
-// parseDrilldown reads an access log and returns up to 500 entries matching
+// parseDrilldown reads an access log and returns every entry matching
 // the given hour and status class ("4xx" or "5xx"). Pass a non-nil domains
 // slice to filter to matching hosts (manager-scoped global drilldown); pass
 // nil when the log is already the correct scope (a per-site file, or the
@@ -888,9 +888,6 @@ func parseDrilldown(ctx context.Context, logPath, hour, statusClass string, doma
 			UA:       ua,
 		})
 
-		if len(results) >= 500 {
-			break
-		}
 	}
 
 	if err := scanner.Err(); err != nil {
