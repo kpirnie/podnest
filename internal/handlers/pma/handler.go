@@ -200,7 +200,7 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 			req.URL.Path = upstreamPath
 			req.URL.RawQuery = r.URL.RawQuery
 			req.Host = target.Host
-			req.Header.Set("X-Forwarded-Host", r.Header.Get("Host"))
+			req.Header.Set("X-Forwarded-Host", r.Host)
 			logger.Debug("PMA proxy director: upstream=%s?%s", upstreamPath, r.URL.RawQuery)
 		},
 		ModifyResponse: func(resp *http.Response) error {
