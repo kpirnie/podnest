@@ -67,6 +67,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// render the login page — include the CSP nonce so the inline PWA
 		// install script is allowed to execute under the page's CSP
 		loginData := map[string]any{"Nonce": cspNonce(r)}
+		loginData["CSRF"] = auth.IssueLoginCSRF(w, r)
 		if msg := r.URL.Query().Get("msg"); msg != "" {
 			loginData["Error"] = msg
 		}
@@ -104,6 +105,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if !auth.LoginCSRFValid(r) {
+			logger.Error("login CSRF validation failed from %s", ip)
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+
 		uname := r.FormValue("username")
 		password := r.FormValue("password")
 
@@ -113,6 +120,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			logger.Error("login failed for user '%s': %v", logger.SafeValue(uname), err)
 			if err := web.Templates.ExecuteTemplate(w, "login.html", map[string]any{
 				"Nonce": cspNonce(r),
+				"CSRF":  auth.IssueLoginCSRF(w, r),
 				"Error": "Invalid username or password",
 			}); err != nil {
 				logger.Error("failed to execute login.html template after failed login: %v", err)
@@ -187,7 +195,9 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
-		if err := web.Templates.ExecuteTemplate(w, "totp.html", nil); err != nil {
+		if err := web.Templates.ExecuteTemplate(w, "totp.html", map[string]any{
+			"CSRF": auth.IssueLoginCSRF(w, r),
+		}); err != nil {
 			logger.Error("failed to execute totp.html template: %v", err)
 			http.Error(w, "template error", http.StatusInternalServerError)
 		}
@@ -207,6 +217,18 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 				Details: `{"event":"totp_lockout"}`,
 			})
 			http.Error(w, "too many failed attempts, please try again later", http.StatusTooManyRequests)
+			return
+		}
+
+		// parse the full form and CSRF token
+		if err := r.ParseForm(); err != nil {
+			logger.Error("failed to parse TOTP form: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if !auth.LoginCSRFValid(r) {
+			logger.Error("TOTP CSRF validation failed from %s", ip)
+			http.Error(w, "invalid request", http.StatusForbidden)
 			return
 		}
 
@@ -259,6 +281,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 			if !used {
 				logger.Warn("invalid TOTP/backup code for user %d", user.ID)
 				if err := web.Templates.ExecuteTemplate(w, "totp.html", map[string]any{
+					"CSRF":  auth.IssueLoginCSRF(w, r),
 					"Error": "Invalid or expired code — please try again",
 				}); err != nil {
 					http.Error(w, "template error", http.StatusInternalServerError)

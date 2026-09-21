@@ -7,6 +7,7 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -31,6 +32,8 @@ const (
 	PassMin               = 32
 	PassMax               = 64
 	sessionExtendInterval = 5 * time.Minute
+	LoginCSRFCookieName   = "podnest_lcsrf"
+	LoginCSRFDuration     = 30 * time.Minute
 )
 
 // Common authentication errors
@@ -236,6 +239,37 @@ func ClearTOTPPendingCookie(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
+}
+
+// IssueLoginCSRF mints a pre-session CSRF token, sets it as a cookie, and
+// returns it for embedding in the login and TOTP forms. The login endpoints are
+// unauthenticated, so there is no session to hang a token on — the cookie and
+// the form field are compared against each other instead.
+func IssueLoginCSRF(w http.ResponseWriter, r *http.Request) string {
+	token, err := models.GenerateSessionID()
+	if err != nil {
+		logger.Error("failed to generate login CSRF token: %v", err)
+		return ""
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     LoginCSRFCookieName,
+		Value:    token,
+		Path:     "/login",
+		HttpOnly: true,
+		Secure:   IsSecure(r),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(LoginCSRFDuration.Seconds()),
+	})
+	return token
+}
+
+// LoginCSRFValid reports whether the submitted form token matches the cookie.
+func LoginCSRFValid(r *http.Request) bool {
+	cookie, err := r.Cookie(LoginCSRFCookieName)
+	if err != nil || cookie.Value == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(r.FormValue("csrf"))) == 1
 }
 
 // TOTPPendingFromRequest extracts the TOTP pending token from the request cookie.

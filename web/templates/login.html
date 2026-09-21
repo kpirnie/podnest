@@ -80,6 +80,7 @@
                     {{end}}
 
                     <form method="POST" action="/login" class="uk-form-stacked">
+                        <input type="hidden" name="csrf" value="{{.CSRF}}">
                         <div class="uk-margin">
                             <label class="kp-label" for="username">Username</label>
                             <div class="uk-inline uk-width-1-1">
