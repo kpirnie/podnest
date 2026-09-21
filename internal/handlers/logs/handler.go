@@ -21,6 +21,7 @@ import (
 	"podnest/internal/apiutil"
 	"podnest/internal/auth"
 	"podnest/internal/db"
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -229,13 +230,19 @@ func (h *Handler) apiSiteWAFLog(w http.ResponseWriter, r *http.Request) {
 	defer pingTicker.Stop()
 
 	// all sites write WAF events to their per-site log regardless of type
-	wafLogPath := fmt.Sprintf("%s/sites/%s/logs/waf.log", h.AppPath, site.Name)
+	siteDir, err := fileutil.SiteDir(h.AppPath+"/sites", site.Name)
+	if err != nil {
+		logger.Error("apiSiteWAFLog: rejected site directory for site %d: %v", site.ID, err)
+		conn.WriteMessage(websocket.TextMessage, []byte("[error] invalid site"))
+		return
+	}
+	wafLogPath := siteDir + "/logs/waf.log"
 	ctx := r.Context()
 
 	// if the per-site waf.log doesn't exist yet, start live tail with no initial lines
-	initial, err := tailLogLines(wafLogPath, tail)
-	if err != nil && !os.IsNotExist(err) {
-		logger.Error("apiSiteWAFLog: tail failed for site %d: %v", site.ID, err)
+	initial, tailErr := tailLogLines(wafLogPath, tail)
+	if tailErr != nil && !os.IsNotExist(tailErr) {
+		logger.Error("apiSiteWAFLog: tail failed for site %d: %v", site.ID, tailErr)
 		return
 	}
 	for _, line := range initial {
@@ -404,13 +411,19 @@ func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	defer pingTicker.Stop()
 
 	// all sites write to per-site access.log — no domain filtering needed
-	logPath := fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)
+	siteDir, err := fileutil.SiteDir(h.AppPath+"/sites", site.Name)
+	if err != nil {
+		logger.Error("apiSiteProxyLog: rejected site directory for site %d: %v", site.ID, err)
+		conn.WriteMessage(websocket.TextMessage, []byte("[error] invalid site"))
+		return
+	}
+	logPath := siteDir + "/logs/access.log"
 	ctx := r.Context()
 
 	// send initial tail; if the file doesn't exist yet return no entries
-	initial, err := tailLogLines(logPath, tail)
-	if err != nil && !os.IsNotExist(err) {
-		logger.Error("apiSiteProxyLog: tail failed for site %d: %v", site.ID, err)
+	initial, tailErr := tailLogLines(logPath, tail)
+	if tailErr != nil && !os.IsNotExist(tailErr) {
+		logger.Error("apiSiteProxyLog: tail failed for site %d: %v", site.ID, tailErr)
 		return
 	}
 	for _, line := range initial {
