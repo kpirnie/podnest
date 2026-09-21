@@ -203,7 +203,9 @@ func (h *Handler) renameDatabase(ctx context.Context, site *models.Site, oldDB, 
 		"mariadb", "-uroot", "-N", "-B", "-e",
 		fmt.Sprintf(
 			"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA='%s' AND TABLE_TYPE='BASE TABLE'",
-			strings.ReplaceAll(oldDB, "'", "''"),
+			// backslash is an escape character in MariaDB's default mode, so
+			// doubling quotes alone would not survive a name containing one
+			strings.NewReplacer(`\`, `\\`, "'", "''").Replace(oldDB),
 		),
 	)
 	listCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
