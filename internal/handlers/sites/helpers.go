@@ -233,11 +233,11 @@ func (h *Handler) renameDatabase(ctx context.Context, site *models.Site, oldDB, 
 	var dumpStderr bytes.Buffer
 	dumpCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", dbContainer,
 		"sh", "-c",
-		fmt.Sprintf(
-			"mysqldump -uroot --no-data --routines --skip-lock-tables %s 2>/dev/null || "+
-				"mariadb-dump -uroot --no-data --routines --skip-lock-tables %s",
-			oldDB, oldDB,
-		),
+		// the schema name is a positional arg, never interpolated into the script
+		`mysqldump -uroot --no-data --routines --skip-lock-tables "$1" 2>/dev/null || `+
+			`mariadb-dump -uroot --no-data --routines --skip-lock-tables "$1"`,
+		"sh",
+		oldDB,
 	)
 	dumpCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
 	dumpCmd.Stderr = &dumpStderr
