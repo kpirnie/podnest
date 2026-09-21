@@ -189,20 +189,32 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 	caller := auth.UserFromContext(r.Context())
 
 	var req struct {
-		UName       string `json:"uname"`
-		FName       string `json:"fname"`
-		LName       string `json:"lname"`
-		Email       string `json:"email"`
-		Phone       string `json:"phone"`
-		Role        int    `json:"role"`
-		Password    string `json:"password"`
-		NotifyEmail *bool  `json:"notify_email"`
-		NotifySMS   *bool  `json:"notify_sms"`
+		UName           string `json:"uname"`
+		FName           string `json:"fname"`
+		LName           string `json:"lname"`
+		Email           string `json:"email"`
+		Phone           string `json:"phone"`
+		Role            int    `json:"role"`
+		Password        string `json:"password"`
+		CurrentPassword string `json:"current_password"`
+		NotifyEmail     *bool  `json:"notify_email"`
+		NotifySMS       *bool  `json:"notify_sms"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Error("failed to decode request body for user update on user %d: %v", target.ID, err)
 		apiutil.Error(w, http.StatusBadRequest, err)
 		return
+	}
+
+	// a self-service password change must prove the current password; the change
+	// below invalidates every session for the account, so a hijacked session
+	// would otherwise convert into a permanent lockout of the real owner
+	if req.Password != "" && caller.ID == target.ID {
+		if !auth.CheckPassword(target.PWord, req.CurrentPassword) {
+			logger.Error("current password mismatch on self password change for user %d", target.ID)
+			apiutil.ErrorMsg(w, http.StatusForbidden, "current password is incorrect")
+			return
+		}
 	}
 
 	if caller.Role == models.RoleAdmin && req.UName != "" && req.UName != target.UName {

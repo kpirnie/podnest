@@ -60,14 +60,18 @@ export async function showEditUserModal(root, uid) {
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Role</label>
                             <select class="uk-select kp-select" name="role">
-                                <option value="50" ${user.role===50?"selected":""}>Manager</option>
-                                <option value="99" ${user.role===99?"selected":""}>Admin</option>
+                                <option value="50" ${user.role === 50 ? "selected" : ""}>Manager</option>
+                                <option value="99" ${user.role === 99 ? "selected" : ""}>Admin</option>
                             </select>
                         </div>` : ""}
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">New Password</label>
                             <input class="uk-input kp-input" name="password" type="password" placeholder="••••••••" uk-tooltip="leave blank to keep">
                         </div>
+                        <div class="uk-margin" id="edit-user-current-pw" hidden>
+                            <label class="uk-form-label">Current Password</label>
+                            <input class="uk-input kp-input" name="current_password" type="password" placeholder="••••••••" uk-tooltip="required when changing your own password">
+                        </div>                            
                     </div>
                     <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
                         <button type="button" class="uk-button kp-btn-ghost uk-modal-close">Cancel</button>
@@ -80,15 +84,15 @@ export async function showEditUserModal(root, uid) {
                 <div id="totp-section">
                     <h4 class="uk-margin-small-bottom kp-view-title">Two-Factor Authentication</h4>
                     ${user.totp_enabled
-                        ? `<div class="uk-flex uk-flex-middle" style="gap:12px">
+            ? `<div class="uk-flex uk-flex-middle" style="gap:12px">
                             <span class="kp-badge kp-badge-admin" style="font-size:0.75rem">Enabled</span>
                             <button id="totp-disable-btn" class="uk-button kp-btn-secondary kp-btn-sm">Disable TOTP</button>
                            </div>`
-                        : `<div class="uk-flex uk-flex-middle" style="gap:12px">
+            : `<div class="uk-flex uk-flex-middle" style="gap:12px">
                             <span class="kp-badge kp-badge-manager" style="font-size:0.75rem">Disabled</span>
                             <button id="totp-setup-btn" class="uk-button kp-btn-primary kp-btn-sm">Enable TOTP</button>
                            </div>`
-                    }
+        }
                     <div id="totp-setup-area" style="display:none" class="uk-margin-top">
                         <p class="kp-muted uk-text-small">Scan the QR code with your authenticator app, then enter the 6-digit code to activate.</p>
                         <div class="uk-text-center uk-margin-small" id="totp-qr-wrap">
@@ -113,19 +117,19 @@ export async function showEditUserModal(root, uid) {
     // wire main form submit
     document.getElementById("edit-user-form").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const btn  = e.target.querySelector('[type="submit"]');
+        const btn = e.target.querySelector('[type="submit"]');
         const orig = btn.innerHTML;
         btn.disabled = true;
         btn.innerHTML = '<div uk-spinner="ratio: 0.6"></div> Saving...';
 
-        const fd   = new FormData(e.target);
+        const fd = new FormData(e.target);
         const body = {
-            fname:        fd.get("fname").trim(),
-            lname:        fd.get("lname").trim(),
-            email:        fd.get("email").trim(),
-            phone:        fd.get("phone").trim(),
+            fname: fd.get("fname").trim(),
+            lname: fd.get("lname").trim(),
+            email: fd.get("email").trim(),
+            phone: fd.get("phone").trim(),
             notify_email: fd.get("notify_email") === "on",
-            notify_sms:   fd.get("notify_sms") === "on",
+            notify_sms: fd.get("notify_sms") === "on",
         };
         if (isAdmin) {
             body.role = parseInt(fd.get("role"));
@@ -134,6 +138,10 @@ export async function showEditUserModal(root, uid) {
         }
         const pw = fd.get("password");
         if (pw) body.password = pw;
+
+        if (Number(uid) === Number(window.KP?.user?.id)) {
+            document.getElementById("edit-user-current-pw")?.removeAttribute("hidden");
+        }
 
         try {
             await api.put(`/users/${uid}`, body);

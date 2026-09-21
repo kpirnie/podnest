@@ -375,6 +375,14 @@ func HashPassword(password string) (string, error) {
 	return string(b), err
 }
 
+// CheckPassword reports whether password matches the given stored bcrypt hash.
+func CheckPassword(hash, password string) bool {
+
+	// same SHA-256 pre-hash HashPassword applies before bcrypt
+	h := sha256.Sum256([]byte(password))
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(fmt.Sprintf("%x", h))) == nil
+}
+
 // PurgeExpiredSessions deletes all expired sessions — called by the server reaper
 func PurgeExpiredSessions(database *sql.DB) error {
 
