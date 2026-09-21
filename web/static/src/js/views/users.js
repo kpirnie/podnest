@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { confirm, errorState, isAdmin, normalizeUser } from '../helpers.js';
+import { confirm, errorState, escapeHtml, isAdmin, normalizeUser } from '../helpers.js';
 import { showCreateUserModal } from '../modals/create-user.js';
 import { showEditUserModal } from '../modals/edit-user.js';
 import { toast } from '../toast.js';
@@ -55,19 +55,19 @@ export function userRow(u) {
         : `<span class="kp-badge kp-badge-manager">Manager</span>`;
     const notifyIcons = [
         u.notify_email ? `<span uk-icon="icon: mail; ratio: 0.85" uk-tooltip="Email notifications on" style="color:var(--kp-success)"></span>` : `<span uk-icon="icon: mail; ratio: 0.85" style="color:var(--kp-text-dim)" uk-tooltip="Email notifications off"></span>`,
-        u.notify_sms   ? `<span uk-icon="icon: receiver; ratio: 0.85" uk-tooltip="SMS notifications on" style="color:var(--kp-success)"></span>` : `<span uk-icon="icon: receiver; ratio: 0.85" style="color:var(--kp-text-dim)" uk-tooltip="SMS notifications off"></span>`,
+        u.notify_sms ? `<span uk-icon="icon: receiver; ratio: 0.85" uk-tooltip="SMS notifications on" style="color:var(--kp-success)"></span>` : `<span uk-icon="icon: receiver; ratio: 0.85" style="color:var(--kp-text-dim)" uk-tooltip="SMS notifications off"></span>`,
     ].join(" ");
     return `<tr data-user-id="${u.id}">
-        <td><strong>${u.fname} ${u.lname}</strong></td>
-        <td><span style="font-family:monospace">${u.uname}</span></td>
-        <td>${u.email}</td>
+        <td><strong>${escapeHtml(u.fname)} ${escapeHtml(u.lname)}</strong></td>
+        <td><span style="font-family:monospace">${escapeHtml(u.uname)}</span></td>
+        <td>${escapeHtml(u.email)}</td>
         <td>${roleTag}</td>
         <td class="uk-text-center">${u.totp_enabled
             ? `<span uk-icon="icon: check; ratio: 0.9" style="color:var(--kp-success)"></span>`
             : `<span uk-icon="icon: close; ratio: 0.9" style="color:var(--kp-text-dim)"></span>`
         }</td>
         <td class="uk-text-center">${notifyIcons}</td>
-        <td><span class="kp-muted">${u.created}</span></td>
+        <td><span class="kp-muted">${escapeHtml(u.created)}</span></td>
         <td>
             <div class="uk-flex" style="gap:6px;justify-content:flex-end">
                 <button class="uk-button kp-btn-ghost kp-btn-sm" data-action="edit-user" data-uid="${u.id}" title="Edit" uk-tooltip="Edit the User">

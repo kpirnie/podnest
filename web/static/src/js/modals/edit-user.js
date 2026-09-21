@@ -5,7 +5,7 @@
 "use strict";
 
 import { api } from '../api.js';
-import { normalizeUser } from '../helpers.js';
+import { escapeHtml, normalizeUser } from '../helpers.js';
 import { router } from '../router.js';
 import { toast } from '../toast.js';
 import { renderQR, showBackupCodes } from '../totp.js';
@@ -31,23 +31,23 @@ export async function showEditUserModal(root, uid) {
                         ${isAdmin ? `
                         <div class="uk-width-1-1">
                             <label class="kp-label">Username</label>
-                            <input class="uk-input kp-input" name="uname" type="text" value="${user.uname}" autocomplete="off">
+                            <input class="uk-input kp-input" name="uname" type="text" value="${escapeHtml(user.uname)}" autocomplete="off">
                         </div>` : ""}
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">First Name</label>
-                            <input class="uk-input kp-input" name="fname" type="text" value="${user.fname}" required>
+                            <input class="uk-input kp-input" name="fname" type="text" value="${escapeHtml(user.fname)}" required>
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Last Name</label>
-                            <input class="uk-input kp-input" name="lname" type="text" value="${user.lname}" required>
+                            <input class="uk-input kp-input" name="lname" type="text" value="${escapeHtml(user.lname)}" required>
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Email</label>
-                            <input class="uk-input kp-input" name="email" type="email" value="${user.email}" required>
+                            <input class="uk-input kp-input" name="email" type="email" value="${escapeHtml(user.email)}" required>
                         </div>
                         <div class="uk-width-1-2@s">
                             <label class="kp-label">Phone</label>
-                            <input class="uk-input kp-input" name="phone" type="tel" value="${user.phone || ""}" required>
+                            <input class="uk-input kp-input" name="phone" type="tel" value="${escapeHtml(user.phone || "")}" required>
                         </div>
                         <div class="uk-width-1-1">
                             <label class="kp-label uk-margin-small-bottom">Notifications</label>
