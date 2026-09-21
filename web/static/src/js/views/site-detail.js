@@ -462,33 +462,6 @@ export async function viewSiteDetail(root, { id }) {
         }
     });
 
-    // wire toolbar action buttons (start, stop, restart, flush, update)
-    root.querySelectorAll("[data-action]:not([data-action='wpcli-quick'])").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-            const action = btn.dataset.action;
-
-            if (action === "flush") {
-                try {
-                    await api.post(`/sites/${id}/flush`);
-                    toast.success("Caches flushed");
-                } catch (e) { toast.error(e.message); }
-                return;
-            }
-
-            const labels = { start: "Starting", stop: "Stopping", restart: "Restarting", update: "Updating" };
-            showProgressModal(`${labels[action] ?? action} Pod`, `Please wait...`);
-            try {
-                await api.post(`/sites/${id}/${action}`);
-                hideProgressModal();
-                toast.success(`Site ${action} successful`);
-                router.go("site-detail", { id });
-            } catch (e) {
-                hideProgressModal();
-                toast.error(e.message);
-            }
-        });
-    });
-
     // wire up everything
     wireConfigTabs(root, id, _rpWireAbort.signal);
     wireDomainActions(root, id);

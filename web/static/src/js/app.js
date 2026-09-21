@@ -18,14 +18,14 @@ import { viewSites } from './views/sites.js';
 import { viewUsers } from './views/users.js';
 
 /* -- register routes ------------------------------------------------------- */
-router.register("dashboard",   (root)         => viewDashboard(root));
-router.register("sites",       (root)         => viewSites(root));
+router.register("dashboard", (root) => viewDashboard(root));
+router.register("sites", (root) => viewSites(root));
 router.register("site-detail", (root, params) => viewSiteDetail(root, params));
-router.register("users",       (root)         => viewUsers(root));
-router.register("settings",    (root)         => viewSettings(root));
-router.register("security",    (root)         => viewSecurity(root));
-router.register("admin-logs",  (root)         => viewAdminLogs(root));
-router.register("audit-log",   (root)         => viewAuditLog(root));
+router.register("users", (root) => viewUsers(root));
+router.register("settings", (root) => viewSettings(root));
+router.register("security", (root) => viewSecurity(root));
+router.register("admin-logs", (root) => viewAdminLogs(root));
+router.register("audit-log", (root) => viewAuditLog(root));
 
 /* -- protect native caret keys in form fields ------------------------------ */
 // UIkit's tab/switcher keyboard nav intercepts arrow keys and preventDefaults
@@ -105,7 +105,7 @@ document.addEventListener("kp:bulk-action", async (e) => {
     // recreate is destructive and slow — its own note, a long per-call ceiling, and a
     // prune flag so the server sweeps dangling images at the tail of each rebuild
     const message = action === "recreate" ? "Please hold while we update your Pods" : "Please wait...";
-    const body    = action === "recreate" ? { prune: true } : undefined;
+    const body = action === "recreate" ? { prune: true } : undefined;
     const timeout = action === "recreate" ? 20 * 60 * 1000 : undefined;
     showProgressModal(`${labels[action]} ${ids.length} Site${ids.length !== 1 ? "s" : ""}`, message);
 
@@ -132,6 +132,12 @@ async function siteAction(id, action, title, message) {
         await api.post(`/sites/${id}/${action}`);
         hideProgressModal();
         toast.success(title + ' complete');
+        // the status badge and start/stop button are baked into the rendered
+        // markup — re-render the current view so they reflect the new state
+        if (action !== "flush") {
+            const { view, params } = parseHash();
+            router.go(view, params);
+        }
     } catch (e) {
         hideProgressModal();
         toast.error(e.message);
@@ -145,7 +151,7 @@ async function deleteSite(id) {
     showProgressModal("Deleting Site", "Creating final backup and removing the pod — please wait...");
 
     let resp;
-    
+
     // send CSRF token — raw fetch bypasses api.js which normally adds it
     try { resp = await fetch(`/api/sites/${id}`, { method: "DELETE", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" } }); } catch (e) { /* poll below */ }
 
@@ -153,11 +159,11 @@ async function deleteSite(id) {
 
     // browser-download final backup if S3 is not configured
     if (resp?.ok && resp.headers.get("Content-Type")?.includes("gzip")) {
-        const cd   = resp.headers.get("Content-Disposition") ?? "";
+        const cd = resp.headers.get("Content-Disposition") ?? "";
         const name = cd.match(/filename="([^"]+)"/)?.[1] ?? `${id}_final.tar.gz`;
         const blob = await resp.blob();
-        const a    = document.createElement("a");
-        a.href     = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
         a.download = name;
         a.click();
         URL.revokeObjectURL(a.href);
@@ -184,7 +190,7 @@ async function deleteSite(id) {
 // only poll for admin users; non-admins never see the banner
 if (window.KP?.user?.role === 99) {
     const warningEl = document.getElementById("kp-resource-warning");
-    const msgEl     = document.getElementById("kp-resource-warning-msg");
+    const msgEl = document.getElementById("kp-resource-warning-msg");
 
     const pollWarning = async () => {
         try {
