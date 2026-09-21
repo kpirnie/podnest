@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -28,6 +29,12 @@ type resourceState struct {
 	warning   *models.ResourceWarning
 	throttled map[string]bool // pod name → currently throttled
 }
+
+// webhookClient bounds a webhook POST; http.DefaultClient has no timeout, so a
+// hung receiver would pin the goroutine for the life of the process.
+var webhookClient = &http.Client{Timeout: 15 * time.Second}
+
+const webhookMaxRespBytes = 64 << 10
 
 func newResourceState() *resourceState {
 	return &resourceState{throttled: make(map[string]bool)}
@@ -125,7 +132,7 @@ func (s *Server) resourceWatcher() {
 			if s.resource.GetWarning() != nil {
 				s.liftThrottles(ctx, allStats)
 				s.resource.clearWarning()
-				dispatchWebhook(webhookURL, map[string]any{
+				s.dispatchWebhook(webhookURL, map[string]any{
 					"event":     "resource_threshold_resolved",
 					"resource":  "memory",
 					"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -172,7 +179,7 @@ func (s *Server) resourceWatcher() {
 			"offender_usage_mb": offenderMB,
 			"timestamp":         time.Now().UTC().Format(time.RFC3339),
 		}
-		dispatchWebhook(webhookURL, payload)
+		s.dispatchWebhook(webhookURL, payload)
 
 		// send admin notifications
 		msg := fmt.Sprintf("PodNest: available memory low — %dMB available, %dMB reserved. Throttling %s.", availableMB, reserveMB, offender)
@@ -284,24 +291,34 @@ func readMemInfoMB() (total, available int64, err error) {
 	return total, available, nil
 }
 
-// dispatchWebhook fires an HTTP POST to url with a JSON payload.
-// Non-blocking — errors are logged but do not propagate.
-func dispatchWebhook(url string, payload map[string]any) {
+// dispatchWebhook fires an HTTP POST to url with a JSON payload on a tracked
+// goroutine. Non-blocking — errors are logged but do not propagate.
+func (s *Server) dispatchWebhook(url string, payload map[string]any) {
 	if url == "" {
 		return
 	}
-	go func() {
+	s.goTracked(func() {
 		b, err := json.Marshal(payload)
 		if err != nil {
 			logger.Error("dispatchWebhook: marshal: %v", err)
 			return
 		}
-		resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+		req, err := http.NewRequestWithContext(s.ctx, http.MethodPost, url, bytes.NewReader(b))
+		if err != nil {
+			logger.Error("dispatchWebhook: request: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := webhookClient.Do(req)
 		if err != nil {
 			logger.Error("dispatchWebhook: POST %s: %v", url, err)
 			return
 		}
 		defer resp.Body.Close()
+
+		// drain a bounded amount so the connection is reusable without letting a
+		// hostile receiver stream an unbounded body into the process
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, webhookMaxRespBytes))
 		logger.Debug("dispatchWebhook: POST %s → %d", url, resp.StatusCode)
-	}()
+	})
 }
