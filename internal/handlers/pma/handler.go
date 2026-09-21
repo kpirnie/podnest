@@ -239,8 +239,3 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy.ServeHTTP(w, r)
 }
-
-// isSecureReq reports whether the request arrived over TLS directly or via proxy.
-func isSecureReq(r *http.Request) bool {
-	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
