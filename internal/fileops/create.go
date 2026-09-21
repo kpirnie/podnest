@@ -81,8 +81,11 @@ func (m *Manager) NewFile(ctx context.Context, rel string) error {
 }
 
 // exists reports whether a path exists inside the container, as the site UID.
+// A dangling symlink counts as existing: test -e follows links and would report
+// one as absent, letting a clobber guard pass and cp write through it to the
+// link's target outside the html root.
 func (m *Manager) exists(ctx context.Context, abs string) (bool, error) {
-	res, err := m.run(ctx, []string{"test", "-e", abs})
+	res, err := m.run(ctx, []string{"sh", "-c", `test -e "$1" || test -L "$1"`, "sh", abs})
 	if err != nil {
 		return false, err
 	}
