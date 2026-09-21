@@ -31,6 +31,17 @@ func SiteDir(base, name string) (string, error) {
 	return dir, nil
 }
 
+// SafeFileMode normalizes a mode carried inside an archive. Archive-supplied
+// modes are attacker-controlled input, so setuid, setgid and sticky are dropped
+// and group/world write is never honored — the entry is reduced to
+// executable-or-not, matching what an extracted tree actually needs.
+func SafeFileMode(m os.FileMode) os.FileMode {
+	if m.Perm()&0o111 != 0 {
+		return 0o755
+	}
+	return 0o644
+}
+
 // WriteFile writes content to path with the given file permissions.
 func WriteFile(path, content string, perm os.FileMode) error {
 	if err := os.WriteFile(path, []byte(content), perm); err != nil {

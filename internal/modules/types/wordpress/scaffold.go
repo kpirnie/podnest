@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"podnest/internal/config"
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -285,7 +286,7 @@ func DownloadWordPress(htmlDir string, siteUID int, recreate bool) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return fmt.Errorf("mkdir parent %s: %w", target, err)
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fileutil.SafeFileMode(hdr.FileInfo().Mode()))
 			if err != nil {
 				return fmt.Errorf("creating %s: %w", target, err)
 			}

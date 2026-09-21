@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 )
 
@@ -161,17 +162,6 @@ func extractTarXz(src, destDir string, budget *extractBudget) error {
 	return waitErr
 }
 
-// safeFileMode normalizes a mode carried inside an archive. Archive-supplied
-// modes are attacker-controlled input on the import path, so setuid, setgid and
-// sticky are dropped and group/world write is never honored — the entry is
-// reduced to executable-or-not, matching what a restored site actually needs.
-func safeFileMode(m os.FileMode) os.FileMode {
-	if m.Perm()&0o111 != 0 {
-		return 0o755
-	}
-	return 0o644
-}
-
 // extractTar reads all entries from a tar.Reader into destDir, guarding
 // against path traversal attacks
 func extractTar(tr *tar.Reader, destDir string, budget *extractBudget) error {
@@ -205,7 +195,7 @@ func extractTar(tr *tar.Reader, destDir string, budget *extractBudget) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return fmt.Errorf("extractTar: mkdir parent %s: %w", hdr.Name, err)
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, safeFileMode(hdr.FileInfo().Mode()))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fileutil.SafeFileMode(hdr.FileInfo().Mode()))
 			if err != nil {
 				return fmt.Errorf("extractTar: create %s: %w", hdr.Name, err)
 			}
@@ -277,7 +267,7 @@ func extractZip(src, destDir string, budget *extractBudget) error {
 		if err != nil {
 			return fmt.Errorf("extractZip: open entry %s: %w", zf.Name, err)
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, safeFileMode(zf.Mode()))
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, fileutil.SafeFileMode(zf.Mode()))
 		if err != nil {
 			rc.Close()
 			return fmt.Errorf("extractZip: create %s: %w", zf.Name, err)
