@@ -27,7 +27,7 @@ const ghTagsURL = "https://api.github.com/repos/" + ghRepo + "/tags?per_page=1"
 const ReleaseURL = "https://github.com/" + ghRepo + "/tags"
 
 // UpdateURL is the direct link to the update instructions
-const UpdateURL = "https://podnest.us/support/instructions/updating/"
+const UpdateURL = "https://podnest.app/support/instructions/updating/"
 
 // cache holds the result of the last GitHub API check to avoid hammering the API
 var cache struct {
