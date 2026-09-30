@@ -45,6 +45,23 @@ type Handler struct {
 	Warning WarningProvider
 }
 
+// settingGroups maps each settings-page card to the keys it exports and imports.
+var settingGroups = map[string][]string{
+	"general": {
+		"admin_domain",
+		"resource_ram_reserve_gb", "resource_poll_interval",
+		"resource_throttle_pct", "resource_webhook_url", "shutdown_job_timeout",
+	},
+	"backups": {
+		"backup_retain_days", "backup_schedule",
+		"s3_endpoint", "s3_bucket", "s3_region", "s3_access_key", "s3_secret_key",
+	},
+	"notifications": {
+		"smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "smtp_tls",
+		"aws_access_key", "aws_secret_key", "aws_region", "aws_sns_sender_id",
+	},
+}
+
 // RegisterRoutes mounts settings and trusted proxy routes onto api.
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	admin := func(fn http.HandlerFunc) http.Handler {
@@ -115,23 +132,40 @@ func (h *Handler) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) apiExportSettings(w http.ResponseWriter, r *http.Request) {
-	all, err := db.GetAllSettings(h.DB)
-	if err != nil {
-		logger.Error("apiExportSettings: failed to retrieve settings: %v", err)
-		apiutil.Error(w, http.StatusInternalServerError, err)
+	group := r.URL.Query().Get("group")
+	keys, ok := settingGroups[group]
+	if !ok {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "unknown settings group")
 		return
 	}
 
-	var rows [][]string
-	for k, v := range all {
+	rows := make([][]string, 0, len(keys))
+	for _, k := range keys {
+		v, err := db.GetSetting(h.DB, k)
+		if err != nil {
+			logger.Error("apiExportSettings: failed to retrieve '%s': %v", k, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
 		rows = append(rows, []string{k, v})
 	}
 
-	apiutil.ExportCSV(w, "podnest-settings.csv", []string{"key", "value"}, rows)
-	logger.Debug("apiExportSettings: exported %d settings", len(rows))
+	apiutil.ExportCSV(w, fmt.Sprintf("podnest-settings-%s.csv", group), []string{"key", "value"}, rows)
+	logger.Debug("apiExportSettings: exported %d %s settings", len(rows), group)
 }
 
 func (h *Handler) apiImportSettings(w http.ResponseWriter, r *http.Request) {
+	group := r.URL.Query().Get("group")
+	keys, ok := settingGroups[group]
+	if !ok {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "unknown settings group")
+		return
+	}
+	allowed := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		allowed[k] = true
+	}
+
 	records, err := apiutil.ImportCSV(r)
 	if err != nil {
 		logger.Error("apiImportSettings: %v", err)
@@ -139,10 +173,15 @@ func (h *Handler) apiImportSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	imported := 0
 	for _, rec := range records {
 		k := strings.TrimSpace(rec[0])
 		v := rec[1]
 		if k == "" {
+			continue
+		}
+		if !allowed[k] {
+			logger.Warn("apiImportSettings: skipped '%s', not in group '%s'", logger.SafeValue(k), group)
 			continue
 		}
 		if err := db.SetSetting(h.DB, k, v); err != nil {
@@ -151,9 +190,10 @@ func (h *Handler) apiImportSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.applySettingLive(k, v)
+		imported++
 	}
 
-	logger.Debug("apiImportSettings: imported %d settings", len(records))
+	logger.Debug("apiImportSettings: imported %d %s settings", imported, group)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

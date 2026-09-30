@@ -39,7 +39,7 @@ function wireHostStats() {
         document.getElementById("dash-host-disk").textContent = pct(d.disk_used, d.disk_total);
         document.getElementById("dash-host-disk-sub").textContent = `${fmtBytes(d.disk_used ?? 0)} / ${fmtBytes(d.disk_total ?? 0)}`;
         document.getElementById("dash-host-procs").textContent = (d.procs_running ?? 0).toLocaleString();
-        document.getElementById("dash-host-procs-sub").textContent = `of ${(d.procs_total ?? 0).toLocaleString()} total`;
+        document.getElementById("dash-host-procs-sub").textContent = `of ${(d.procs_total ?? 0).toLocaleString()} threads`;
     };
 
     ws.onclose = () => { if (_hostWS === ws) _hostWS = null; };
