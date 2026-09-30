@@ -84,8 +84,7 @@ export async function viewSettings(root, params = {}) {
         <!-- general: panel configuration + host resource watcher -->
         <li>
             <div class="kp-card uk-padding">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-bottom">
-                    <h3 class="kp-view-title uk-margin-remove">Panel Configuration</h3>
+                <div class="uk-flex uk-flex-right uk-margin-bottom">
                     ${settingsIO("general")}
                 </div>
                 <form id="settings-form" class="uk-form-stacked">
@@ -106,8 +105,8 @@ export async function viewSettings(root, params = {}) {
                             a Let's Encrypt certificate automatically. Leave blank to disable.
                         </p>
                     </div>
-                    <hr>
-                    <h4 class="kp-view-title uk-margin-bottom">Host Resource Watcher</h4>
+
+                    <h3 class="kp-view-title uk-margin-bottom uk-margin-top">Host Resource Watcher</h3>
                     <div class="uk-grid-small uk-child-width-1-2@m" uk-grid>
                         <div>
                             <label class="kp-label" for="resource-ram-reserve">RAM Reserve (GB)</label>
@@ -164,8 +163,7 @@ export async function viewSettings(root, params = {}) {
         <!-- backups: schedule/retention + S3 storage -->
         <li>
             <div class="kp-card uk-padding">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-bottom">
-                    <h3 class="kp-view-title uk-margin-remove">Backups</h3>
+                <div class="uk-flex uk-flex-right uk-margin-bottom">
                     ${settingsIO("backups")}
                 </div>
                 <form id="backup-form" class="uk-form-stacked">
@@ -275,8 +273,7 @@ export async function viewSettings(root, params = {}) {
         <!-- notifications: smtp + aws sns -->
         <li>
             <div class="kp-card uk-padding">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-bottom">
-                    <h3 class="kp-view-title uk-margin-remove">Notifications</h3>
+                <div class="uk-flex uk-flex-right uk-flex-middle uk-margin-bottom">
                     ${settingsIO("notifications")}
                 </div>
                 <form id="notifications-form" class="uk-form-stacked">
