@@ -186,6 +186,13 @@ func (h *Handler) apiListSites(w http.ResponseWriter, r *http.Request) {
 	type siteWithDomains struct {
 		*models.Site
 		Domains []string `json:"Domains"`
+		HostUID *int64   `json:"HostUID,omitempty"`
+	}
+
+	// host UIDs are best-effort; an unreadable uid_map just leaves the column blank
+	uidRanges, err := readUIDMap()
+	if err != nil {
+		logger.Warn("failed to read uid_map for site list: %v", err)
 	}
 
 	// construct the response by combining each site with its corresponding domains
@@ -195,7 +202,13 @@ func (h *Handler) apiListSites(w http.ResponseWriter, r *http.Request) {
 		if domains == nil {
 			domains = []string{}
 		}
-		out = append(out, siteWithDomains{Site: s, Domains: domains})
+		row := siteWithDomains{Site: s, Domains: domains}
+		if s.SiteType != models.SiteTypeReverseProxy {
+			if uid, ok := h.hostUIDFor(uidRanges, s.Name); ok {
+				row.HostUID = &uid
+			}
+		}
+		out = append(out, row)
 	}
 
 	// log the number of sites retrieved for the user and return the JSON response

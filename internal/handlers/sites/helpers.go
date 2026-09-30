@@ -18,7 +18,9 @@ import (
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -27,6 +29,11 @@ var siteNameStrip = regexp.MustCompile(`[^a-z0-9_\-]`)
 
 // siteNameValid matches a fully normalized, acceptable site name.
 var siteNameValid = regexp.MustCompile(`^[a-z0-9][a-z0-9_\-]{0,62}$`)
+
+// uidRange is one line of a user namespace uid_map.
+type uidRange struct {
+	inside, outside, count uint64
+}
 
 // NormalizeSiteName lowercases a requested site name, replaces disallowed
 // characters with hyphens, and validates the result.
@@ -461,4 +468,49 @@ func (h *Handler) refreshSiteDomains(site *models.Site) {
 	for _, d := range domains {
 		h.Proxy.AddDomain(d.Domain, site.Port, site.ID, site.Name)
 	}
+}
+
+// readUIDMap parses /proc/self/uid_map so namespaced file owners can be
+// translated to the UIDs the host shows in top and ps.
+func readUIDMap() ([]uidRange, error) {
+	data, err := os.ReadFile("/proc/self/uid_map")
+	if err != nil {
+		return nil, err
+	}
+	var ranges []uidRange
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if len(f) != 3 {
+			continue
+		}
+		in, err1 := strconv.ParseUint(f[0], 10, 64)
+		out, err2 := strconv.ParseUint(f[1], 10, 64)
+		cnt, err3 := strconv.ParseUint(f[2], 10, 64)
+		if err1 != nil || err2 != nil || err3 != nil {
+			return nil, fmt.Errorf("parse /proc/self/uid_map line %q", line)
+		}
+		ranges = append(ranges, uidRange{inside: in, outside: out, count: cnt})
+	}
+	return ranges, nil
+}
+
+// hostUIDFor stats the site's html directory and maps its owner through the
+// uid_map ranges to the host UID. ok is false when the directory is missing
+// or its owner falls outside every mapped range.
+func (h *Handler) hostUIDFor(ranges []uidRange, name string) (int64, bool) {
+	dir, err := fileutil.SiteDir(h.sitesBase(), name)
+	if err != nil {
+		return 0, false
+	}
+	var st syscall.Stat_t
+	if err := syscall.Stat(dir+"/html", &st); err != nil {
+		return 0, false
+	}
+	uid := uint64(st.Uid)
+	for _, r := range ranges {
+		if uid >= r.inside && uid < r.inside+r.count {
+			return int64(r.outside + uid - r.inside), true
+		}
+	}
+	return 0, false
 }

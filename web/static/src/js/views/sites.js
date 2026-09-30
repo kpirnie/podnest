@@ -73,6 +73,7 @@ export async function viewSites(root) {
                                 <th class="kp-sortable" data-col="name">Name <span class="kp-sort-icon" data-col="name"></span></th>
                                 <th class="uk-visible@s kp-sortable" data-col="type">Type <span class="kp-sort-icon" data-col="type"></span></th>
                                 <th class="uk-visible@m">Port</th>
+                                <th class="uk-visible@m">UID</th>
                                 <th class="uk-visible@m kp-sortable" data-col="domain">Domain <span class="kp-sort-icon" data-col="domain"></span></th>
                                 <th class="uk-table-shrink">Actions</th>
                             </tr>
@@ -130,6 +131,9 @@ function siteRow(site, allSites = []) {
 
             <!-- internal port -->
             <td class="uk-visible@m kp-muted kp-mono uk-text-small">:${site.Port}</td>
+
+            <!-- host-mapped owner UID of html/ -->
+            <td class="uk-visible@m kp-muted kp-mono uk-text-small">${site.HostUID ?? (isRP ? "" : "—")}</td>
 
             <!-- primary domain -->
             <td class="uk-visible@m uk-text-small">
