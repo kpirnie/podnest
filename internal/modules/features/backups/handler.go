@@ -92,12 +92,15 @@ func (m Module) apiCreateBackup(w http.ResponseWriter, r *http.Request, site *mo
 	if req.Label == "" {
 		req.Label = "manual"
 	}
+	m.Manager.BeginBackupJob(site.ID)
 	m.Manager.Go(func(ctx context.Context) {
 		id, err := m.Manager.Backup(ctx, site, req.Label)
+		m.Manager.EndBackupJob(site.ID, err)
 		if err != nil {
 			logger.Error("apiCreateBackup: site %d: %v", site.ID, err)
 			return
 		}
+		_ = db.ClearBackupError(m.DB, site.ID)
 		logger.Debug("apiCreateBackup: backup %d complete for site %d", id, site.ID)
 	})
 	logger.Debug("apiCreateBackup: queued backup for site %d", site.ID)
@@ -139,6 +142,13 @@ func (m Module) apiRestoreBackup(w http.ResponseWriter, r *http.Request, site *m
 func (m Module) apiRestoreStatus(w http.ResponseWriter, _ *http.Request, site *models.Site) {
 	active := m.Manager.IsRestoring(site.ID)
 	apiutil.JSON(w, http.StatusOK, map[string]bool{"active": active})
+}
+
+// apiBackupStatus reports whether a manual backup is running for a site and
+// the error from the last one, if it failed.
+func (m Module) apiBackupStatus(w http.ResponseWriter, _ *http.Request, site *models.Site) {
+	active, errMsg := m.Manager.BackupJobStatus(site.ID)
+	apiutil.JSON(w, http.StatusOK, map[string]any{"active": active, "error": errMsg})
 }
 
 // apiDeleteBackup removes a backup record and its associated restic snapshots.

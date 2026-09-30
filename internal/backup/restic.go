@@ -723,6 +723,13 @@ func (m *Manager) reconcileBackupRecords(ctx context.Context, site *models.Site,
 		if tags[b.SnapshotID] {
 			continue
 		}
+
+		// a record whose destination is switched off was never looked for, so its
+		// absence from tags says nothing about whether the snapshot still exists
+		if (b.BackupType == models.BackupTypeLocal && !repo.LocalEnabled) ||
+			(b.BackupType == models.BackupTypeS3 && (!repo.S3Enabled || s3 == nil)) {
+			continue
+		}
 		if err := db.DeleteBackup(m.db, b.ID); err != nil {
 			logger.Warn("reconcileBackupRecords: delete record %d: %v", b.ID, err)
 			continue

@@ -238,13 +238,6 @@ export function wireBackupsPanel(root, siteId) {
 
     // -- run backup now ------------------------------------------------------
     root.querySelector("#backup-run-btn")?.addEventListener("click", async () => {
-        // snapshot the current count so we know when a new one arrives
-        let countBefore = 0;
-        try {
-            const existing = await api.get(`/sites/${siteId}/backups`);
-            countBefore = existing?.length ?? 0;
-        } catch (_) { /* non-fatal */ }
-
         try {
             await api.post(`/sites/${siteId}/backups`, { label: "manual" });
         } catch (err) {
@@ -254,20 +247,22 @@ export function wireBackupsPanel(root, siteId) {
 
         showProgressModal("Backup Running", "Snapshotting files and database — this may take a few minutes.");
 
-        // poll every 4 seconds until a new backup record appears, or 10 min timeout
+        // poll the job status every 4 seconds until it finishes, or 30 min timeout
         const deadline = Date.now() + 30 * 60 * 1000;
         const poll = setInterval(async () => {
             try {
-                const backups = await api.get(`/sites/${siteId}/backups`);
-                if ((backups?.length ?? 0) > countBefore || Date.now() > deadline) {
+                const res = await api.get(`/sites/${siteId}/backups/backup-status`);
+                if (!res?.active || Date.now() > deadline) {
                     clearInterval(poll);
                     hideProgressModal();
                     await loadBackupsPanel(root, siteId);
-                    if (Date.now() <= deadline) {
-                        toast.success("Backup complete");
-                    } else {
+                    if (res?.active) {
                         // backup is still running in the background — check logs
                         toast.error("Backup is taking longer than expected — check server logs for status");
+                    } else if (res?.error) {
+                        toast.error(`Backup failed: ${res.error}`);
+                    } else {
+                        toast.success("Backup complete");
                     }
                 }
             } catch (_) { /* keep polling on transient errors */ }

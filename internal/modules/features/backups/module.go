@@ -66,12 +66,12 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		}
 		m.apiRestoreBackup(w, r, site)
 	})
-	mux.HandleFunc("GET /sites/{id}/backups/restore-status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /sites/{id}/backups/backup-status", func(w http.ResponseWriter, r *http.Request) {
 		site, ok := resolve(w, r)
 		if !ok {
 			return
 		}
-		m.apiRestoreStatus(w, r, site)
+		m.apiBackupStatus(w, r, site)
 	})
 	mux.HandleFunc("DELETE /sites/{id}/backups/{bid}", func(w http.ResponseWriter, r *http.Request) {
 		site, ok := resolve(w, r)

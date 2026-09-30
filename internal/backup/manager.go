@@ -41,9 +41,16 @@ type Manager struct {
 	appPath     string
 	schedulerCh chan string // send cron expression to reschedule; "" disables
 	restoring   sync.Map    // map[int64]bool
+	backupJobs  sync.Map    // map[int64]backupJob
 	jobs        sync.WaitGroup
 	jobCtx      context.Context
 	jobCancel   context.CancelFunc
+}
+
+// backupJob is the state of the most recent manual backup for a site.
+type backupJob struct {
+	active bool
+	err    string
 }
 
 // New returns a backup Manager
@@ -91,6 +98,31 @@ func (m *Manager) WaitJobs(d time.Duration) bool {
 		m.jobCancel()
 		return false
 	}
+}
+
+// BeginBackupJob marks a manual backup as running for the site.
+func (m *Manager) BeginBackupJob(siteID int64) {
+	m.backupJobs.Store(siteID, backupJob{active: true})
+}
+
+// EndBackupJob records the outcome of the site's manual backup.
+func (m *Manager) EndBackupJob(siteID int64, err error) {
+	j := backupJob{}
+	if err != nil {
+		j.err = err.Error()
+	}
+	m.backupJobs.Store(siteID, j)
+}
+
+// BackupJobStatus reports whether a manual backup is running for the site and
+// the error from the last one, if it failed.
+func (m *Manager) BackupJobStatus(siteID int64) (active bool, errMsg string) {
+	v, ok := m.backupJobs.Load(siteID)
+	if !ok {
+		return false, ""
+	}
+	j := v.(backupJob)
+	return j.active, j.err
 }
 
 // localRepoPath returns the local restic repo directory for a site
