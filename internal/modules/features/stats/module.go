@@ -48,7 +48,7 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 
 	// global dashboard routes — aggregate every tenant's traffic and pod usage, admin only
 	mux.Handle("GET /stats/traffic", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalTraffic)))
-	mux.Handle("GET /stats/pod", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalPod)))
+	mux.Handle("GET /stats/host", auth.RequireAPIAdmin(http.HandlerFunc(h.apiHostStats)))
 	mux.Handle("GET /stats/drilldown", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalDrilldown)))
 }
 

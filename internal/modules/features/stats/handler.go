@@ -92,13 +92,6 @@ type podStatsResponse struct {
 	Containers []podStatEntry `json:"containers"`
 }
 
-// globalPodResponse is the dashboard aggregate payload.
-type globalPodResponse struct {
-	TotalCPU float64 `json:"total_cpu"`
-	MemUsed  int64   `json:"mem_used"`
-	MemLimit int64   `json:"mem_limit"`
-}
-
 // diskResponse is the disk usage payload for html/ and db/ directories.
 type diskResponse struct {
 	HTMLBytes int64 `json:"html_bytes"`
@@ -337,64 +330,6 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 
 	globalCache.set(cacheKey, stats)
 	apiutil.JSON(w, http.StatusOK, stats)
-}
-
-// apiGlobalPod returns aggregate CPU and memory across all running containers
-// for admins, or only the requesting user's own sites for managers.
-func (h *Handler) apiGlobalPod(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		apiutil.ErrorMsg(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-
-	// admins aggregate every site; any non-admin is scoped to their own sites
-	var (
-		sites []*models.Site
-		err   error
-	)
-	if user.Role == models.RoleAdmin {
-		sites, err = db.GetAllSites(h.DB)
-	} else {
-		sites, err = db.GetSitesByUser(h.DB, user.ID)
-	}
-	if err != nil {
-		logger.Error("stats: global pod — load sites: %v", err)
-		apiutil.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	// collect names for all pod-based running sites
-	var names []string
-	for _, s := range sites {
-		roles := statsRoles(s.SiteType)
-		if s.SiteType == models.SiteTypeReverseProxy || s.SiteStatus != 1 {
-			continue
-		}
-		for _, role := range roles {
-			names = append(names, modules.ContainerName(s.Name, role))
-		}
-	}
-
-	if len(names) == 0 {
-		apiutil.JSON(w, http.StatusOK, globalPodResponse{})
-		return
-	}
-
-	entries, err := h.fetchPodStats(r.Context(), names)
-	if err != nil {
-		logger.Error("stats: global pod fetch: %v", err)
-		apiutil.Error(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	var resp globalPodResponse
-	for _, c := range entries.Containers {
-		resp.TotalCPU += c.CPUPercent
-		resp.MemUsed += c.MemUsed
-		resp.MemLimit += c.MemLimit
-	}
-	apiutil.JSON(w, http.StatusOK, resp)
 }
 
 // apiGlobalDrilldown returns individual request records for a given hour and

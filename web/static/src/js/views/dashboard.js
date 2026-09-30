@@ -13,6 +13,38 @@ import { siteCard } from './sites.js';
 // holds the active Chart instance so it can be destroyed before recreating
 let _dashChart = null;
 
+
+// holds the live host-usage WebSocket; closed when the dashboard is re-entered or left
+let _hostWS = null;
+
+// wireHostStats opens the host-usage stream and drives the four host cards,
+// closing itself once the cards are no longer in the DOM
+function wireHostStats() {
+    if (_hostWS) { _hostWS.close(); _hostWS = null; }
+
+    const pct = (used, total) => total > 0 ? `${(used / total * 100).toFixed(1)}%` : "—";
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/api/stats/host`);
+    _hostWS = ws;
+
+    ws.onmessage = (e) => {
+        const cpuEl = document.getElementById("dash-host-cpu");
+        if (!cpuEl) { ws.close(); return; }
+        let d;
+        try { d = JSON.parse(e.data); } catch (_) { return; }
+
+        cpuEl.textContent = `${(d.cpu_percent ?? 0).toFixed(1)}%`;
+        document.getElementById("dash-host-mem").textContent = pct(d.mem_used, d.mem_total);
+        document.getElementById("dash-host-mem-sub").textContent = `${fmtBytes(d.mem_used ?? 0)} / ${fmtBytes(d.mem_total ?? 0)}`;
+        document.getElementById("dash-host-disk").textContent = pct(d.disk_used, d.disk_total);
+        document.getElementById("dash-host-disk-sub").textContent = `${fmtBytes(d.disk_used ?? 0)} / ${fmtBytes(d.disk_total ?? 0)}`;
+        document.getElementById("dash-host-procs").textContent = (d.procs_running ?? 0).toLocaleString();
+        document.getElementById("dash-host-procs-sub").textContent = `of ${(d.procs_total ?? 0).toLocaleString()} total`;
+    };
+
+    ws.onclose = () => { if (_hostWS === ws) _hostWS = null; };
+}
+
 export async function viewDashboard(root) {
     const [sites, traffic] = await Promise.all([
         api.get("/sites").catch(() => []),
@@ -22,6 +54,7 @@ export async function viewDashboard(root) {
     const running = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 1).length;
     const proxies = sites.filter((s) => s.SiteType === 6).length;
     const errored = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 4).length;
+    const isAdmin = window.KP?.user?.role === 99;
 
     root.innerHTML = `
 
@@ -75,6 +108,60 @@ export async function viewDashboard(root) {
                 </div>
             </div>
         </div>
+
+        <!-- live host usage — admin only -->
+        ${isAdmin ? `
+        <div class="uk-grid-small uk-child-width-1-2 uk-child-width-1-4@m uk-margin-medium-bottom" uk-grid>
+            <div>
+                <div class="kp-stat-card">
+                    <div class="uk-flex uk-flex-between">
+                        <div>
+                            <div class="kp-stat-value" id="dash-host-cpu">—</div>
+                            <div class="kp-stat-label">Host CPU</div>
+                            <div class="kp-muted uk-text-small kp-mono">&nbsp;</div>
+                        </div>
+                        <span class="kp-stat-icon" uk-icon="icon: bolt; ratio: 1.75"></span>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="kp-stat-card">
+                    <div class="uk-flex uk-flex-between">
+                        <div>
+                            <div class="kp-stat-value" id="dash-host-mem">—</div>
+                            <div class="kp-stat-label">Host Memory</div>
+                            <div class="kp-muted uk-text-small kp-mono" id="dash-host-mem-sub">&nbsp;</div>
+                        </div>
+                        <span class="kp-stat-icon" uk-icon="icon: server; ratio: 1.75"></span>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="kp-stat-card">
+                    <div class="uk-flex uk-flex-between">
+                        <div>
+                            <div class="kp-stat-value" id="dash-host-disk">—</div>
+                            <div class="kp-stat-label">Host Disk</div>
+                            <div class="kp-muted uk-text-small kp-mono" id="dash-host-disk-sub">&nbsp;</div>
+                        </div>
+                        <span class="kp-stat-icon" uk-icon="icon: database; ratio: 1.75"></span>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div class="kp-stat-card">
+                    <div class="uk-flex uk-flex-between">
+                        <div>
+                            <div class="kp-stat-value" id="dash-host-procs">—</div>
+                            <div class="kp-stat-label">Running Processes</div>
+                            <div class="kp-muted uk-text-small kp-mono" id="dash-host-procs-sub">&nbsp;</div>
+                        </div>
+                        <span class="kp-stat-icon" uk-icon="icon: list; ratio: 1.75"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ""}
 
         <!-- global traffic -->
         <div class="kp-view-header uk-margin-top">
@@ -177,6 +264,9 @@ export async function viewDashboard(root) {
             </div>
         </div>
         `;
+
+    // fire up the host stats
+    if (isAdmin) wireHostStats();
 
     // render hits-per-hour chart once Chart.js is ready
     if (traffic?.hits_per_hour?.length) {
