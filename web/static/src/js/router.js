@@ -49,5 +49,6 @@ export function parseHash() {
     const view  = parts[0];
     const params = {};
     if (view === "site-detail" && parts[1]) params.id = parts[1];
+    if (view === "settings" && parts[1]) params.tab = parts[1];
     return { view, params };
 }
