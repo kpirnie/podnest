@@ -14,10 +14,9 @@ import { siteCard } from './sites.js';
 let _dashChart = null;
 
 export async function viewDashboard(root) {
-    const [sites, traffic, pod] = await Promise.all([
+    const [sites, traffic] = await Promise.all([
         api.get("/sites").catch(() => []),
         api.get("/stats/traffic").catch(() => null),
-        api.get("/stats/pod").catch(() => null),
     ]);
     
     const running = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 1).length;
@@ -136,33 +135,8 @@ export async function viewDashboard(root) {
         <div class="uk-grid-small uk-child-width-1-1 uk-child-width-1-2@m uk-margin-medium-bottom" uk-grid>
             <div>
 
-                <!-- resource usage -->
-                <div class="kp-view-header">
-                    <h2 class="kp-view-title" style="font-size:1.25rem">Resource Usage</h2>
-                </div>
-                <div class="uk-grid-small uk-child-width-1-2" uk-grid>
-                    <div><div class="kp-stat-card">
-                        <div class="uk-flex uk-flex-between">
-                            <div>
-                                <div class="kp-stat-value">${(pod?.total_cpu ?? 0).toFixed(1)}%</div>
-                                <div class="kp-stat-label">Total CPU</div>
-                            </div>
-                            <span class="kp-stat-icon" uk-icon="icon: bolt; ratio: 1.75"></span>
-                        </div>
-                    </div></div>
-                    <div><div class="kp-stat-card">
-                        <div class="uk-flex uk-flex-between">
-                            <div>
-                                <div class="kp-stat-value">${fmtBytes(pod?.mem_used ?? 0)}</div>
-                                <div class="kp-stat-label">Memory Used</div>
-                            </div>
-                            <span class="kp-stat-icon" uk-icon="icon: server; ratio: 1.75"></span>
-                        </div>
-                    </div></div>
-                </div>
-
                 <!-- recent sites -->
-                <div class="kp-view-header uk-margin-top">
+                <div class="kp-view-header">
                     <h2 class="kp-view-title" style="font-size:1.25rem">Recent Sites</h2>
                 </div>
                 <div class="">
