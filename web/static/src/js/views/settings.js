@@ -88,8 +88,7 @@ export async function viewSettings(root) {
                             a Let's Encrypt certificate automatically. Leave blank to disable.
                         </p>
                     </div>
-                    <hr>
-                    <h4 class="kp-text uk-margin-small-bottom">Host Resource Watcher</h4>
+                    <h3 class="kp-view-title uk-margin-bottom">Host Resource Wartcher</h3>
                     <div class="uk-grid-small uk-child-width-1-2@m" uk-grid>
                         <div>
                             <label class="kp-label" for="resource-ram-reserve">RAM Reserve (GB)</label>

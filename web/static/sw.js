@@ -1,10 +1,9 @@
 // PodNest service worker — minimal offline app-shell cache
 // bump CACHE_VERSION whenever a shell asset changes to force clients onto fresh files
-const CACHE_VERSION = 'podnest-v1.00.32';
+const CACHE_VERSION = 'podnest-v1.00.41';
 
 // the app shell — enough to boot the panel UI while offline
 const SHELL = [
-    '/',
     '/static/css/app.css',
     '/static/js/app.js',
     '/static/manifest.json'

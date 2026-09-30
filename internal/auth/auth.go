@@ -241,15 +241,26 @@ func ClearTOTPPendingCookie(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// IssueLoginCSRF mints a pre-session CSRF token, sets it as a cookie, and
-// returns it for embedding in the login and TOTP forms. The login endpoints are
-// unauthenticated, so there is no session to hang a token on — the cookie and
-// the form field are compared against each other instead.
+// IssueLoginCSRF returns the pre-session CSRF token for the login and TOTP
+// forms, reusing the one already in the request's cookie when present so a
+// second GET of /login (another tab, or the service worker's precache) cannot
+// rotate the cookie out from under a form already on screen. The login
+// endpoints are unauthenticated, so there is no session to hang a token on —
+// the cookie and the form field are compared against each other instead.
 func IssueLoginCSRF(w http.ResponseWriter, r *http.Request) string {
-	token, err := models.GenerateSessionID()
-	if err != nil {
-		logger.Error("failed to generate login CSRF token: %v", err)
-		return ""
+	var token string
+	if c, err := r.Cookie(LoginCSRFCookieName); err == nil && len(c.Value) == 64 {
+		if _, err := hex.DecodeString(c.Value); err == nil {
+			token = c.Value
+		}
+	}
+	if token == "" {
+		t, err := models.GenerateSessionID()
+		if err != nil {
+			logger.Error("failed to generate login CSRF token: %v", err)
+			return ""
+		}
+		token = t
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     LoginCSRFCookieName,
