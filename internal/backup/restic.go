@@ -242,11 +242,15 @@ func (m *Manager) backupFiles(ctx context.Context, repoPath string, env, paths, 
 	cmd := exec.CommandContext(ctx, resticBin, args...)
 	cmd.Env = env
 
-	// capture restic stdout for parsing the summary of bytes added
+	// capture restic stdout for parsing the summary of bytes added, and
+	// stderr so a failure carries restic's actual reason
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		logger.Error("backupFiles: restic backup failed for %s: %v", repoPath, err)
-		return 0, fmt.Errorf("restic backup files: %w", err)
+		msg := strings.TrimSpace(stderr.String())
+		logger.Error("backupFiles: restic backup failed for %s: %v — %s", repoPath, err, msg)
+		return 0, fmt.Errorf("restic backup files: %w — %s", err, msg)
 	}
 
 	// restic --json outputs one JSON object per line; the last is the summary
