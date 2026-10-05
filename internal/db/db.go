@@ -699,4 +699,46 @@ CREATE TABLE IF NOT EXISTS kppn_basic_auth_users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_basic_auth_users_site ON kppn_basic_auth_users (site_id);
+
+
+CREATE TABLE IF NOT EXISTS kppn_autoban_settings (
+    id               INTEGER PRIMARY KEY CHECK(id = 1),
+    threshold        INTEGER NOT NULL DEFAULT 25,
+    window_secs      INTEGER NOT NULL DEFAULT 60,
+    cooldown_secs    INTEGER NOT NULL DEFAULT 1800,
+    ban_secs         INTEGER NOT NULL DEFAULT 3600,
+    perm_strikes     INTEGER NOT NULL DEFAULT 10,
+    perm_window_secs INTEGER NOT NULL DEFAULT 86400,
+    escalate_sites   INTEGER NOT NULL DEFAULT 2,
+    updated          DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS kppn_autoban_site_overrides (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id          INTEGER NOT NULL UNIQUE REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    threshold        INTEGER,
+    window_secs      INTEGER,
+    cooldown_secs    INTEGER,
+    ban_secs         INTEGER,
+    perm_strikes     INTEGER,
+    perm_window_secs INTEGER,
+    updated          DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_autoban_site_overrides_site ON kppn_autoban_site_overrides (site_id);
+
+CREATE TABLE IF NOT EXISTS kppn_auto_bans (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    site_id       INTEGER REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    ip            TEXT     NOT NULL,
+    hits          INTEGER  NOT NULL DEFAULT 0,
+    strikes       INTEGER  NOT NULL DEFAULT 1,
+    strikes_since DATETIME NOT NULL,
+    expires       DATETIME,
+    created       DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_auto_bans_scope   ON kppn_auto_bans (site_id, ip);
+CREATE INDEX IF NOT EXISTS idx_auto_bans_expires ON kppn_auto_bans (expires);
 `
