@@ -85,7 +85,7 @@ document.addEventListener("click", async (e) => {
         case "recreate":
             showProgressModal("Recreating Pod", "Recreating containers for this site - this may take a few minutes...");
             try {
-                await api.post(`/sites/${id}/recreate`);
+                await api.post(`/sites/${id}/recreate`, { prune: true });
                 hideProgressModal();
                 toast.success("Pod recreated");
                 router.go("sites");

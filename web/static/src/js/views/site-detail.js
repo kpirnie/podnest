@@ -451,7 +451,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     document.getElementById("sd-recreate").addEventListener("click", async () => {
         showProgressModal("Recreating Pod", "Recreating containers for this site...");
         try {
-            await api.post(`/sites/${id}/recreate`);
+            await api.post(`/sites/${id}/recreate`, { prune: true });
             hideProgressModal();
             toast.success("Pod recreated");
             router.go("site-detail", { id });

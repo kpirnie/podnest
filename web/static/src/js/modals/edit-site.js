@@ -137,7 +137,7 @@ export async function showEditSiteModal(site) {
             if (siteType !== 6) {
                 showProgressModal("Applying Changes", "Saving changes and recreating pod...");
                 try {
-                    await api.post(`/sites/${site.ID}/recreate`, { install_wordpress: installWordPress });
+                    await api.post(`/sites/${site.ID}/recreate`, { install_wordpress: installWordPress, prune: true });
                     hideProgressModal();
                     toast.success("Site updated and pod recreated");
                 } catch (err) {
