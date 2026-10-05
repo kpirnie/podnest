@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -73,6 +74,9 @@ type Handler struct {
 	PodmanClient *podman.Client
 	Backup       *backup.Manager
 }
+
+// errPodNotRunning reports a recreated pod that never reached a running state.
+var errPodNotRunning = errors.New("pod failed to reach running state")
 
 // RegisterRoutes mounts all site routes onto api.
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
@@ -956,10 +960,6 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// a stopped site is rebuilt and confirmed healthy, then stopped again —
-	// refreshing its containers must not bring it back online
-	wasStopped := site.SiteStatus == models.StatusStopped
-
 	// define a struct to capture the expected JSON payload for site recreation, including options for WordPress installation and image pruning
 	var recreateReq struct {
 		InstallWordPress *bool `json:"install_wordpress"`
@@ -967,18 +967,43 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewDecoder(r.Body).Decode(&recreateReq) //nolint — body is optional
 
+	// rebuild the pod, mapping a bad site path to a client error and a pod
+	// that never came up to its own message
+	status, err := h.RecreateSite(context.Background(), site, recreateReq.InstallWordPress, recreateReq.Prune, false)
+	switch {
+	case errors.Is(err, fileutil.ErrPathEscape):
+		apiutil.Error(w, http.StatusBadRequest, err)
+		return
+	case errors.Is(err, errPodNotRunning):
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, errPodNotRunning.Error())
+		return
+	case err != nil:
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": status})
+}
+
+// RecreateSite rebuilds a site's pod on fresh images — pulling them, rewriting
+// the varnish config, refreshing WordPress core, and re-provisioning the pod —
+// then confirms it is running. A previously stopped site is stopped again once
+// healthy. It returns the site's resulting status.
+func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWordPress *bool, prune, waitUpgrade bool) (string, error) {
+
+	// a stopped site is rebuilt and confirmed healthy, then stopped again —
+	// refreshing its containers must not bring it back online
+	wasStopped := site.SiteStatus == models.StatusStopped
+
 	// define the site directory paths for scaffolding and pod recreation, and create a background context for operations
 	siteDir, err := fileutil.SiteDir(h.sitesBase(), site.Name)
 	if err != nil {
-		apiutil.Error(w, http.StatusBadRequest, err)
-		return
+		return "", err
 	}
 	hostSiteDir, err := fileutil.SiteDir(h.hostSitesBase(), site.Name)
 	if err != nil {
-		apiutil.Error(w, http.StatusBadRequest, err)
-		return
+		return "", err
 	}
-	bgCtx := context.Background()
+	bgCtx := ctx
 
 	// pull fresh images — skips if already up to date
 	pullCtx, pullCancel := context.WithTimeout(bgCtx, 45*time.Minute)
@@ -990,7 +1015,7 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	pullCancel()
 
 	// if the site type is WordPress and the request specifies not to install WordPress, clear the html directory and update the site type to PHP
-	if site.SiteType == models.SiteTypeWordPress && recreateReq.InstallWordPress != nil && !*recreateReq.InstallWordPress {
+	if site.SiteType == models.SiteTypeWordPress && installWordPress != nil && !*installWordPress {
 		if err := clearDirContents(siteDir + "/html"); err != nil {
 			logger.Warn("failed to clear html/ for site %s: %v", site.Name, err)
 		}
@@ -1061,26 +1086,29 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		_ = h.Podman.StopPod(bgCtx, podman.PodName(site.Name))
 		_ = h.Podman.RemoveSitePod(bgCtx, site.Name)
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
-		apiutil.Error(w, http.StatusInternalServerError, err)
-		return
+		return "", err
 	}
 
 	// confirm the pod is running after recreation, logging an error and returning an internal server error response if the pod does not reach a running state
 	if !h.confirmPodRunning(bgCtx, podman.PodName(site.Name), site.SiteType) {
 		logger.Error("pod for site %d did not reach running state after recreate", site.ID)
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
-		apiutil.ErrorMsg(w, http.StatusInternalServerError, "pod failed to reach running state")
-		return
+		return "", errPodNotRunning
 	}
 
-	// run mariadb-upgrade if the DB version has changed
-	go h.maybeUpgradeMariaDB(context.Background(), site)
+	// run mariadb-upgrade if the DB version has changed — a caller that exits
+	// once this returns must wait on it, or the upgrade dies with the process
+	if waitUpgrade {
+		h.maybeUpgradeMariaDB(bgCtx, site)
+	} else {
+		go h.maybeUpgradeMariaDB(context.Background(), site)
+	}
 
 	// prune dangling images left behind by the refreshed pod — runs only when the
 	// caller opted in (bulk recreate) and only here, after the pod is confirmed
 	// running, so cleanup can never race ahead of the rebuild even if the client
 	// connection has already dropped
-	if recreateReq.Prune {
+	if prune {
 		if _, err := h.Podman.PruneImages(bgCtx); err != nil {
 			logger.Warn("recreate: image prune failed for site %s: %v", site.Name, err)
 		}
@@ -1092,14 +1120,13 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 			logger.Warn("recreate: failed to stop site %s after rebuild: %v", site.Name, err)
 		} else {
 			_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusStopped)
-			apiutil.JSON(w, http.StatusOK, map[string]string{"status": "stopped"})
-			return
+			return "stopped", nil
 		}
 	}
 
-	// update the site status to running in the database and return a JSON response indicating the running status
+	// update the site status to running in the database and report the running status
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
-	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "running"})
+	return "running", nil
 }
 
 // apiRenameSite renames a site in place — the database schema, the site
