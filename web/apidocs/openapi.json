@@ -63,7 +63,7 @@
     },
     {
       "name": "WAF",
-      "description": "Per-site WAF toggles, exclusions, CRS plugins, and import/export."
+      "description": "Per-site WAF toggles, exclusions, CRS plugins, and import/export; global and per-site auto-ban settings and ban lists."
     },
     {
       "name": "Configs",
@@ -523,6 +523,102 @@
           "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
+      }
+    },
+    "/security/autoban": {
+      "get": {
+        "tags": ["WAF"],
+        "summary": "List global auto-bans",
+        "operationId": "get_security_autoban",
+        "responses": {
+          "200": { "description": "Success — returns the active global bans: [{\"ID\", \"SiteID\", \"IP\", \"Hits\", \"Strikes\", \"StrikesSince\", \"Expires\", \"Created\"}]; Expires null means permanent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/security/autoban/settings": {
+      "get": {
+        "tags": ["WAF"],
+        "summary": "Get global auto-ban settings",
+        "operationId": "get_security_autoban_settings",
+        "responses": {
+          "200": { "description": "Success — returns {\"Threshold\", \"WindowSecs\", \"CooldownSecs\", \"BanSecs\", \"PermStrikes\", \"PermWindowSecs\", \"EscalateSites\"}", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "put": {
+        "tags": ["WAF"],
+        "summary": "Update global auto-ban settings",
+        "operationId": "put_security_autoban_settings",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request — a field is out of range", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
+          "description": "All values in seconds where timed: {\"threshold\": 25, \"window_secs\": 60, \"cooldown_secs\": 1800, \"ban_secs\": 3600, \"perm_strikes\": 10, \"perm_window_secs\": 86400, \"escalate_sites\": 2}"
+        }
+      }
+    },
+    "/security/autoban/{banID}": {
+      "delete": {
+        "tags": ["WAF"],
+        "summary": "Remove a global auto-ban",
+        "operationId": "delete_security_autoban_banid",
+        "responses": {
+          "200": { "description": "Success — the ban and its strike history are cleared", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "banID", "in": "path", "required": true, "description": "Auto-ban ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/security/autoban/{banID}/allow": {
+      "post": {
+        "tags": ["WAF"],
+        "summary": "Allow a globally auto-banned IP",
+        "operationId": "post_security_autoban_banid_allow",
+        "responses": {
+          "200": { "description": "Success — the IP is added to the security bypass list and the ban removed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "banID", "in": "path", "required": true, "description": "Auto-ban ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/security/autoban/{banID}/permanent": {
+      "post": {
+        "tags": ["WAF"],
+        "summary": "Make a global auto-ban permanent",
+        "operationId": "post_security_autoban_banid_permanent",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "banID", "in": "path", "required": true, "description": "Auto-ban ID.", "schema": { "type": "string" } }
+        ]
       }
     },
     "/security/ip": {
@@ -7608,6 +7704,114 @@
           "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
           "description": "Newline-delimited AS numbers, bare or AS-prefixed: {\"whitelist\": \"AS7922\\nAS20115\", \"blacklist\": \"16509\\n14061\"}"
         }
+      }
+    },
+    "/sites/{id}/security/autoban": {
+      "get": {
+        "tags": ["WAF"],
+        "summary": "List site auto-bans",
+        "operationId": "get_sites_id_security_autoban",
+        "responses": {
+          "200": { "description": "Success — returns the site's active bans: [{\"ID\", \"SiteID\", \"IP\", \"Hits\", \"Strikes\", \"StrikesSince\", \"Expires\", \"Created\"}]; Expires null means permanent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/security/autoban/settings": {
+      "get": {
+        "tags": ["WAF"],
+        "summary": "Get site auto-ban settings",
+        "operationId": "get_sites_id_security_autoban_settings",
+        "responses": {
+          "200": { "description": "Success — returns {\"override\": {\"SiteID\", \"Enabled\", \"Threshold\", ...}, \"global\": {...}}; a null override value inherits the global one", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } }
+        ]
+      },
+      "put": {
+        "tags": ["WAF"],
+        "summary": "Update site auto-ban settings",
+        "operationId": "put_sites_id_security_autoban_settings",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request — a field is out of range", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
+          "description": "Null inherits the global value; timed values in seconds: {\"enabled\": true, \"threshold\": 25, \"window_secs\": null, \"cooldown_secs\": null, \"ban_secs\": 7200, \"perm_strikes\": null, \"perm_window_secs\": null}"
+        }
+      }
+    },
+    "/sites/{id}/security/autoban/{banID}": {
+      "delete": {
+        "tags": ["WAF"],
+        "summary": "Remove a site auto-ban",
+        "operationId": "delete_sites_id_security_autoban_banid",
+        "responses": {
+          "200": { "description": "Success — the ban and its strike history are cleared", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } },
+          { "name": "banID", "in": "path", "required": true, "description": "Auto-ban ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/security/autoban/{banID}/allow": {
+      "post": {
+        "tags": ["WAF"],
+        "summary": "Allow a site auto-banned IP (admin only)",
+        "operationId": "post_sites_id_security_autoban_banid_allow",
+        "responses": {
+          "200": { "description": "Success — the IP is added to the global security bypass list and the ban removed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden — admin only, since bypass applies to every site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } },
+          { "name": "banID", "in": "path", "required": true, "description": "Auto-ban ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/security/autoban/{banID}/permanent": {
+      "post": {
+        "tags": ["WAF"],
+        "summary": "Make a site auto-ban permanent",
+        "operationId": "post_sites_id_security_autoban_banid_permanent",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID (or user ID under the Users tag).", "schema": { "type": "string" } },
+          { "name": "banID", "in": "path", "required": true, "description": "Auto-ban ID.", "schema": { "type": "string" } }
+        ]
       }
     },
     "/sites/{id}/security/ua": {
