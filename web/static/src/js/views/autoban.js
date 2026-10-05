@@ -31,34 +31,41 @@ export function renderAutoBanPanel(siteId = null) {
     const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE];
     return `
         <div id="autoban-panel">
+
             <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Auto-Ban Settings</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="ab-save" uk-tooltip="Save Auto-Ban Settings">
-                        <span uk-icon="check"></span>
-                    </button>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    ${siteId
-                        ? `Counts this site's 4xx/5xx responses per IP. Leave a field blank to inherit the global value shown.`
-                        : `The global scope counts hits on unregistered domains; per-site counters use these values unless a site overrides them.`}
-                    Bypassed and whitelisted IPs are never counted.
-                </p>
-                ${siteId ? `
-                <div class="uk-margin-small-bottom">
-                    <label class="kp-label">
-                        <input class="uk-checkbox" type="checkbox" id="ab-enabled">
-                        &nbsp;Enable auto-ban for this site
-                    </label>
-                </div>` : ''}
-                <div class="uk-grid-small uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid>
-                    ${fields.map(f => `
-                    <div>
-                        <label class="kp-label" for="${f.id}">${f.label}</label>
-                        <input class="uk-input kp-input" id="${f.id}" type="number" min="1" step="1">
-                        <p class="kp-muted uk-text-small uk-margin-small-top">${f.help}</p>
-                    </div>`).join("")}
-                </div>
+                <ul class="kp-accordion uk-margin-remove" uk-accordion>
+                    <li>
+                        <a class="uk-accordion-title" href="#"><h3 class="kp-view-title">Auto-Ban Settings</h3></a>
+                        <div class="uk-accordion-content">
+                            <div class="uk-flex uk-flex-between uk-flex-top uk-margin-small-bottom" style="gap:8px">
+                                <p class="kp-muted uk-text-small uk-margin-remove">
+                                    ${siteId
+                                        ? `Counts this site's 4xx/5xx responses per IP. Leave a field blank to inherit the global value shown.`
+                                        : `The global scope counts hits on unregistered domains; per-site counters use these values unless a site overrides them.`}
+                                    Bypassed and whitelisted IPs are never counted.
+                                </p>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="ab-save" uk-tooltip="Save Auto-Ban Settings">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                            ${siteId ? `
+                            <div class="uk-margin-small-bottom">
+                                <label class="kp-label">
+                                    <input class="uk-checkbox" type="checkbox" id="ab-enabled">
+                                    &nbsp;Enable auto-ban for this site
+                                </label>
+                            </div>` : ''}
+                            <div class="uk-grid-small uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid>
+                                ${fields.map(f => `
+                                <div>
+                                    <label class="kp-label" for="${f.id}">${f.label}</label>
+                                    <input class="uk-input kp-input" id="${f.id}" type="number" min="1" step="1">
+                                    <p class="kp-muted uk-text-small uk-margin-small-top">${f.help}</p>
+                                </div>`).join("")}
+                            </div>
+                        </div>
+                    </li>
+                </ul>
             </div>
 
             <div class="kp-card uk-padding-small">

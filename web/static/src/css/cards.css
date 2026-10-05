@@ -67,3 +67,31 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 }
 
 .kp-site-card[data-type="6"] { background:#020615; }
+
+/* collapsible card section — the title keeps the card heading style and
+   UIkit's grey plus/minus icon is swapped for an accent-free chevron */
+.kp-accordion > li > .uk-accordion-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-decoration: none;
+}
+.kp-accordion > li > .uk-accordion-title::before {
+    display: none;
+}
+.kp-accordion > li > .uk-accordion-title::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    margin-right: 4px;
+    border-right: 2px solid var(--kp-text-dim);
+    border-bottom: 2px solid var(--kp-text-dim);
+    transform: rotate(45deg);
+    transition: transform var(--kp-transition);
+}
+.kp-accordion > li.uk-open > .uk-accordion-title::after {
+    transform: rotate(-135deg);
+}
+.kp-accordion > li > .uk-accordion-content {
+    margin-top: 12px;
+}
