@@ -33,6 +33,8 @@ type SecurityProxy interface {
 	ClientIP(r *http.Request) string
 	LookupCountry(ip string) string
 	LookupASN(ip string) (uint32, string)
+	AutoBanRemove(siteID int64, ip string)
+	AutoBanSetPermanent(siteID int64, ip string)
 }
 
 // Handler handles IP and UA security rule management API routes.
@@ -100,6 +102,22 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 
 	// ASN lookup helper — admin only
 	api.Handle("GET /security/asn/lookup", admin(h.apiASNLookup))
+
+	// global auto-ban — admin only
+	api.Handle("GET /security/autoban/settings", admin(h.apiGetGlobalAutoBanSettings))
+	api.Handle("PUT /security/autoban/settings", admin(h.apiSaveGlobalAutoBanSettings))
+	api.Handle("GET /security/autoban", admin(h.apiGetGlobalAutoBans))
+	api.Handle("POST /security/autoban/{banID}/permanent", admin(h.apiGlobalAutoBanPermanent))
+	api.Handle("POST /security/autoban/{banID}/allow", admin(h.apiGlobalAutoBanAllow))
+	api.Handle("DELETE /security/autoban/{banID}", admin(h.apiGlobalAutoBanRemove))
+
+	// per-site auto-ban — allow is admin only, since bypass applies to every site
+	api.HandleFunc("GET /sites/{id}/security/autoban/settings", h.apiGetSiteAutoBanSettings)
+	api.HandleFunc("PUT /sites/{id}/security/autoban/settings", h.apiSaveSiteAutoBanSettings)
+	api.HandleFunc("GET /sites/{id}/security/autoban", h.apiGetSiteAutoBans)
+	api.HandleFunc("POST /sites/{id}/security/autoban/{banID}/permanent", h.apiSiteAutoBanPermanent)
+	api.Handle("POST /sites/{id}/security/autoban/{banID}/allow", admin(h.apiSiteAutoBanAllow))
+	api.HandleFunc("DELETE /sites/{id}/security/autoban/{banID}", h.apiSiteAutoBanRemove)
 }
 
 // -- global ------------------------------------------------------------------
