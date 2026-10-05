@@ -12,12 +12,11 @@ import { toast } from '../toast.js';
 export function renderSecurityPanel(siteId = null) {
     const ipBase  = siteId ? `/sites/${siteId}/security/ip` : `/security/ip`;
     const uaBase  = siteId ? `/sites/${siteId}/security/ua` : `/security/ua`;
-    const wafBase = siteId ? `/sites/${siteId}/waf`          : `/settings/waf`;
     const geoBase = siteId ? `/sites/${siteId}/security/country` : `/security/country`;
     const asnBase = siteId ? `/sites/${siteId}/security/asn` : `/security/asn`;
 
     return `
-        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-asn-base="${asnBase}" data-waf-base="${wafBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
+        <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-asn-base="${asnBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
 
             <p class="kp-muted uk-text-small uk-margin-small-bottom">
                 <span uk-icon="icon: warning; ratio: 0.75"></span>
@@ -240,70 +239,6 @@ export function renderSecurityPanel(siteId = null) {
                     </div>
                 </div>
             </div>
-
-            <div class="kp-card uk-padding-small">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Web Application Firewall</h3>
-                    <div class="uk-flex" style="gap:8px">
-                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/waf/export" download="podnest-waf-settings.json" uk-tooltip="Export WAF settings">
-                            <span uk-icon="download"></span>
-                        </a>
-                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import WAF settings from JSON">
-                            <span uk-icon="upload"></span>
-                            <input type="file" id="sec-waf-import" accept=".json" style="display:none">
-                        </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-waf-save" uk-tooltip="Save WAF Settings">
-                            <span uk-icon="check"></span>
-                        </button>
-                    </div>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    Inspects all proxied requests using the OWASP Core Rule Set.
-                    Start in Detection mode to review false positives before enabling Prevention.
-                    The engine recompiles in the background after saving.
-                </p>
-                <div class="uk-grid-small uk-margin-small-bottom" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label" for="sec-waf-mode">Mode</label>
-                        <select class="uk-select kp-select" id="sec-waf-mode">
-                            <option value="0">Detection — log matches only</option>
-                            <option value="1">Prevention — block matching requests</option>
-                        </select>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label" for="sec-waf-paranoia">Paranoia Level</label>
-                        <select class="uk-select kp-select" id="sec-waf-paranoia">
-                            <option value="1">1 — Baseline (recommended)</option>
-                            <option value="2">2 — Moderate</option>
-                            <option value="3">3 — Strict</option>
-                            <option value="4">4 — Paranoid</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="uk-grid-small uk-margin-small-bottom" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <input class="uk-checkbox" type="checkbox" id="sec-waf-enabled">
-                            &nbsp;Enable WAF (OWASP Core Rule Set)
-                        </label>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <input class="uk-checkbox" type="checkbox" id="sec-waf-audit">
-                            &nbsp;Enable Audit Log
-                        </label>
-                    </div>
-                </div>
-                <div class="uk-margin-small-bottom">
-                    <label class="kp-label" for="sec-waf-exclusions">Global Rule Exclusions</label>
-                    <textarea class="uk-textarea kp-textarea kp-mono kp-waf-exclusions" id="sec-waf-exclusions" rows="15"
-                        placeholder="# Numeric = rule ID, text = tag name, one per line&#10;920350&#10;attack-sqli"></textarea>
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        Numeric entries map to <span class="kp-mono">SecRuleRemoveById</span>;
-                        text entries to <span class="kp-mono">SecRuleRemoveByTag</span>.
-                    </p>
-                </div>
-            </div>
             ` : ''}
 
         </div>`;
@@ -318,14 +253,13 @@ export async function loadSecurityPanel(root) {
 
     const ipBase  = panel.dataset.ipBase;
     const uaBase  = panel.dataset.uaBase;
-    const wafBase = panel.dataset.wafBase;
 
     try {
         const geoBase = panel.dataset.geoBase;
         const asnBase = panel.dataset.asnBase;
         const fetches = [api.get(ipBase), api.get(uaBase), api.get(geoBase), api.get(asnBase)];
-        if (!panel.dataset.siteId) fetches.push(api.get(wafBase), api.get("/settings/trusted-proxies"), api.get("/security/bypass"));
-        const [ip, ua, geo, asn, waf, tp, bp] = await Promise.all(fetches);
+        if (!panel.dataset.siteId) fetches.push(api.get("/settings/trusted-proxies"), api.get("/security/bypass"));
+        const [ip, ua, geo, asn, tp, bp] = await Promise.all(fetches);
 
         // bail if the user navigated away while the fetch was in flight
         if (!root.querySelector("#sec-ip-whitelist")) return;
@@ -338,19 +272,6 @@ export async function loadSecurityPanel(root) {
         root.querySelector("#sec-geo-blacklist").value = geo.blacklist ?? "";
         root.querySelector("#sec-asn-whitelist").value = asn.whitelist ?? "";
         root.querySelector("#sec-asn-blacklist").value = asn.blacklist ?? "";
-
-        if (waf) {
-            const enabled  = root.querySelector("#sec-waf-enabled");
-            const audit    = root.querySelector("#sec-waf-audit");
-            const mode     = root.querySelector("#sec-waf-mode");
-            const paranoia = root.querySelector("#sec-waf-paranoia");
-            const excl     = root.querySelector("#sec-waf-exclusions");
-            if (enabled)  enabled.checked  = !!waf.Enabled;
-            if (audit)    audit.checked    = !!waf.AuditLog;
-            if (mode)     mode.value       = String(waf.Mode          ?? 0);
-            if (paranoia) paranoia.value   = String(waf.ParanoiaLevel ?? 1);
-            if (excl)     excl.value       = waf.Exclusions ?? "";
-        }
 
         if (tp) {
             const cidrs = root.querySelector("#sec-tp-cidrs");
@@ -528,29 +449,6 @@ export function wireSecurityPanel(root) {
         }
     });
 
-    // save global WAF settings
-    root.querySelector("#sec-waf-save")?.addEventListener("click", async () => {
-        const btn  = root.querySelector("#sec-waf-save");
-        const orig = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
-        try {
-            await api.put(panel.dataset.wafBase, {
-                enabled:        root.querySelector("#sec-waf-enabled").checked,
-                mode:           parseInt(root.querySelector("#sec-waf-mode").value, 10),
-                paranoia_level: parseInt(root.querySelector("#sec-waf-paranoia").value, 10),
-                audit_log:      root.querySelector("#sec-waf-audit").checked,
-                exclusions:     root.querySelector("#sec-waf-exclusions").value.trim(),
-            });
-            toast.success("WAF settings saved — engine recompiling in background");
-        } catch (e) {
-            toast.error(e.message);
-        } finally {
-            btn.disabled  = false;
-            btn.innerHTML = orig;
-        }
-    });
-
     // IP rules CSV import
     root.querySelector("#sec-ip-import")?.addEventListener("change", async (e) => {
         const file = e.target.files[0];
@@ -589,24 +487,6 @@ export function wireSecurityPanel(root) {
         }
     });
 
-    // global WAF JSON import
-    root.querySelector("#sec-waf-import")?.addEventListener("change", async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const fd = new FormData();
-        fd.append("file", file);
-        try {
-            const res  = await fetch("/api/settings/waf/import", { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
-            const data = res.status === 204 ? null : await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-            await loadSecurityPanel(root);
-            toast.success("WAF settings imported");
-        } catch (err) {
-            toast.error(err.message);
-        } finally {
-            e.target.value = "";
-        }
-    });
 }
 
 // showASNLookupModal presents the IP/domain → ASN lookup dialog, with a

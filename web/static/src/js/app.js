@@ -16,6 +16,7 @@ import { viewSettings } from './views/settings.js';
 import { viewSiteDetail } from './views/site-detail.js';
 import { viewSites } from './views/sites.js';
 import { viewUsers } from './views/users.js';
+import { viewWAF } from './views/waf.js';
 
 /* -- register routes ------------------------------------------------------- */
 router.register("dashboard", (root) => viewDashboard(root));
@@ -24,6 +25,7 @@ router.register("site-detail", (root, params) => viewSiteDetail(root, params));
 router.register("users", (root) => viewUsers(root));
 router.register("settings", (root, params) => viewSettings(root, params));
 router.register("security", (root) => viewSecurity(root));
+router.register("waf", (root) => viewWAF(root));
 router.register("admin-logs", (root) => viewAdminLogs(root));
 router.register("audit-log", (root) => viewAuditLog(root));
 
