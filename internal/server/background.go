@@ -159,14 +159,14 @@ func (s *Server) dropUpdater() {
 	}
 }
 
-// detectHostAppPath inspects the running container's mounts to resolve the
+// DetectHostAppPath inspects the running container's mounts to resolve the
 // host-side path for the app data directory, falling back to the configured
 // app path if unavailable.
-func (s *Server) detectHostAppPath() string {
+func DetectHostAppPath(pc *podman.Client, appPath string) string {
 	hostname, err := os.Hostname()
 	if err != nil {
 		logger.Error("could not get the hostname %v", err)
-		return s.cfg.AppPath
+		return appPath
 	}
 
 	for _, name := range []string{hostname, "podnest"} {
@@ -176,7 +176,7 @@ func (s *Server) detectHostAppPath() string {
 				Destination string `json:"Destination"`
 			} `json:"Mounts"`
 		}
-		if err := s.podman.GetJSON(context.Background(),
+		if err := pc.GetJSON(context.Background(),
 			"/v4.0.0/libpod/containers/"+name+"/json",
 			&inspect,
 		); err != nil {
@@ -184,19 +184,19 @@ func (s *Server) detectHostAppPath() string {
 			continue
 		}
 		for _, m := range inspect.Mounts {
-			if m.Destination == s.cfg.AppPath {
+			if m.Destination == appPath {
 				return m.Source
 			}
 		}
 	}
 
 	logger.Debug("retrieved the app path")
-	return s.cfg.AppPath
+	return appPath
 }
 
-// detectHostGateway uses the Podman API to find the bridge gateway for the
+// DetectHostGateway uses the Podman API to find the bridge gateway for the
 // default podman network.
-func (s *Server) detectHostGateway() string {
+func DetectHostGateway(pc *podman.Client) string {
 	hostname, err := os.Hostname()
 	if err != nil {
 		logger.Error("detectHostGateway: could not get hostname: %v", err)
@@ -212,7 +212,7 @@ func (s *Server) detectHostGateway() string {
 			} `json:"NetworkSettings"`
 		}
 
-		if err := s.podman.GetJSON(context.Background(),
+		if err := pc.GetJSON(context.Background(),
 			"/v4.0.0/libpod/containers/"+name+"/json",
 			&inspect,
 		); err != nil {

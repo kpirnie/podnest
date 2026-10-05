@@ -106,8 +106,8 @@ func New(cfg Config) *Server {
 func (s *Server) Start() error {
 
 	// resolve host paths before anything else that depends on them
-	s.cfg.HostAppPath = s.detectHostAppPath()
-	s.cfg.HostGateway = s.detectHostGateway()
+	s.cfg.HostAppPath = DetectHostAppPath(s.podman, s.cfg.AppPath)
+	s.cfg.HostGateway = DetectHostGateway(s.podman)
 	logger.Debug("host gateway detected: %s", s.cfg.HostGateway)
 
 	// set the published host IP
