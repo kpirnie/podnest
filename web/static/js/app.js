@@ -2116,32 +2116,39 @@ ${r}`:r),a.hide(),u.success(`${r} added to blacklist \u2014 save to apply`)})}ca
             <a href="javascript:void(0);" class="kp-muted redirect-remove-btn" uk-icon="trash"></a>
         </div>`}async function xe(t){let e=document.getElementById("redirects-list");if(!e)return;e.innerHTML="";let a=await p.get(`/sites/${t}/redirects`);e.innerHTML=a.map(s=>we(s.Source,s.Target,s.Code)).join("")}function Se(t,e){let a=new AbortController,s={signal:a.signal};t.addEventListener("click",i=>{i.target.closest("#redirect-add-btn")&&document.getElementById("redirects-list").insertAdjacentHTML("beforeend",we()),i.target.closest(".redirect-remove-btn")&&i.target.closest(".redirect-row").remove()},s),t.addEventListener("click",async i=>{if(!i.target.closest("#redirect-save-btn"))return;let n=[...document.querySelectorAll(".redirect-row")].map(o=>({Source:o.querySelector(".redirect-source").value.trim(),Target:o.querySelector(".redirect-target").value.trim(),Code:parseInt(o.querySelector(".redirect-code").value,10)}));try{await p.put(`/sites/${e}/redirects`,n),u.success("Redirects saved")}catch(o){u.error(o.message||"Failed to save redirects")}},s),t.__redirectsAbort?.abort(),t.__redirectsAbort=a}var V=[{id:"ab-threshold",key:"threshold",api:"Threshold",mult:1,label:"Error Responses",help:"4xx/5xx responses within the window that trigger the 429."},{id:"ab-window",key:"window_secs",api:"WindowSecs",mult:1,label:"Window (seconds)",help:"Span the error responses are counted over."},{id:"ab-cooldown",key:"cooldown_secs",api:"CooldownSecs",mult:60,label:"429 Cooldown (minutes)",help:"Hitting the limit again during the cooldown converts it to a ban."},{id:"ab-ban",key:"ban_secs",api:"BanSecs",mult:60,label:"Ban Length (minutes)",help:"How long a ban lasts."},{id:"ab-strikes",key:"perm_strikes",api:"PermStrikes",mult:1,label:"Bans Before Permanent",help:"Bans within the strike window that make the ban permanent."},{id:"ab-strike-win",key:"perm_window_secs",api:"PermWindowSecs",mult:3600,label:"Strike Window (hours)",help:"Span the bans are counted over."}],It={id:"ab-escalate",key:"escalate_sites",api:"EscalateSites",mult:1,label:"Sites Before Global Ban",help:"An IP banned on this many sites is banned on all of them."},z=t=>t?`/sites/${t}/security/autoban`:"/security/autoban";function mt(t=null){let e=t?V:[...V,It];return`
         <div id="autoban-panel">
+
             <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Auto-Ban Settings</h3>
-                    <button class="uk-button kp-btn-primary kp-btn-sm" id="ab-save" uk-tooltip="Save Auto-Ban Settings">
-                        <span uk-icon="check"></span>
-                    </button>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    ${t?"Counts this site's 4xx/5xx responses per IP. Leave a field blank to inherit the global value shown.":"The global scope counts hits on unregistered domains; per-site counters use these values unless a site overrides them."}
-                    Bypassed and whitelisted IPs are never counted.
-                </p>
-                ${t?`
-                <div class="uk-margin-small-bottom">
-                    <label class="kp-label">
-                        <input class="uk-checkbox" type="checkbox" id="ab-enabled">
-                        &nbsp;Enable auto-ban for this site
-                    </label>
-                </div>`:""}
-                <div class="uk-grid-small uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid>
-                    ${e.map(a=>`
-                    <div>
-                        <label class="kp-label" for="${a.id}">${a.label}</label>
-                        <input class="uk-input kp-input" id="${a.id}" type="number" min="1" step="1">
-                        <p class="kp-muted uk-text-small uk-margin-small-top">${a.help}</p>
-                    </div>`).join("")}
-                </div>
+                <ul class="kp-accordion uk-margin-remove" uk-accordion>
+                    <li>
+                        <a class="uk-accordion-title" href="#"><h3 class="kp-view-title">Auto-Ban Settings</h3></a>
+                        <div class="uk-accordion-content">
+                            <div class="uk-flex uk-flex-between uk-flex-top uk-margin-small-bottom" style="gap:8px">
+                                <p class="kp-muted uk-text-small uk-margin-remove">
+                                    ${t?"Counts this site's 4xx/5xx responses per IP. Leave a field blank to inherit the global value shown.":"The global scope counts hits on unregistered domains; per-site counters use these values unless a site overrides them."}
+                                    Bypassed and whitelisted IPs are never counted.
+                                </p>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="ab-save" uk-tooltip="Save Auto-Ban Settings">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                            ${t?`
+                            <div class="uk-margin-small-bottom">
+                                <label class="kp-label">
+                                    <input class="uk-checkbox" type="checkbox" id="ab-enabled">
+                                    &nbsp;Enable auto-ban for this site
+                                </label>
+                            </div>`:""}
+                            <div class="uk-grid-small uk-child-width-1-2@s uk-child-width-1-3@m" uk-grid>
+                                ${e.map(a=>`
+                                <div>
+                                    <label class="kp-label" for="${a.id}">${a.label}</label>
+                                    <input class="uk-input kp-input" id="${a.id}" type="number" min="1" step="1">
+                                    <p class="kp-muted uk-text-small uk-margin-small-top">${a.help}</p>
+                                </div>`).join("")}
+                            </div>
+                        </div>
+                    </li>
+                </ul>
             </div>
 
             <div class="kp-card uk-padding-small">
