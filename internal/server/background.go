@@ -61,6 +61,17 @@ func (s *Server) walCheckpointer() {
 	}
 }
 
+// autoBanReaper sweeps lapsed auto-ban counters and bans every five minutes.
+func (s *Server) autoBanReaper() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for s.tick(ticker) {
+		if s.proxy != nil {
+			s.proxy.PruneAutoBans()
+		}
+	}
+}
+
 // crsUpdater checks for updated OWASP CRS rules nightly and recompiles the
 // WAF engine if a new version is downloaded.
 func (s *Server) crsUpdater() {
@@ -424,7 +435,7 @@ func (s *Server) rotateLogs() {
 	if !s.sleep(time.Until(next)) {
 		return
 	}
-	
+
 	run := func() {
 		// collect all log directories to rotate, pairing each site's directory
 		// with the ID whose cached handles have to be released first

@@ -72,6 +72,9 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	if err := p.warmWAFCache(); err != nil {
 		return err
 	}
+	if err := p.warmAutoBanCache(); err != nil {
+		return err
+	}
 	p.warmSecurityCache(ipRules, uaRules, countryRules, asnRules)
 	p.warmBypassCache(bypassRules)
 	p.warmBasicAuthCache()

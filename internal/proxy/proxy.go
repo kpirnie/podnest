@@ -83,34 +83,40 @@ type Proxy struct {
 	adminDomain       string
 	adminPort         int
 	appPath           string
-	adminMu           sync.RWMutex                                 // guards adminDomain only
-	cache             atomic.Pointer[map[string]domainEntry]       // domain → entry; swapped atomically on every change
-	secCache          atomic.Pointer[securityCache]                // compiled rule sets; swapped atomically on rule changes
-	wafEnabled        atomic.Bool                                  // true when global WAF is on
-	wafEngine         atomic.Pointer[WAFEngine]                    // global compiled engine
-	wafSiteEngines    atomic.Pointer[map[int64]*WAFEngine]         // siteID → compiled engine; swapped whole so no request sees a half-built set
-	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride] // per-site override map
-	trustedProxies    atomic.Pointer[ipTable]                      // compiled trusted proxy ranges; swapped atomically on refresh
-	bypassNets        atomic.Pointer[ipTable]                      // compiled bypass IP rules; swapped atomically on change
-	geoDB             atomic.Pointer[maxminddb.Reader]             // in-memory country database; swapped atomically on refresh
-	asnDB             atomic.Pointer[maxminddb.Reader]             // in-memory ASN database; swapped atomically on refresh
-	dropFeed          atomic.Pointer[dropFeed]                     // Spamhaus DROP lists; swapped atomically on refresh
-	rpCache           sync.Map                                     // int(port) → *httputil.ReverseProxy for container sites
-	rpProxyCache      sync.Map                                     // string(url) → *httputil.ReverseProxy for RP upstream sites
-	redirectCache     sync.Map                                     // int64(siteID) → []compiledRedirect; precompiled on store
-	basicAuthCache    sync.Map                                     // int64(siteID) → *basicAuthEntry; nil entry means disabled
-	transport         *http.Transport                              // shared connection pool across all reverse proxies
-	adminTransport    *http.Transport                              // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
-	rpTransport       *http.Transport                              // shared connection pool for all reverse-proxy-type upstream sites
-	rpVerifyTransport *http.Transport                              // verifying twin of rpTransport for upstreams whose certs probe as valid
-	rpTLSVerified     sync.Map                                     // string(host:port) → tlsVerdict; probed cert-verification verdicts with downgrade expiry
-	accessLog         *os.File                                     // structured access log for Fail2Ban consumption
-	accessLogCh       chan accessLogEntry                          // async drain channel — request goroutines never block on log writes
-	accessLogDone     chan struct{}                                // closed when the drain goroutine has finished
-	logCloseCh        chan closeReq                                // rotation asks the drain to close and evict site handles
-	wafLog            *os.File                                     // WAF-specific log for Fail2Ban and UI streaming
-	siteAccessLogs    sync.Map                                     // int64(siteID) → *os.File for per-site access.log
-	siteWAFLogs       sync.Map                                     // int64(siteID) → *os.File for per-site waf.log
+	adminMu           sync.RWMutex                                     // guards adminDomain only
+	cache             atomic.Pointer[map[string]domainEntry]           // domain → entry; swapped atomically on every change
+	secCache          atomic.Pointer[securityCache]                    // compiled rule sets; swapped atomically on rule changes
+	wafEnabled        atomic.Bool                                      // true when global WAF is on
+	wafEngine         atomic.Pointer[WAFEngine]                        // global compiled engine
+	wafSiteEngines    atomic.Pointer[map[int64]*WAFEngine]             // siteID → compiled engine; swapped whole so no request sees a half-built set
+	wafOverrides      atomic.Pointer[map[int64]db.WAFSiteOverride]     // per-site override map
+	trustedProxies    atomic.Pointer[ipTable]                          // compiled trusted proxy ranges; swapped atomically on refresh
+	bypassNets        atomic.Pointer[ipTable]                          // compiled bypass IP rules; swapped atomically on change
+	geoDB             atomic.Pointer[maxminddb.Reader]                 // in-memory country database; swapped atomically on refresh
+	asnDB             atomic.Pointer[maxminddb.Reader]                 // in-memory ASN database; swapped atomically on refresh
+	dropFeed          atomic.Pointer[dropFeed]                         // Spamhaus DROP lists; swapped atomically on refresh
+	abSettings        atomic.Pointer[db.AutoBanSettings]               // global auto-ban settings; swapped atomically on change
+	abOverrides       atomic.Pointer[map[int64]db.AutoBanSiteOverride] // per-site auto-ban overrides; swapped atomically on change
+	abMu              sync.RWMutex                                     // guards abCounters and abBans
+	abCounters        map[abKey]*abCounter                             // scope+IP → hits in the current window and any 429 cooldown
+	abBans            map[abKey]*abBan                                 // scope+IP → ban, kept past expiry for strike history
+	abLoaded          atomic.Bool                                      // true once the persisted bans have been loaded
+	rpCache           sync.Map                                         // int(port) → *httputil.ReverseProxy for container sites
+	rpProxyCache      sync.Map                                         // string(url) → *httputil.ReverseProxy for RP upstream sites
+	redirectCache     sync.Map                                         // int64(siteID) → []compiledRedirect; precompiled on store
+	basicAuthCache    sync.Map                                         // int64(siteID) → *basicAuthEntry; nil entry means disabled
+	transport         *http.Transport                                  // shared connection pool across all reverse proxies
+	adminTransport    *http.Transport                                  // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
+	rpTransport       *http.Transport                                  // shared connection pool for all reverse-proxy-type upstream sites
+	rpVerifyTransport *http.Transport                                  // verifying twin of rpTransport for upstreams whose certs probe as valid
+	rpTLSVerified     sync.Map                                         // string(host:port) → tlsVerdict; probed cert-verification verdicts with downgrade expiry
+	accessLog         *os.File                                         // structured access log for Fail2Ban consumption
+	accessLogCh       chan accessLogEntry                              // async drain channel — request goroutines never block on log writes
+	accessLogDone     chan struct{}                                    // closed when the drain goroutine has finished
+	logCloseCh        chan closeReq                                    // rotation asks the drain to close and evict site handles
+	wafLog            *os.File                                         // WAF-specific log for Fail2Ban and UI streaming
+	siteAccessLogs    sync.Map                                         // int64(siteID) → *os.File for per-site access.log
+	siteWAFLogs       sync.Map                                         // int64(siteID) → *os.File for per-site waf.log
 	manager           *autocert.Manager
 	httpSrv           *http.Server
 	httpsSrv          *http.Server
@@ -212,6 +218,14 @@ func New(cfg Config) *Proxy {
 	// seed an empty DROP feed so Load() never returns nil before the lists load
 	emptyDrop := dropFeed{asns: make(map[uint32]struct{})}
 	p.dropFeed.Store(&emptyDrop)
+
+	// seed default auto-ban settings and empty state so lookups never see nil
+	abDefaults := db.DefaultAutoBanSettings()
+	p.abSettings.Store(&abDefaults)
+	emptyABOverrides := make(map[int64]db.AutoBanSiteOverride)
+	p.abOverrides.Store(&emptyABOverrides)
+	p.abCounters = make(map[abKey]*abCounter)
+	p.abBans = make(map[abKey]*abBan)
 
 	// open or create the structured proxy access log for Fail2Ban to watch
 	logDir := cfg.CertDir + "/../logs"
@@ -369,8 +383,15 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// route the host — if not registered anywhere, return 404
 	entry, port, siteID, rpPool, ok := p.routeHost(host)
 	if !ok {
+		// a globally auto-banned or cooling-down IP is refused before the 404
+		if clientIP != nil && p.autoBanBlock(w, r, clientIP, clientIPStr, start, 0, "") {
+			return
+		}
 		http.Error(w, "domain not registered", http.StatusNotFound)
 		p.writeAccessLog(r, http.StatusNotFound, 0, start, time.Since(start), clientIPStr, 0, "")
+
+		// nothing legitimate lands on an unregistered domain — count it toward the global auto-ban
+		p.autoBanRecord(clientIP, 0, http.StatusNotFound)
 		return
 	}
 
@@ -403,6 +424,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// wrap the writer to capture status + byte count for the access log
 	sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+
+	// count error responses toward the site's auto-ban once the response is
+	// done — panel traffic (siteID 0) is never counted
+	if siteID > 0 {
+		defer func() { p.autoBanRecord(clientIP, siteID, sw.status) }()
+	}
 
 	// advertise HTTP/3 support — only on routed requests, not on proxy-level error
 	// responses (404 domain-not-found, 403 IP/UA/WAF blocks already returned above)
@@ -608,6 +635,12 @@ func (p *Proxy) enforceSiteSecurity(w http.ResponseWriter, r *http.Request, clie
 			p.blockRequest(w, r, clientIPStr, start, siteID, siteName, reason)
 			return true
 		}
+	}
+
+	// enforce global and per-site auto-bans — the panel (siteID 0) enforces
+	// global bans in PanelSecurityMiddleware instead, without cooldowns
+	if clientIP != nil && siteID > 0 && p.autoBanBlock(w, r, clientIP, clientIPStr, start, siteID, siteName) {
+		return true
 	}
 
 	// enforce UA rules — blacklist always beats whitelist
@@ -913,6 +946,12 @@ func (p *Proxy) PanelSecurityMiddleware(next http.Handler) http.Handler {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
+		}
+
+		// enforce active global auto-bans
+		if clientIP != nil && p.autoBanBanned(clientIP) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
 		}
 
 		// enforce global UA rules

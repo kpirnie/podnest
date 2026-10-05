@@ -154,6 +154,9 @@ func (s *Server) Start() error {
 	// truncate the write-ahead log every six hours
 	s.goTracked(s.walCheckpointer)
 
+	// sweep lapsed auto-ban counters and bans every five minutes
+	s.goTracked(s.autoBanReaper)
+
 	// rotate logs daily at midnight
 	s.goTracked(s.rotateLogs)
 
@@ -177,7 +180,7 @@ func (s *Server) Start() error {
 
 	// start the per-site cron scheduler
 	s.cron.Start(s.ctx)
-	
+
 	// read the admin domain from the database, falling back to the flag value
 	adminDomain := s.cfg.AdminDomain
 	if dbDomain, err := db.GetSetting(s.cfg.DB, "admin_domain"); err == nil && dbDomain != "" {
