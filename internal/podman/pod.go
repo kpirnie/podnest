@@ -520,25 +520,27 @@ func (c *Client) ListPodStates(ctx context.Context) (map[string]string, error) {
 	return out, nil
 }
 
-// PruneOrphanedPods removes any pods prefixed wp- that are in a degraded or created state
-func (c *Client) PruneOrphanedPods(ctx context.Context) error {
+// PruneOrphanedPods removes any site pods (prefixed pn-) that are in a degraded or created state
+// and have no matching site — known holds the pod names of every site in the database
+func (c *Client) PruneOrphanedPods(ctx context.Context, known map[string]bool) error {
 
-	// loop through the pod statuses of "degraded" and "created" to find any pods that are in those states, and for each status, send a request to list the pods with a filter for that status, then loop through the returned pods and delete any that have a name starting with "wp-", logging any errors that occur during the deletion process
+	// loop through the pod statuses of "degraded" and "created" to find any pods that are in those states, and for each status, send a request to list the pods with a filter for that status, then delete any site pod that no longer belongs to a site, logging any errors that occur during the deletion process
 	for _, status := range []string{"degraded", "created"} {
 		var pods []struct {
 			Name string `json:"Name"`
 		}
 
-		// send the request to list the pods with a filter for the current status and handle any errors that occur, then loop through the returned pods and delete any that have a name starting with "wp-", logging any errors that occur during the deletion process
+		// send the request to list the pods with a filter for the current status and handle any errors that occur
 		if err := c.get(ctx, "/v4.0.0/libpod/pods/json?filters="+
 			url.QueryEscape(`{"status":["`+status+`"]}`), &pods); err != nil {
 			logger.Error("failed to list pods with status %s: %v", status, err)
 			continue
 		}
 
-		// loop through the returned pods and delete any that have a name starting with "wp-", logging any errors that occur during the deletion process
+		// a known site's pod is never touched here — after a host reboot it can sit
+		// in created or degraded until startup restore brings it back up
 		for _, p := range pods {
-			if strings.HasPrefix(p.Name, "wp-") {
+			if strings.HasPrefix(p.Name, "pn-") && !known[p.Name] {
 				if err := c.delete(ctx, "/v4.0.0/libpod/pods/"+p.Name+"?force=true"); err != nil {
 					logger.Error("failed to delete pod %s: %v", p.Name, err)
 				}

@@ -136,9 +136,17 @@ func (s *Server) Start() error {
 	// start background goroutine that retries until both global containers are running
 	s.goTracked(s.ensureGlobalContainers)
 
-	// clean up orphaned pods from previous failed runs
-	if err := s.podman.PruneOrphanedPods(context.Background()); err != nil {
-		logger.Warn("orphan cleanup: %v", err)
+	// skipped when the site list can't be read — every pod would look orphaned
+	if all, err := db.GetAllSites(s.cfg.DB); err != nil {
+		logger.Warn("orphan cleanup: failed to list sites: %v", err)
+	} else {
+		known := make(map[string]bool, len(all))
+		for _, site := range all {
+			known[podman.PodName(site.Name)] = true
+		}
+		if err := s.podman.PruneOrphanedPods(context.Background(), known); err != nil {
+			logger.Warn("orphan cleanup: %v", err)
+		}
 	}
 
 	// restore pods that were running before the last shutdown or host reboot,
