@@ -109,6 +109,8 @@ Once running, the UI is available at: `http://your-host:9000`
 | `pdnctl install --user <name> --version <latest\|dev\|beta>` | Fresh rootless setup under a dedicated user |
 | `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
 | `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
+| `pdnctl pull-images` | Pull updated versions of every image already on the host |
+| `pdnctl upgrade` | Run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
 | `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
 | `pdnctl status` | Show the install summary and service status |
 | `pdnctl uninstall` | Remove PodNest — keeps the user and site data |

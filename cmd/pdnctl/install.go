@@ -241,6 +241,8 @@ func runInstall() error {
 >>> Manage it with:
     pdnctl start | stop | restart | status
     pdnctl update [--version latest|dev|beta]
+    pdnctl pull-images
+    pdnctl upgrade
     pdnctl uninstall
 `, installPort)
 	return nil
