@@ -426,6 +426,25 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the SFTP user and the proxy's cached domains live outside the site row's
+	// cascade — every failure from here on must remove them too
+	provisioned := false
+	var addedDomains []string
+	defer func() {
+		if provisioned {
+			return
+		}
+		if len(addedDomains) > 0 {
+			h.Proxy.RemoveDomains(addedDomains)
+			h.Proxy.ForgetSite(site.ID, port)
+		}
+		rbCtx, rbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer rbCancel()
+		if err := h.SFTP.RemoveUser(rbCtx, site.Name); err != nil {
+			logger.Warn("rollback: failed to remove SFTP user for site %s: %v", site.Name, err)
+		}
+	}()
+
 	// seed default configuration values for the site based on its type and handle any errors during configuration
 	m := modules.TypeModule(site.SiteType)
 	configs := m.SeedConfigs()
@@ -448,6 +467,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 			logger.Error("saving domain %s for site %s: %v", d, site.Name, err)
 		}
 		h.Proxy.AddDomain(d, port, site.ID, site.Name)
+		addedDomains = append(addedDomains, d)
 	}
 
 	// obtain SSL certificates for the specified domains using the proxy's certificate management functionality
@@ -555,6 +575,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 
 	// log the successful creation of the site and its associated pod, update the site status to running in the database, and return the site details in the response
 	logger.Debug("site '%s' created and pod provisioned successfully", site.Name)
+	provisioned = true
 	_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 	site.SiteStatus = models.StatusRunning
 	apiutil.JSON(w, http.StatusCreated, site)
