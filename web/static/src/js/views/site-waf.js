@@ -199,8 +199,9 @@ export function wireWAFTab(root, id, signal) {
         }
     }, { signal });
 
-    // WAF JSON import
-    root.querySelector("#waf-import")?.addEventListener("change", async (e) => {
+    // WAF JSON import — delegated, since loadWAFTab renders the input after wiring
+    root.addEventListener("change", async (e) => {
+        if (e.target.id !== "waf-import") return;
         const file = e.target.files[0];
         if (!file) return;
         const fd = new FormData();
@@ -216,6 +217,5 @@ export function wireWAFTab(root, id, signal) {
         } finally {
             e.target.value = "";
         }
-    });
+    }, { signal });
 }
-
