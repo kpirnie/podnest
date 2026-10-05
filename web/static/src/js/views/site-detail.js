@@ -29,16 +29,18 @@ let _rpWireAbort = null;
 let _healthWS = null;
 
 // initPillTabs wires the 4-pill nav to the uk-switcher and manages the manage dropdown.
-// secTab, when set, lands the view on the security panel with that pill active.
-function initPillTabs(root, id, secTab) {
+// tab, when it names a pill inside a sub-panel (security, WAF), lands the view on
+// that panel with the pill active.
+function initPillTabs(root, id, tab) {
     const pills = root.querySelector("#kp-site-pills");
     const switcher = root.querySelector("#kp-site-switcher");
     const managePill = root.querySelector("#kp-manage-pill");
     const dropdown = root.querySelector("#kp-manage-dropdown");
     if (!pills || !switcher) return;
 
-    // the security panel's index varies by site type, so resolve it from the DOM
-    const secIdx = [...switcher.children].indexOf(root.querySelector("#security-panel")?.parentElement);
+    // sub-panels carry their own pills; their indexes vary by site type, so resolve them from the DOM
+    const subPills = ["#kp-sec-pills", "#kp-waf-pills"].map(sel => root.querySelector(sel)).filter(Boolean);
+    const panelIdx = (el) => [...switcher.children].findIndex(li => li.contains(el));
 
     // show the nth switcher panel and update pill active states
     function showPanel(idx, fromDropdown = false) {
@@ -59,8 +61,9 @@ function initPillTabs(root, id, secTab) {
             dropdown?.querySelectorAll("a[data-switcher]").forEach(a => a.classList.remove("kp-dd-active"));
         }
 
-        // keep the security pill in the hash only while the security panel is showing
-        const seg = idx === secIdx ? root.querySelector("#kp-sec-pills > li.kp-pill-active")?.dataset.tab : "";
+        // keep a sub-panel's active pill in the hash only while that panel is showing
+        const sub = subPills.find(p => panelIdx(p) === idx);
+        const seg = sub?.querySelector(":scope > li.kp-pill-active")?.dataset.tab;
         history.replaceState(null, "", seg ? `#site-detail/${id}/${seg}` : `#site-detail/${id}`);
     }
 
@@ -97,9 +100,10 @@ function initPillTabs(root, id, secTab) {
         }
     }, { capture: true });
 
-    // land on the security panel when the hash names one of its pills, otherwise
+    // land on the sub-panel whose pills name the hash tab, otherwise
     // initialise to the Stats panel (index 1 for both layouts)
-    if (secTab && secIdx >= 0) showPanel(secIdx, true);
+    const landing = tab ? subPills.find(p => [...p.children].some(li => li.dataset.tab === tab)) : null;
+    if (landing) showPanel(panelIdx(landing), true);
     else UIkit.switcher(switcher).show(1);
 }
 
@@ -429,7 +433,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     loadSecurityPanel(root);
     wireLogsTab(root, id);
     wireWAFTab(root, id, _rpWireAbort.signal);
-    loadWAFTab(id);
+    loadWAFTab(id, tab);
 
     // reverse proxy sites only need route management — skip all pod wiring,
     // but stats (from the per-site access.log) and basic auth still apply

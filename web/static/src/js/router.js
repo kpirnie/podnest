@@ -52,5 +52,6 @@ export function parseHash() {
     if (view === "settings" && parts[1]) params.tab = parts[1];
     if (view === "site-detail" && parts[2]) params.tab = parts[2];
     if (view === "security" && parts[1]) params.tab = parts[1];
+    if (view === "waf" && parts[1]) params.tab = parts[1];
     return { view, params };
 }

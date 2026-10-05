@@ -10,60 +10,111 @@ import { toast } from '../toast.js';
 // renderWAFOverride returns the static HTML shell for the WAF override tab
 function renderWAFOverride() {
     return `
-        <div class="kp-card uk-padding uk-margin-top">
-            <h3 class="kp-view-title uk-margin-bottom">WAF Override</h3>
-            <form id="waf-override-form" class="uk-form-stacked">
-                <div class="uk-margin">
-                    <label class="kp-label" for="waf-override">Site Behaviour</label>
-                    <select class="uk-select kp-select" id="waf-override" name="override">
-                        <option value="0">Inherit global setting</option>
-                        <option value="1">Force ON for this site</option>
-                        <option value="2">Force OFF for this site</option>
-                    </select>
+        <!-- tab pills -->
+        <ul class="kp-tab-pills" id="kp-waf-pills">
+            <li data-tab="crs"><a href="#"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> Core Rule Set</a></li>
+            <li data-tab="autoban"><a href="#"><span uk-icon="icon: ban; ratio: 0.85"></span> Auto-Ban</a></li>
+        </ul>
+
+        <!-- switcher panels -->
+        <ul class="uk-switcher uk-margin-large-bottom" id="kp-waf-switcher">
+
+            <!-- core rule set -->
+            <li>
+                <div class="kp-card uk-padding">
+                    <h3 class="kp-view-title uk-margin-bottom">WAF Override</h3>
+                    <form id="waf-override-form" class="uk-form-stacked">
+                        <div class="uk-margin">
+                            <label class="kp-label" for="waf-override">Site Behaviour</label>
+                            <select class="uk-select kp-select" id="waf-override" name="override">
+                                <option value="0">Inherit global setting</option>
+                                <option value="1">Force ON for this site</option>
+                                <option value="2">Force OFF for this site</option>
+                            </select>
+                        </div>
+                        <div class="uk-margin">
+                            <label class="kp-label">CRS Plugins</label>
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                Select OWASP CRS plugins to enable for this site. Only plugins present in the
+                                local CRS install are shown. Changes recompile the site WAF engine in the background.
+                            </p>
+                            <div id="waf-plugins-list" class="uk-margin-small-top">
+                                <span class="kp-muted uk-text-small">Loading available plugins…</span>
+                            </div>
+                        </div>
+                        <div class="uk-margin">
+                            <label class="kp-label" for="waf-site-exclusions">Additional Rule Exclusions</label>
+                            <textarea
+                                class="uk-textarea kp-input kp-mono kp-waf-exclusions"
+                                id="waf-site-exclusions"
+                                name="exclusions"
+                                rows="15"
+                                placeholder="# Numeric = rule ID, text = tag name, one per line&#10;942100&#10;attack-xss"></textarea>
+                            <p class="kp-muted uk-text-small uk-margin-small-top">
+                                Merged on top of global exclusions. Useful for WooCommerce, contact forms, or file upload paths that trigger false positives.
+                            </p>
+                        </div>
+                        <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
+                            <a class="uk-button kp-btn-ghost" id="waf-export-btn" href="#" uk-tooltip="Export WAF settings">
+                                <span uk-icon="download"></span>
+                            </a>
+                            <label class="uk-button kp-btn-ghost" style="cursor:pointer" uk-tooltip="Import WAF settings">
+                                <span uk-icon="upload"></span>
+                                <input type="file" id="waf-import" accept=".json" style="display:none">
+                            </label>
+                            <button type="submit" class="uk-button kp-btn-primary">
+                                <span uk-icon="check"></span> Save
+                            </button>
+                        </div>
+                    </form>
                 </div>
-                <div class="uk-margin">
-                    <label class="kp-label">CRS Plugins</label>
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        Select OWASP CRS plugins to enable for this site. Only plugins present in the
-                        local CRS install are shown. Changes recompile the site WAF engine in the background.
-                    </p>
-                    <div id="waf-plugins-list" class="uk-margin-small-top">
-                        <span class="kp-muted uk-text-small">Loading available plugins…</span>
-                    </div>
+            </li>
+
+            <!-- auto-ban -->
+            <li>
+                <div class="kp-card uk-padding">
+                    <p class="kp-muted uk-text-small uk-margin-remove">Auto-ban is not configured yet.</p>
                 </div>
-                <div class="uk-margin">
-                    <label class="kp-label" for="waf-site-exclusions">Additional Rule Exclusions</label>
-                    <textarea
-                        class="uk-textarea kp-input kp-mono kp-waf-exclusions"
-                        id="waf-site-exclusions"
-                        name="exclusions"
-                        rows="15"
-                        placeholder="# Numeric = rule ID, text = tag name, one per line&#10;942100&#10;attack-xss"></textarea>
-                    <p class="kp-muted uk-text-small uk-margin-small-top">
-                        Merged on top of global exclusions. Useful for WooCommerce, contact forms, or file upload paths that trigger false positives.
-                    </p>
-                </div>
-                <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
-                    <a class="uk-button kp-btn-ghost" id="waf-export-btn" href="#" uk-tooltip="Export WAF settings">
-                        <span uk-icon="download"></span>
-                    </a>
-                    <label class="uk-button kp-btn-ghost" style="cursor:pointer" uk-tooltip="Import WAF settings">
-                        <span uk-icon="upload"></span>
-                        <input type="file" id="waf-import" accept=".json" style="display:none">
-                    </label>
-                    <button type="submit" class="uk-button kp-btn-primary">
-                        <span uk-icon="check"></span> Save
-                    </button>
-                </div>
-            </form>
-        </div>`;
+            </li>
+
+        </ul>`;
+}
+
+// initWAFPills wires the WAF pill nav to its switcher and keeps the active pill
+// in the hash so a refresh lands on it. siteId is null on the global WAF page.
+export function initWAFPills(root, tab, siteId = null) {
+    const pills    = root.querySelector("#kp-waf-pills");
+    const switcher = root.querySelector("#kp-waf-switcher");
+    if (!pills || !switcher) return;
+
+    const items = [...pills.querySelectorAll(":scope > li")];
+
+    // show the nth WAF panel, optionally recording its pill in the hash
+    const showTab = (idx, updateHash) => {
+        UIkit.switcher(switcher).show(idx);
+        items.forEach((li, i) => li.classList.toggle("kp-pill-active", i === idx));
+        if (!updateHash) return;
+        const seg = items[idx].dataset.tab;
+        history.replaceState(null, "", siteId ? `#site-detail/${siteId}/${seg}` : (idx === 0 ? "#waf" : `#waf/${seg}`));
+    };
+
+    items.forEach((li, i) => {
+        li.querySelector(":scope > a").addEventListener("click", (e) => {
+            e.preventDefault();
+            showTab(i, true);
+        });
+    });
+
+    showTab(Math.max(0, items.findIndex((li) => li.dataset.tab === tab)), false);
 }
 
 // loadWAFTab fetches the current WAF override for the site and populates the form
-export async function loadWAFTab(id) {
+export async function loadWAFTab(id, tab) {
     const panel = document.getElementById("waf-tab-panel");
     if (!panel) return;
     panel.innerHTML = renderWAFOverride();
+    initWAFPills(panel, tab, id);
+    
     const exportBtn = document.getElementById("waf-export-btn");
     if (exportBtn) exportBtn.href = `/api/sites/${id}/waf/export`;
 
