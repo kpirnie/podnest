@@ -6,9 +6,10 @@
 
 import { api } from '../api.js';
 import { toast } from '../toast.js';
+import { initAutoBanPanel, renderAutoBanPanel } from './autoban.js';
 
 // renderWAFOverride returns the static HTML shell for the WAF override tab
-function renderWAFOverride() {
+function renderWAFOverride(id) {
     return `
         <!-- tab pills -->
         <ul class="kp-tab-pills" id="kp-waf-pills">
@@ -71,11 +72,7 @@ function renderWAFOverride() {
             </li>
 
             <!-- auto-ban -->
-            <li>
-                <div class="kp-card uk-padding">
-                    <p class="kp-muted uk-text-small uk-margin-remove">Auto-ban is not configured yet.</p>
-                </div>
-            </li>
+            <li>${renderAutoBanPanel(id)}</li>
 
         </ul>`;
 }
@@ -112,8 +109,9 @@ export function initWAFPills(root, tab, siteId = null) {
 export async function loadWAFTab(id, tab) {
     const panel = document.getElementById("waf-tab-panel");
     if (!panel) return;
-    panel.innerHTML = renderWAFOverride();
+    panel.innerHTML = renderWAFOverride(id);
     initWAFPills(panel, tab, id);
+    initAutoBanPanel(panel, id);
     
     const exportBtn = document.getElementById("waf-export-btn");
     if (exportBtn) exportBtn.href = `/api/sites/${id}/waf/export`;

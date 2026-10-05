@@ -7,6 +7,7 @@
 import { api } from '../api.js';
 import { errorState, isAdmin } from '../helpers.js';
 import { toast } from '../toast.js';
+import { initAutoBanPanel, renderAutoBanPanel } from './autoban.js';
 import { initWAFPills } from './site-waf.js';
 
 export async function viewWAF(root, params = {}) {
@@ -97,17 +98,14 @@ export async function viewWAF(root, params = {}) {
             </li>
 
             <!-- auto-ban -->
-            <li>
-                <div class="kp-card uk-padding-small">
-                    <p class="kp-muted uk-text-small uk-margin-remove">Auto-ban is not configured yet.</p>
-                </div>
-            </li>
+            <li>${renderAutoBanPanel()}</li>
 
         </ul>`;
 
     wireWAF(root);
     initWAFPills(root, params.tab);
     loadWAF(root);
+    initAutoBanPanel(root);
 }
 
 // loadWAF fetches the global WAF settings and populates the form
