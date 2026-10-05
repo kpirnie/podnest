@@ -956,6 +956,10 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// a stopped site is rebuilt and confirmed healthy, then stopped again —
+	// refreshing its containers must not bring it back online
+	wasStopped := site.SiteStatus == models.StatusStopped
+
 	// define a struct to capture the expected JSON payload for site recreation, including options for WordPress installation and image pruning
 	var recreateReq struct {
 		InstallWordPress *bool `json:"install_wordpress"`
@@ -1079,6 +1083,17 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	if recreateReq.Prune {
 		if _, err := h.Podman.PruneImages(bgCtx); err != nil {
 			logger.Warn("recreate: image prune failed for site %s: %v", site.Name, err)
+		}
+	}
+
+	// return a previously stopped site to stopped now the rebuild is confirmed
+	if wasStopped {
+		if err := h.Podman.StopPod(bgCtx, podman.PodName(site.Name)); err != nil {
+			logger.Warn("recreate: failed to stop site %s after rebuild: %v", site.Name, err)
+		} else {
+			_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusStopped)
+			apiutil.JSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+			return
 		}
 	}
 
