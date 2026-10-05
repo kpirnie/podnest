@@ -17,7 +17,7 @@ import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-redirects.js';
-import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
+import { initSecurityPills, loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
 import { loadStatsTab, renderStatsTab, wireStatsTab } from './site-stats.js';
 import { loadWAFTab, wireWAFTab } from './site-waf.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
@@ -28,14 +28,17 @@ let _rpWireAbort = null;
 // holds the active health badge WebSocket; closed on next navigation
 let _healthWS = null;
 
-
-// initPillTabs wires the 4-pill nav to the uk-switcher and manages the manage dropdown
-function initPillTabs(root) {
+// initPillTabs wires the 4-pill nav to the uk-switcher and manages the manage dropdown.
+// secTab, when set, lands the view on the security panel with that pill active.
+function initPillTabs(root, id, secTab) {
     const pills = root.querySelector("#kp-site-pills");
     const switcher = root.querySelector("#kp-site-switcher");
     const managePill = root.querySelector("#kp-manage-pill");
     const dropdown = root.querySelector("#kp-manage-dropdown");
     if (!pills || !switcher) return;
+
+    // the security panel's index varies by site type, so resolve it from the DOM
+    const secIdx = [...switcher.children].indexOf(root.querySelector("#security-panel")?.parentElement);
 
     // show the nth switcher panel and update pill active states
     function showPanel(idx, fromDropdown = false) {
@@ -55,6 +58,10 @@ function initPillTabs(root) {
             managePill?.classList.remove("kp-pill-active");
             dropdown?.querySelectorAll("a[data-switcher]").forEach(a => a.classList.remove("kp-dd-active"));
         }
+
+        // keep the security pill in the hash only while the security panel is showing
+        const seg = idx === secIdx ? root.querySelector("#kp-sec-pills > li.kp-pill-active")?.dataset.tab : "";
+        history.replaceState(null, "", seg ? `#site-detail/${id}/${seg}` : `#site-detail/${id}`);
     }
 
     // direct pill clicks (Overview / Stats / Logs)
@@ -90,8 +97,10 @@ function initPillTabs(root) {
         }
     }, { capture: true });
 
-    // initialise switcher to the Stats panel on load (index 1 for both layouts)
-    UIkit.switcher(switcher).show(1);
+    // land on the security panel when the hash names one of its pills, otherwise
+    // initialise to the Stats panel (index 1 for both layouts)
+    if (secTab && secIdx >= 0) showPanel(secIdx, true);
+    else UIkit.switcher(switcher).show(1);
 }
 
 // renderRoutesTab returns the static HTML shell for the reverse proxy routes tab
@@ -267,7 +276,7 @@ function wireHealthBadges(root, id) {
     _healthWS.onclose = () => { _healthWS = null; };
 }
 
-export async function viewSiteDetail(root, { id }) {
+export async function viewSiteDetail(root, { id, tab }) {
     // fetch site detail and full site list in parallel for the nav selector
     const [{ site, domains, sftp }, rawSites, configs] = await Promise.all([
         api.get(`/sites/${id}`),
@@ -416,6 +425,7 @@ export async function viewSiteDetail(root, { id }) {
 
     // security rules, WAF, and logs apply to all site types including reverse proxy
     wireSecurityPanel(root);
+    initSecurityPills(root, tab);
     loadSecurityPanel(root);
     wireLogsTab(root, id);
     wireWAFTab(root, id, _rpWireAbort.signal);
@@ -430,7 +440,7 @@ export async function viewSiteDetail(root, { id }) {
         loadStatsTab(id, site.SiteType);
         wireBasicAuthTab(root, id);
         loadBasicAuthTab(id);
-        initPillTabs(root); // wire pill nav for RP sites
+        initPillTabs(root, id, tab); // wire pill nav for RP sites
         return;
     }
 
@@ -483,7 +493,7 @@ export async function viewSiteDetail(root, { id }) {
     wireHealthBadges(root, id);
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
-    initPillTabs(root);
+    initPillTabs(root, id, tab);
     wireBasicAuthTab(root, id);
     loadBasicAuthTab(id);
     loadAllDomainSSL(domains ?? []);

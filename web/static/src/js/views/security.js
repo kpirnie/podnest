@@ -5,9 +5,9 @@
 "use strict";
 
 import { errorState, isAdmin } from '../helpers.js';
-import { loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
+import { initSecurityPills, loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
 
-export async function viewSecurity(root) {
+export async function viewSecurity(root, params = {}) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     root.innerHTML = `
@@ -22,5 +22,6 @@ export async function viewSecurity(root) {
         ${renderSecurityPanel(null)}`;
 
     wireSecurityPanel(root);
+    initSecurityPills(root, params.tab);
     loadSecurityPanel(root);
 }

@@ -18,175 +18,201 @@ export function renderSecurityPanel(siteId = null) {
     return `
         <div id="security-panel" data-ip-base="${ipBase}" data-ua-base="${uaBase}" data-geo-base="${geoBase}" data-asn-base="${asnBase}" ${siteId ? `data-site-id="${siteId}"` : ''}>
 
-            <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                <span uk-icon="icon: warning; ratio: 0.75"></span>
-                The Spamhaus DROP lists are enforced alongside these rules on every
-                request. Whitelist an IP here to allow it through regardless.
-                <a href="https://www.spamhaus.org/blocklists/do-not-route-or-peer/" target="_blank" rel="noopener">
-                    About Spamhaus DROP
-                </a>
-            </p>
+            <!-- tab pills -->
+            <ul class="kp-tab-pills" id="kp-sec-pills">
+                <li data-tab="ip"><a href="#"><span uk-icon="icon: location; ratio: 0.85"></span> IP Rules</a></li>
+                <li data-tab="ua"><a href="#"><span uk-icon="icon: laptop; ratio: 0.85"></span> User-Agent</a></li>
+                <li data-tab="country"><a href="#"><span uk-icon="icon: world; ratio: 0.85"></span> Country</a></li>
+                <li data-tab="asn"><a href="#"><span uk-icon="icon: server; ratio: 0.85"></span> ASN</a></li>
+                ${!siteId ? `
+                <li data-tab="proxies"><a href="#"><span uk-icon="icon: link; ratio: 0.85"></span> Trusted Proxies</a></li>
+                <li data-tab="bypass"><a href="#"><span uk-icon="icon: unlock; ratio: 0.85"></span> Bypass</a></li>
+                ` : ''}
+            </ul>
 
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">IP Rules</h3>
-                    <div class="uk-flex" style="gap:8px">
-                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api${ipBase}/export" download="${siteId ? `site-${siteId}-ip-rules.csv` : `podnest-global-ip-rules.csv`}" uk-tooltip="Export IP rules as CSV">
-                            <span uk-icon="download"></span>
+            <!-- switcher panels -->
+            <ul class="uk-switcher uk-margin-large-bottom" id="kp-sec-switcher">
+
+                <!-- ip rules -->
+                <li>
+                    <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                        <span uk-icon="icon: warning; ratio: 0.75"></span>
+                        The Spamhaus DROP lists are enforced alongside these rules on every
+                        request. Whitelist an IP here to allow it through regardless.
+                        <a href="https://www.spamhaus.org/blocklists/do-not-route-or-peer/" target="_blank" rel="noopener">
+                            About Spamhaus DROP
                         </a>
-                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import IP rules from CSV">
-                            <span uk-icon="upload"></span>
-                            <input type="file" id="sec-ip-import" accept=".csv" style="display:none">
-                        </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save" uk-tooltip="Save the IP Rules">
-                            <span uk-icon="check"></span>
-                        </button>
+                    </p>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">IP Rules</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api${ipBase}/export" download="${siteId ? `site-${siteId}-ip-rules.csv` : `podnest-global-ip-rules.csv`}" uk-tooltip="Export IP rules as CSV">
+                                    <span uk-icon="download"></span>
+                                </a>
+                                <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import IP rules from CSV">
+                                    <span uk-icon="upload"></span>
+                                    <input type="file" id="sec-ip-import" accept=".csv" style="display:none">
+                                </label>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ip-save" uk-tooltip="Save the IP Rules">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            One IP address or CIDR block per line (e.g. <span class="kp-mono">1.2.3.4</span>
+                            or <span class="kp-mono">10.0.0.0/8</span>).
+                            A whitelisted IP is allowed outright, ahead of both the global and
+                            per-site blacklists. Whitelist is disabled when empty.
+                        </p>
+                        <div class="uk-grid-small" uk-grid>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
+                                    Whitelist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-ip-whitelist" rows="6"
+                                    placeholder="# allow only these IPs&#10;1.2.3.4&#10;10.0.0.0/8"></textarea>
+                            </div>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
+                                    Blacklist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-ip-blacklist" rows="6"
+                                    placeholder="# block these IPs&#10;5.6.7.8&#10;192.168.99.0/24"></textarea>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    One IP address or CIDR block per line (e.g. <span class="kp-mono">1.2.3.4</span>
-                    or <span class="kp-mono">10.0.0.0/8</span>).
-                    A whitelisted IP is allowed outright, ahead of both the global and
-                    per-site blacklists. Whitelist is disabled when empty.
-                </p>
-                <div class="uk-grid-small" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
-                            Whitelist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-ip-whitelist" rows="6"
-                            placeholder="# allow only these IPs&#10;1.2.3.4&#10;10.0.0.0/8"></textarea>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
-                            Blacklist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-ip-blacklist" rows="6"
-                            placeholder="# block these IPs&#10;5.6.7.8&#10;192.168.99.0/24"></textarea>
-                    </div>
-                </div>
-            </div>
+                </li>
 
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">User-Agent Rules</h3>
-                    <div class="uk-flex" style="gap:8px">
-                        <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api${uaBase}/export" download="${siteId ? `site-${siteId}-ua-rules.csv` : `podnest-global-ua-rules.csv`}" uk-tooltip="Export UA rules as CSV">
-                            <span uk-icon="download"></span>
-                        </a>
-                        <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import UA rules from CSV">
-                            <span uk-icon="upload"></span>
-                            <input type="file" id="sec-ua-import" accept=".csv" style="display:none">
-                        </label>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save" uk-tooltip="Save the User-Agent Rules">
-                            <span uk-icon="check"></span>
-                        </button>
+                <!-- user-agent rules -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">User-Agent Rules</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api${uaBase}/export" download="${siteId ? `site-${siteId}-ua-rules.csv` : `podnest-global-ua-rules.csv`}" uk-tooltip="Export UA rules as CSV">
+                                    <span uk-icon="download"></span>
+                                </a>
+                                <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import UA rules from CSV">
+                                    <span uk-icon="upload"></span>
+                                    <input type="file" id="sec-ua-import" accept=".csv" style="display:none">
+                                </label>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-ua-save" uk-tooltip="Save the User-Agent Rules">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            One substring per line — matched case-insensitively against the full User-Agent header.
+                            Blacklist always wins. Whitelist is disabled when empty.
+                        </p>
+                        <div class="uk-grid-small" uk-grid>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
+                                    Whitelist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-ua-whitelist" rows="6"
+                                    placeholder="# allow only these agents&#10;mozilla&#10;googlebot"></textarea>
+                            </div>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
+                                    Blacklist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-ua-blacklist" rows="6"
+                                    placeholder="# block these agents&#10;sqlmap&#10;nikto&#10;masscan"></textarea>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    One substring per line — matched case-insensitively against the full User-Agent header.
-                    Blacklist always wins. Whitelist is disabled when empty.
-                </p>
-                <div class="uk-grid-small" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
-                            Whitelist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-ua-whitelist" rows="6"
-                            placeholder="# allow only these agents&#10;mozilla&#10;googlebot"></textarea>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
-                            Blacklist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-ua-blacklist" rows="6"
-                            placeholder="# block these agents&#10;sqlmap&#10;nikto&#10;masscan"></textarea>
-                    </div>
-                </div>
-            </div>
+                </li>
 
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">Country Rules</h3>
-                    <div class="uk-flex" style="gap:8px">
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-geo-save" uk-tooltip="Save the Country Rules">
-                            <span uk-icon="check"></span>
-                        </button>
+                <!-- country rules -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">Country Rules</h3>
+                            <div class="uk-flex" style="gap:8px">
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-geo-save" uk-tooltip="Save the Country Rules">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            One ISO 3166-1 alpha-2 country code per line (e.g. <span class="kp-mono">US</span>
+                            or <span class="kp-mono">DE</span>).
+                            Blacklist always wins. Whitelist is disabled when empty.
+                            Unresolvable IPs (private ranges, unknown) are always allowed.
+                        </p>
+                        <div class="uk-grid-small" uk-grid>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
+                                    Whitelist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-geo-whitelist" rows="6"
+                                    placeholder="# allow only these countries&#10;US&#10;CA"></textarea>
+                            </div>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
+                                    Blacklist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-geo-blacklist" rows="6"
+                                    placeholder="# block these countries&#10;CN&#10;RU"></textarea>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    One ISO 3166-1 alpha-2 country code per line (e.g. <span class="kp-mono">US</span>
-                    or <span class="kp-mono">DE</span>).
-                    Blacklist always wins. Whitelist is disabled when empty.
-                    Unresolvable IPs (private ranges, unknown) are always allowed.
-                </p>
-                <div class="uk-grid-small" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
-                            Whitelist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-geo-whitelist" rows="6"
-                            placeholder="# allow only these countries&#10;US&#10;CA"></textarea>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
-                            Blacklist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-geo-blacklist" rows="6"
-                            placeholder="# block these countries&#10;CN&#10;RU"></textarea>
-                    </div>
-                </div>
-            </div>
+                </li>
 
-            <div class="kp-card uk-padding-small uk-margin-bottom">
-                <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
-                    <h3 class="kp-view-title">ASN Rules</h3>
-                    <div class="uk-flex uk-flex-middle" style="gap:8px">
-                        <button class="uk-button kp-btn-ghost kp-btn-sm" id="sec-asn-lookup" uk-tooltip="Look up the ASN for an IP or domain">
-                            <span uk-icon="eye"></span>
-                        </button>
-                        <div style="width:1px;align-self:stretch;background:var(--kp-border)"></div>
-                        <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-asn-save" uk-tooltip="Save the ASN Rules">
-                            <span uk-icon="check"></span>
-                        </button>
+                <!-- asn rules -->
+                <li>
+                    <div class="kp-card uk-padding-small">
+                        <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                            <h3 class="kp-view-title">ASN Rules</h3>
+                            <div class="uk-flex uk-flex-middle" style="gap:8px">
+                                <button class="uk-button kp-btn-ghost kp-btn-sm" id="sec-asn-lookup" uk-tooltip="Look up the ASN for an IP or domain">
+                                    <span uk-icon="eye"></span>
+                                </button>
+                                <div style="width:1px;align-self:stretch;background:var(--kp-border)"></div>
+                                <button class="uk-button kp-btn-primary kp-btn-sm" id="sec-asn-save" uk-tooltip="Save the ASN Rules">
+                                    <span uk-icon="check"></span>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="kp-muted uk-text-small uk-margin-small-bottom">
+                            One autonomous system number per line (e.g. <span class="kp-mono">AS15169</span>
+                            or <span class="kp-mono">15169</span>).
+                            Blacklist always wins. Whitelist is disabled when empty.
+                            Unresolvable IPs (private ranges, unknown) are always allowed.
+                        </p>
+                        <div class="uk-grid-small" uk-grid>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
+                                    Whitelist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-asn-whitelist" rows="6"
+                                    placeholder="# allow only these networks&#10;AS7922&#10;AS20115"></textarea>
+                            </div>
+                            <div class="uk-width-1-2@s">
+                                <label class="kp-label">
+                                    <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
+                                    Blacklist
+                                </label>
+                                <textarea class="uk-textarea kp-textarea" id="sec-asn-blacklist" rows="6"
+                                    placeholder="# block these networks&#10;AS16509&#10;AS14061"></textarea>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <p class="kp-muted uk-text-small uk-margin-small-bottom">
-                    One autonomous system number per line (e.g. <span class="kp-mono">AS15169</span>
-                    or <span class="kp-mono">15169</span>).
-                    Blacklist always wins. Whitelist is disabled when empty.
-                    Unresolvable IPs (private ranges, unknown) are always allowed.
-                </p>
-                <div class="uk-grid-small" uk-grid>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: check; ratio: 0.75" style="color:var(--kp-success)"></span>
-                            Whitelist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-asn-whitelist" rows="6"
-                            placeholder="# allow only these networks&#10;AS7922&#10;AS20115"></textarea>
-                    </div>
-                    <div class="uk-width-1-2@s">
-                        <label class="kp-label">
-                            <span uk-icon="icon: ban; ratio: 0.75" style="color:var(--kp-danger)"></span>
-                            Blacklist
-                        </label>
-                        <textarea class="uk-textarea kp-textarea" id="sec-asn-blacklist" rows="6"
-                            placeholder="# block these networks&#10;AS16509&#10;AS14061"></textarea>
-                    </div>
-                </div>
-            </div>
+                </li>
 
-            ${!siteId ? `
-            <div class="uk-grid uk-grid-small uk-margin-bottom" uk-grid>
-                <div class="uk-width-1-2@m">
-                    <div class="kp-card uk-padding-small uk-height-1-1">
+                ${!siteId ? `
+                <!-- trusted proxy ranges -->
+                <li>
+                    <div class="kp-card uk-padding-small">
                         <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                             <h3 class="kp-view-title">Trusted Proxy Ranges</h3>
                             <div class="uk-flex" style="gap:8px">
@@ -215,9 +241,11 @@ export function renderSecurityPanel(siteId = null) {
                             managed automatically and do not need to be entered here.
                         </p>
                     </div>
-                </div>
-                <div class="uk-width-1-2@m">
-                    <div class="kp-card uk-padding-small uk-height-1-1">
+                </li>
+
+                <!-- security bypass -->
+                <li>
+                    <div class="kp-card uk-padding-small">
                         <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                             <h3 class="kp-view-title">Security Bypass</h3>
                             <div class="uk-flex" style="gap:8px">
@@ -237,11 +265,43 @@ export function renderSecurityPanel(siteId = null) {
                             One IPv4, IPv6, or CIDR per line. Bypassed IPs are still proxied normally — only enforcement is skipped.
                         </p>
                     </div>
-                </div>
-            </div>
-            ` : ''}
+                </li>
+                ` : ''}
 
+            </ul>
         </div>`;
+}
+
+
+// initSecurityPills wires the security pill nav to its switcher and keeps the
+// active pill in the hash so a refresh lands on it. Must be called after
+// renderSecurityPanel has been inserted into the DOM.
+export function initSecurityPills(root, tab) {
+    const panel    = root.querySelector("#security-panel");
+    const pills    = root.querySelector("#kp-sec-pills");
+    const switcher = root.querySelector("#kp-sec-switcher");
+    if (!panel || !pills || !switcher) return;
+
+    const siteId = panel.dataset.siteId;
+    const items  = [...pills.querySelectorAll(":scope > li")];
+
+    // show the nth security panel, optionally recording its pill in the hash
+    const showTab = (idx, updateHash) => {
+        UIkit.switcher(switcher).show(idx);
+        items.forEach((li, i) => li.classList.toggle("kp-pill-active", i === idx));
+        if (!updateHash) return;
+        const seg = items[idx].dataset.tab;
+        history.replaceState(null, "", siteId ? `#site-detail/${siteId}/${seg}` : (idx === 0 ? "#security" : `#security/${seg}`));
+    };
+
+    items.forEach((li, i) => {
+        li.querySelector(":scope > a").addEventListener("click", (e) => {
+            e.preventDefault();
+            showTab(i, true);
+        });
+    });
+
+    showTab(Math.max(0, items.findIndex((li) => li.dataset.tab === tab)), false);
 }
 
 // loadSecurityPanel fetches the current rules from the API and populates the
