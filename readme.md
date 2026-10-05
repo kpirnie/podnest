@@ -376,7 +376,7 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 - **Redirects** — per-site redirect rules
 - **Site Configurations** — nginx, PHP, MariaDB, Redis, Varnish, resetting a config
 - **Security Rules** — IP rules, User-Agent rules, country blocking, ASN blocking, ASN lookup, Spamhaus DROP, global vs per-site, import/export
-- **WAF** — CRS rule management, global settings, per-site overrides, exclusions, WAF log
+- **WAF** — CRS rule management, global settings, per-site overrides, exclusions, auto-ban (429 cooldowns, bans, permanent bans, global escalation), WAF log
 - **Live Logs** — per-site and global log streams
 - **WP-CLI Terminal** — browser terminal for WordPress sites
 - **phpMyAdmin** — database management
