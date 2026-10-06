@@ -154,6 +154,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			auth.SetTOTPPendingCookie(w, r, pendingToken)
+			auth.StashTOTPKey(pendingToken, result.TOTPKey, auth.TOTPPendingDuration)
 			http.Redirect(w, r, "/login/totp", http.StatusSeeOther)
 			return
 		}
