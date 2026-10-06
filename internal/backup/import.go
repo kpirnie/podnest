@@ -687,7 +687,7 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 			"AttachStdout": true,
 			"AttachStderr": true,
 			"Detach":       false,
-			"Cmd":          []string{"test", "-f", "/usr/local/bin/wp"},
+			"Cmd":          []string{"test", "-f", "/tmp/wp"},
 		}, &checkResp,
 	); err == nil {
 		_ = m.podman.PostJSON(ctx, "/v4.0.0/libpod/exec/"+checkResp.ID+"/start",
@@ -714,7 +714,7 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 			"Detach":       false,
 			"Cmd": []string{"sh", "-c",
 				"wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" +
-					" -O /tmp/wp.phar && chmod +x /tmp/wp.phar && mv /tmp/wp.phar /usr/local/bin/wp",
+					" -O /tmp/wp.phar && chmod +x /tmp/wp.phar && mv /tmp/wp.phar /tmp/wp",
 			},
 		}, &installResp,
 	); err != nil {
@@ -751,7 +751,7 @@ func (m *Manager) wpSearchReplace(ctx context.Context, site *models.Site, fromDo
 			"AttachStderr": true,
 			"Detach":       false,
 			"Cmd": []string{
-				"/usr/local/bin/wp",
+				"/tmp/wp",
 				"--path=/var/www/html",
 				"--url=" + fromDomain,
 				"--allow-root",

@@ -253,7 +253,7 @@ func (m *Manager) execute(ctx context.Context, job *models.SiteCron, site *model
 			return fmt.Errorf("ensureWPCLI: %w", err)
 		}
 		// strip leading "wp" and prepend the absolute path with required flags
-		command = "/usr/local/bin/wp --path=/var/www/html --allow-root" + strings.TrimPrefix(command, "wp")
+		command = "/tmp/wp --path=/var/www/html --allow-root" + strings.TrimPrefix(command, "wp")
 	}
 
 	// create the exec instance
@@ -472,7 +472,7 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 			"AttachStdout": true,
 			"AttachStderr": true,
 			"Detach":       false,
-			"Cmd":          []string{"test", "-f", "/usr/local/bin/wp"},
+			"Cmd":          []string{"test", "-f", "/tmp/wp"},
 		}, &checkResp,
 	); err == nil {
 		_ = m.podman.PostJSON(ctx, "/v4.0.0/libpod/exec/"+checkResp.ID+"/start",
@@ -500,7 +500,7 @@ func (m *Manager) ensureWPCLI(ctx context.Context, containerName string) error {
 			"Detach":       false,
 			"Cmd": []string{"sh", "-c",
 				"wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" +
-					" -O /tmp/wp.phar && chmod +x /tmp/wp.phar && mv /tmp/wp.phar /usr/local/bin/wp",
+					" -O /tmp/wp.phar && chmod +x /tmp/wp.phar && mv /tmp/wp.phar /tmp/wp",
 			},
 		}, &installResp,
 	); err != nil {
