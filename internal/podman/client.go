@@ -213,8 +213,9 @@ func (c *Client) stream(ctx context.Context, path string) (io.ReadCloser, error)
 // checkStatus checks the HTTP response status code and returns an error if it's not a 2xx code
 func checkStatus(resp *http.Response) error {
 
-	// 2xx status codes indicate success, anything else is an error
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	// 2xx status codes indicate success, as does 304 — podman's reply when a pod
+	// or container start/stop finds it already in the requested state
+	if (resp.StatusCode >= 200 && resp.StatusCode < 300) || resp.StatusCode == http.StatusNotModified {
 		logger.Debug("Received successful response with status code %d", resp.StatusCode)
 		return nil
 	}
