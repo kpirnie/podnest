@@ -135,8 +135,10 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 		logger.Warn("could not chown wp-config.php: %v", err)
 	}
 
-	if err := DownloadWordPress(dir+"/html", cfg.SiteUID); err != nil {
-		return fmt.Errorf("download WordPress: %w", err)
+	if !cfg.SkipCoreDownload {
+		if err := DownloadWordPress(dir+"/html", cfg.SiteUID); err != nil {
+			return fmt.Errorf("download WordPress: %w", err)
+		}
 	}
 
 	mariaDB, err := config.RenderMariaDB(marshalCfg(cfg.Configs[models.ConfigMariaDB]))

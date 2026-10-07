@@ -1607,13 +1607,14 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	// scaffold the clone site directory using the appropriate module for the site type, passing in the necessary configurations and credentials, and handle any errors during scaffolding by cleaning up the clone record and directory
 	cm := modules.TypeModule(clone.SiteType)
 	if err := cm.ScaffoldDir(cloneSiteDir, modules.ScaffoldConfig{
-		Site:       clone,
-		Configs:    srcConfigs,
-		SiteUID:    sftpUID,
-		DBUser:     dbUser,
-		DBPass:     dbPass,
-		DBRootPass: dbRootPass,
-		RedisPass:  redisPass,
+		Site:             clone,
+		Configs:          srcConfigs,
+		SiteUID:          sftpUID,
+		DBUser:           dbUser,
+		DBPass:           dbPass,
+		DBRootPass:       dbRootPass,
+		RedisPass:        redisPass,
+		SkipCoreDownload: true,
 	}); err != nil {
 		logger.Error("apiSiteClone: scaffolding clone dir for %s: %v", clone.Name, err)
 		_ = db.DeleteSite(h.DB, clone.ID)

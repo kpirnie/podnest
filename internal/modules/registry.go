@@ -167,13 +167,14 @@ type PodConfig struct {
 
 // ScaffoldConfig holds everything a type module needs for filesystem setup.
 type ScaffoldConfig struct {
-	Site       *models.Site
-	Configs    map[int]map[string]string
-	SiteUID    int
-	DBUser     string
-	DBPass     string
-	DBRootPass string
-	RedisPass  string
+	Site             *models.Site
+	Configs          map[int]map[string]string
+	SiteUID          int
+	DBUser           string
+	DBPass           string
+	DBRootPass       string
+	RedisPass        string
+	SkipCoreDownload bool
 }
 
 // registry holds all registered modules; populated at startup in cmd/serve.go.
