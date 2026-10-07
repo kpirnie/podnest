@@ -1062,13 +1062,6 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		}
 	}
 
-	// if the site type is WordPress, download the latest WordPress files into the html directory, logging errors if the download fails
-	if site.SiteType == models.SiteTypeWordPress {
-		if err := wordpress.DownloadWordPress(siteDir+"/html", int(site.UID), true); err != nil {
-			logger.Error("failed to download WordPress for site %s: %v", site.Name, err)
-		}
-	}
-
 	// fetch all configuration key-value pairs for the site from the database to be used in pod recreation
 	allConfigs, _ := db.GetAllConfigsBySite(h.DB, site.ID)
 	rm := modules.TypeModule(site.SiteType)

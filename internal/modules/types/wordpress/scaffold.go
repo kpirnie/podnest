@@ -135,7 +135,7 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 		logger.Warn("could not chown wp-config.php: %v", err)
 	}
 
-	if err := DownloadWordPress(dir+"/html", cfg.SiteUID, false); err != nil {
+	if err := DownloadWordPress(dir+"/html", cfg.SiteUID); err != nil {
 		return fmt.Errorf("download WordPress: %w", err)
 	}
 
@@ -220,9 +220,9 @@ require_once ABSPATH . 'wp-settings.php';
 	)
 }
 
-// On a fresh install every bundled theme except WP_DEFAULT_THEME is removed; on
-// a recreate the bundled themes and plugins are skipped so existing ones are left alone.
-func DownloadWordPress(htmlDir string, siteUID int, recreate bool) error {
+// DownloadWordPress extracts the latest WordPress release into htmlDir on a fresh
+// install, removing every bundled theme except WP_DEFAULT_THEME.
+func DownloadWordPress(htmlDir string, siteUID int) error {
 	dlClient := &http.Client{Timeout: 5 * time.Minute}
 	resp, err := dlClient.Get("https://wordpress.org/latest.tar.gz")
 	if err != nil {
@@ -265,15 +265,9 @@ func DownloadWordPress(htmlDir string, siteUID int, recreate bool) error {
 
 		rel := strings.TrimPrefix(target, htmlDir+string(os.PathSeparator))
 		if rest, ok := strings.CutPrefix(rel, "wp-content/themes/"); ok {
-			if recreate {
-				continue
-			}
 			if theme, _, found := strings.Cut(rest, "/"); found {
 				themes[theme] = struct{}{}
 			}
-		}
-		if recreate && strings.HasPrefix(rel, "wp-content/plugins/") {
-			continue
 		}
 
 		switch hdr.Typeflag {
@@ -299,9 +293,6 @@ func DownloadWordPress(htmlDir string, siteUID int, recreate bool) error {
 		}
 	}
 
-	if recreate {
-		return nil
-	}
 	return pruneBundledThemes(htmlDir, themes)
 }
 
