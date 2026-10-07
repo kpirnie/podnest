@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -245,7 +246,7 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 		}
 	}
 	if it := tx.ProcessRequestHeaders(); it != nil {
-		return e.interrupt(w, r, it, clientIP, sink, siteID, siteName)
+		return e.interrupt(w, r, tx, it, clientIP, sink, siteID, siteName)
 	}
 
 	// request body phase — buffer up to wafMaxBodyBytes, restore full stream for
@@ -279,7 +280,7 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 			if it, _, err := tx.WriteRequestBody(buf); err != nil {
 				logger.Error("waf: WriteRequestBody: %v", err)
 			} else if it != nil {
-				return e.interrupt(w, r, it, clientIP, sink, siteID, siteName)
+				return e.interrupt(w, r, tx, it, clientIP, sink, siteID, siteName)
 			}
 		}
 	}
@@ -292,7 +293,7 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	} else if it != nil {
 		// interrupt call — pass logMu through so writeWAFLog can lock correctly
 
-		return e.interrupt(w, r, it, clientIP, sink, siteID, siteName)
+		return e.interrupt(w, r, tx, it, clientIP, sink, siteID, siteName)
 	}
 
 	if logger.IsDebug() {
@@ -303,12 +304,12 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 
 // interrupt handles a WAF interruption. In detect mode it logs and passes the
 // request through. In prevent mode it logs and returns a 403.
-func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.Interruption, clientIP string, sink wafLogSink, siteID int64, siteName string) bool {
+func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, tx types.Transaction, it *types.Interruption, clientIP string, sink wafLogSink, siteID int64, siteName string) bool {
 	action := "DETECT"
 	if e.mode == db.WAFModePrevent {
 		action = "BLOCK"
 	}
-	writeWAFLog(sink, r, clientIP, it.RuleID, action, siteID, siteName)
+	writeWAFLog(sink, r, clientIP, it.RuleID, matchedRuleIDs(tx, it.RuleID), action, siteID, siteName)
 
 	if e.mode == db.WAFModePrevent {
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -322,22 +323,41 @@ func (e *WAFEngine) interrupt(w http.ResponseWriter, r *http.Request, it *types.
 // handle; siteID 0 routes to the global waf.log. The sink is the proxy's log
 // drain, so a blocked request costs a channel send rather than an open, write,
 // and close — the syscall storm previously landed precisely during an attack.
-func writeWAFLog(sink wafLogSink, r *http.Request, clientIP string, ruleID int, action string, siteID int64, siteName string) {
+func writeWAFLog(sink wafLogSink, r *http.Request, clientIP string, ruleID int, matched, action string, siteID int64, siteName string) {
 	if sink == nil {
 		return
 	}
 
-	line := fmt.Sprintf("%s WAF %s %s %s rule=%d %s %q\n",
+	line := fmt.Sprintf("%s WAF %s %s %s rule=%d matched=%s %s %q\n",
 		time.Now().UTC().Format(time.RFC3339),
 		action,
 		r.Host,
 		r.URL.Path,
 		ruleID,
+		matched,
 		clientIP,
 		r.UserAgent(),
 	)
 
 	sink(siteID, siteName, line)
+}
+
+// matchedRuleIDs lists the rules that fired ahead of the interruption — the
+// anomaly-score rules (949110 and kin) only carry the total, so these are what
+// explain a block. Rules without a message are CRS setup/flow rules and skipped.
+func matchedRuleIDs(tx types.Transaction, interruptID int) string {
+	var ids []string
+	for _, mr := range tx.MatchedRules() {
+		id := mr.Rule().ID()
+		if id == interruptID || mr.Message() == "" {
+			continue
+		}
+		ids = append(ids, strconv.Itoa(id))
+	}
+	if len(ids) == 0 {
+		return "-"
+	}
+	return strings.Join(ids, ",")
 }
 
 // buildDirectives produces inline Coraza/CRS directives for the paranoia level
