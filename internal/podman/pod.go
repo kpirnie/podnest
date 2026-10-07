@@ -44,10 +44,11 @@ type PodCreateResponse struct {
 
 // PodInspect represents the detailed state of a pod and its containers as returned by the inspect endpoint
 type PodInspect struct {
-	ID         string         `json:"Id"`
-	Name       string         `json:"Name"`
-	State      string         `json:"State"`
-	Containers []PodContainer `json:"Containers"`
+	ID               string         `json:"Id"`
+	Name             string         `json:"Name"`
+	State            string         `json:"State"`
+	InfraContainerID string         `json:"InfraContainerID"`
+	Containers       []PodContainer `json:"Containers"`
 }
 
 // PodContainer represents a container within a pod, including its ID, name, and current state
@@ -167,8 +168,18 @@ func (c *Client) CreatePod(ctx context.Context, name string, site *models.Site) 
 			logger.Error("failed to inspect existing pod %s for reuse: %v", name, err)
 			return "", err
 		}
-		logger.Debug("pod %s already exists — reusing ID %s", name, inspect.ID)
-		return inspect.ID, nil
+
+		// a pod that has lost its infra container rejects every container create —
+		// remove it and fall through to a fresh create instead of reusing it
+		if inspect.InfraContainerID == "" {
+			logger.Warn("pod %s has no infra container — removing it for a fresh create", name)
+			if err := c.RemovePod(ctx, name); err != nil {
+				return "", err
+			}
+		} else {
+			logger.Debug("pod %s already exists — reusing ID %s", name, inspect.ID)
+			return inspect.ID, nil
+		}
 	}
 
 	// create the pod with the specified name and port mappings; the infra
