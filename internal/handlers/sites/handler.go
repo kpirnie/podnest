@@ -46,6 +46,8 @@ type SitesPodman interface {
 	SiteStatus(ctx context.Context, siteName string) (*podman.PodInspect, error)
 	FlushPHPCache(ctx context.Context, containerName string) error
 	FlushRedisCache(ctx context.Context, containerName, password string) error
+	FlushCache(ctx context.Context, containerName string, cachePath string) error
+	FlushVarnishCache(ctx context.Context, containerName string) error
 	PruneImages(ctx context.Context) (int, error)
 }
 
@@ -927,6 +929,20 @@ func (h *Handler) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 			if err := h.Podman.FlushRedisCache(r.Context(), podman.ContainerName(site.Name, "redis"), redisPass); err != nil {
 				logger.Warn("redis flush failed for site %d (pod may be stopped): %v", site.ID, err)
 			}
+		}
+	}
+
+	// flush the nginx fastcgi page cache for PHP-FPM site types
+	if modules.TypeModule(site.SiteType).HasPHPFPM() {
+		if err := h.Podman.FlushCache(r.Context(), podman.ContainerName(site.Name, "nginx"), models.FastCGICachePath); err != nil {
+			logger.Warn("fastcgi cache flush failed for site %d (pod may be stopped): %v", site.ID, err)
+		}
+	}
+
+	// ban everything in varnish when it is enabled for the site
+	if varnishKV, _ := db.GetConfigsBySiteAndType(h.DB, site.ID, models.ConfigVarnish); strings.ToLower(varnishKV["enabled"]) == "true" {
+		if err := h.Podman.FlushVarnishCache(r.Context(), podman.ContainerName(site.Name, "varnish")); err != nil {
+			logger.Warn("varnish flush failed for site %d (pod may be stopped): %v", site.ID, err)
 		}
 	}
 

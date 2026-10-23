@@ -193,6 +193,16 @@ func (m *Manager) Push(ctx context.Context, src, dst *models.Site, opts PushOpti
 			logger.Warn("Push: flush redis for site %s: %v", dst.Name, err)
 		}
 	}
+	if modules.TypeModule(dst.SiteType).HasPHPFPM() {
+		if err := m.podman.FlushCache(ctx, podman.ContainerName(dst.Name, "nginx"), models.FastCGICachePath); err != nil {
+			logger.Warn("Push: flush fastcgi cache for site %s: %v", dst.Name, err)
+		}
+	}
+	if varnishKV, _ := db.GetConfigsBySiteAndType(m.db, dst.ID, models.ConfigVarnish); strings.ToLower(varnishKV["enabled"]) == "true" {
+		if err := m.podman.FlushVarnishCache(ctx, podman.ContainerName(dst.Name, "varnish")); err != nil {
+			logger.Warn("Push: flush varnish for site %s: %v", dst.Name, err)
+		}
+	}
 
 	logger.Debug("Push: completed %s → %s (files=%v db=%v)", src.Name, dst.Name, opts.Files, pushDB)
 	return nil

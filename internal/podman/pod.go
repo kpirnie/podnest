@@ -567,7 +567,9 @@ func (c *Client) FlushCache(ctx context.Context, containerName string, cachePath
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
-		"Cmd":          []string{"find", cachePath, "-type", "f", "-delete"},
+		// cache dirs are 0700 nginx-owned and the container drops CAP_DAC_OVERRIDE
+		"User": "nginx",
+		"Cmd":  []string{"find", cachePath, "-type", "f", "-delete"},
 	}
 	var execResp struct {
 		ID string `json:"Id"`
