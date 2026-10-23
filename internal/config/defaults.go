@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -26,11 +27,6 @@ var DefaultNginx = map[string]string{
 	"open_file_cache":             "max=10000 inactive=30s",
 	"open_file_cache_valid":       "60s",
 	"open_file_cache_min_uses":    "2",
-	"fastcgi_cache":               "on",
-	"fastcgi_cache_valid":         "60s",
-	"fastcgi_cache_zone_size":     "32m",
-	"fastcgi_cache_max_size":      "128m",
-	"fastcgi_cache_inactive":      "10m",
 	"gzip":                        "on",
 	"gzip_comp_level":             "4",
 	"gzip_min_length":             "256",
@@ -45,6 +41,15 @@ var DefaultNginx = map[string]string{
 	"rate_limit_general":          "50r/s",
 	"limit_conn_addr":             "10",
 	"real_ip_header":              "X-Forwarded-For",
+}
+
+// setup and hold the default nginx fastcgi cache config for PHP and WordPress sites
+var DefaultNginxFastCGI = map[string]string{
+	"fastcgi_cache":           "on",
+	"fastcgi_cache_valid":     "60s",
+	"fastcgi_cache_zone_size": "32m",
+	"fastcgi_cache_max_size":  "128m",
+	"fastcgi_cache_inactive":  "10m",
 }
 
 // setup and hold the default php config for new sites
@@ -169,4 +174,20 @@ func DefaultsForType(configType int) (map[string]string, error) {
 		logger.Error("unknown config type: %d", configType)
 		return nil, fmt.Errorf("unknown config type: %d", configType)
 	}
+}
+
+// HasFastCGICache reports whether a site type renders the nginx fastcgi page cache.
+func HasFastCGICache(siteType int) bool {
+	return siteType == models.SiteTypeWordPress || siteType == models.SiteTypePHP
+}
+
+// NginxDefaultsForSiteType returns the nginx defaults for a site type, including
+// the fastcgi cache keys for PHP and WordPress sites.
+func NginxDefaultsForSiteType(siteType int) map[string]string {
+	if !HasFastCGICache(siteType) {
+		return DefaultNginx
+	}
+	out := maps.Clone(DefaultNginx)
+	maps.Copy(out, DefaultNginxFastCGI)
+	return out
 }

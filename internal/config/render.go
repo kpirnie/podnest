@@ -20,7 +20,7 @@ import (
 var safeConfigValue = regexp.MustCompile(`^[A-Za-z0-9 ._:/=+,%-]*$`)
 
 // RenderNginxMain renders the nginx.conf from a config JSON blob
-func RenderNginxMain(configJSON string) (string, error) {
+func RenderNginxMain(configJSON string, siteType int) (string, error) {
 
 	// The main nginx.conf is rendered with all possible directives
 	cfg, err := unmarshal(configJSON)
@@ -34,10 +34,11 @@ func RenderNginxMain(configJSON string) (string, error) {
 
 	logger.Debug("rendering nginx.conf with config: %v", cfg)
 
+	fv := func(key string) string { return get(cfg, key, DefaultNginxFastCGI) }
 	fcgiCachePath := ""
-	if v("fastcgi_cache") == "on" {
+	if HasFastCGICache(siteType) && fv("fastcgi_cache") == "on" {
 		fcgiCachePath = fmt.Sprintf("fastcgi_cache_path %s levels=1:2 keys_zone=PODNEST:%s max_size=%s inactive=%s use_temp_path=off;",
-			models.FastCGICachePath, v("fastcgi_cache_zone_size"), v("fastcgi_cache_max_size"), v("fastcgi_cache_inactive"))
+			models.FastCGICachePath, fv("fastcgi_cache_zone_size"), fv("fastcgi_cache_max_size"), fv("fastcgi_cache_inactive"))
 	}
 
 	// Render the nginx.conf with the values from the config JSON
@@ -610,8 +611,9 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 
 	// wp-admin, logged-in users and PHP session holders always bypass so
 	// user-specific output is never cached and served to anyone else
+	fv := func(key string) string { return get(cfg, key, DefaultNginxFastCGI) }
 	fcgiSkip, fcgiCache := "", ""
-	if v("fastcgi_cache") == "on" {
+	if fv("fastcgi_cache") == "on" {
 		fcgiSkip = `set $pn_skip_cache 0;
     if ($request_uri ~* "^/wp-admin/") { set $pn_skip_cache 1; }
     if ($http_cookie ~* "wordpress_logged_in_|PHPSESSID") { set $pn_skip_cache 1; }`
@@ -621,7 +623,7 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
         fastcgi_cache_bypass            $pn_skip_cache;
         fastcgi_no_cache                $pn_skip_cache;
         fastcgi_cache_use_stale         updating;
-        fastcgi_cache_background_update on;`, v("fastcgi_cache_valid"))
+        fastcgi_cache_background_update on;`, fv("fastcgi_cache_valid"))
 	}
 
 	return fmt.Sprintf(`server {

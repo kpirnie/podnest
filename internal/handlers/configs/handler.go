@@ -145,6 +145,9 @@ func (h *Handler) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
+	if configType == models.ConfigNginx {
+		defaults = config.NginxDefaultsForSiteType(site.SiteType)
+	}
 
 	prior := db.SnapshotConfigs(h.DB, site.ID, configType)
 
@@ -310,7 +313,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			vEnabled = config.VarnishEnabled(string(vb))
 		}
 
-		main, err := config.RenderNginxMain(blob)
+		main, err := config.RenderNginxMain(blob, site.SiteType)
 		if err != nil {
 			logger.Error("failed to render nginx main config for site %d: %v", site.ID, err)
 			return err
@@ -407,7 +410,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			return err
 		}
 		vEnabled := config.VarnishEnabled(blob)
-		main, err := config.RenderNginxMain(string(nginxBlob))
+		main, err := config.RenderNginxMain(string(nginxBlob), site.SiteType)
 		if err != nil {
 			logger.Error("failed to render nginx main during varnish rewrite for site %d: %v", site.ID, err)
 			return err

@@ -84,7 +84,7 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 
 	vEnabled := config.VarnishEnabled(marshalCfg(cfg.Configs[models.ConfigVarnish]))
 
-	nginxMain, err := config.RenderNginxMain(marshalCfg(cfg.Configs[models.ConfigNginx]))
+	nginxMain, err := config.RenderNginxMain(marshalCfg(cfg.Configs[models.ConfigNginx]), models.SiteTypePHP)
 	if err != nil {
 		return fmt.Errorf("render nginx main: %w", err)
 	}

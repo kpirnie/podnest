@@ -12,7 +12,7 @@ import (
 // seedConfigs returns the default config maps for a WordPress site.
 func seedConfigs() map[int]map[string]string {
 	return map[int]map[string]string{
-		models.ConfigNginx:   config.DefaultNginx,
+		models.ConfigNginx:   config.NginxDefaultsForSiteType(models.SiteTypeWordPress),
 		models.ConfigPHP:     config.DefaultPHP,
 		models.ConfigMariaDB: config.DefaultMariaDB,
 		models.ConfigRedis:   config.DefaultRedis,
