@@ -29,7 +29,7 @@ var DefaultNginx = map[string]string{
 	"fastcgi_cache":               "on",
 	"fastcgi_cache_valid":         "60s",
 	"fastcgi_cache_zone_size":     "32m",
-	"fastcgi_cache_max_size":      "256m",
+	"fastcgi_cache_max_size":      "128m",
 	"fastcgi_cache_inactive":      "10m",
 	"gzip":                        "on",
 	"gzip_comp_level":             "4",
