@@ -22,7 +22,7 @@ A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js,
 
 ## Overview
 
-Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis. Node.js, .NET, and Python sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
+Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Redis, plus a short-lived (60s by default) nginx FastCGI page cache that bypasses wp-admin, logged-in WordPress users, and PHP session holders. Node.js, .NET, and Python sites include MariaDB and Redis. Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
 
 **Supported site types:**
 
