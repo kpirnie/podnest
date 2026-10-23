@@ -430,6 +430,3 @@ PodNest is licensed under the [MIT License](LICENSE). See the `LICENSE` file in 
 ## Support
 
 This project is provided as-is through GitHub. **Paid support is available** for those who need hands-on help with setup, configuration, customization, or troubleshooting. Reach out through [https://kevinpirnie.com/about-kevin-pirnie/lets-talk/](https://kevinpirnie.com/about-kevin-pirnie/lets-talk/) to inquire about support options.
-
-[![GitHub Stats](https://github-stats-extended.vercel.app/api?username=kpirnie&hide_title=true&show_icons=true&include_all_commits=true&theme=algolia)](https://github-stats-extended.vercel.app/api?username=kpirnie&hide_title=true&show_icons=true&include_all_commits=true&theme=algolia)
-[![GitHub Stats](https://github-stats-extended.vercel.app/api/top-langs?username=kpirnie&hide_title=true&langs_count=5&theme=algolia)](https://github-stats-extended.vercel.app/api/top-langs?username=kpirnie&hide_title=true&langs_count=5&theme=algolia)
