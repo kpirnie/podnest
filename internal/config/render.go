@@ -34,6 +34,12 @@ func RenderNginxMain(configJSON string) (string, error) {
 
 	logger.Debug("rendering nginx.conf with config: %v", cfg)
 
+	fcgiCachePath := ""
+	if v("fastcgi_cache") == "on" {
+		fcgiCachePath = fmt.Sprintf("fastcgi_cache_path %s levels=1:2 keys_zone=PODNEST:%s max_size=%s inactive=%s use_temp_path=off;",
+			models.FastCGICachePath, v("fastcgi_cache_zone_size"), v("fastcgi_cache_max_size"), v("fastcgi_cache_inactive"))
+	}
+
 	// Render the nginx.conf with the values from the config JSON
 	return fmt.Sprintf(`user nginx;
 worker_processes     %s;
@@ -105,7 +111,7 @@ http {
         application/xhtml+xml application/xml font/opentype
         image/svg+xml image/x-icon text/css text/plain;
 
-    fastcgi_ignore_headers     Cache-Control Expires Set-Cookie;
+    %s
 
     limit_req_zone  $binary_remote_addr zone=wp_login:10m rate=%s;
     limit_req_zone  $binary_remote_addr zone=xmlrpc:10m   rate=%s;
@@ -150,6 +156,7 @@ http {
 		v("zstd"),
 		v("zstd_comp_level"),
 		v("zstd_min_length"),
+		fcgiCachePath,
 		v("rate_limit_login"),
 		v("rate_limit_xmlrpc"),
 		v("rate_limit_general"),
@@ -601,6 +608,22 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 
 	logger.Debug("rendering Nginx PHP server block with config: %v", cfg)
 
+	// wp-admin, logged-in users and PHP session holders always bypass so
+	// user-specific output is never cached and served to anyone else
+	fcgiSkip, fcgiCache := "", ""
+	if v("fastcgi_cache") == "on" {
+		fcgiSkip = `set $pn_skip_cache 0;
+    if ($request_uri ~* "^/wp-admin/") { set $pn_skip_cache 1; }
+    if ($http_cookie ~* "wordpress_logged_in_|PHPSESSID") { set $pn_skip_cache 1; }`
+		fcgiCache = fmt.Sprintf(`fastcgi_cache                   PODNEST;
+        fastcgi_cache_key               "$scheme$request_method$host$request_uri";
+        fastcgi_cache_valid             200 301 %s;
+        fastcgi_cache_bypass            $pn_skip_cache;
+        fastcgi_no_cache                $pn_skip_cache;
+        fastcgi_cache_use_stale         updating;
+        fastcgi_cache_background_update on;`, v("fastcgi_cache_valid"))
+	}
+
 	return fmt.Sprintf(`server {
     listen %d;
     server_name _;
@@ -625,6 +648,7 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 
     limit_conn addr %s;
     limit_req  zone=general burst=100 nodelay;
+    %s
 
     location / {
         try_files $uri $uri/ /index.php?$args;
@@ -646,6 +670,7 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
         fastcgi_buffer_size     32k;
         fastcgi_buffers         16 16k;
         fastcgi_busy_buffers_size 32k;
+        %s
     }
 
     location = /wp-login.php {
@@ -683,6 +708,8 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 `,
 		listenPort,
 		v("limit_conn_addr"),
+		fcgiSkip,
+		fcgiCache,
 	), nil
 }
 

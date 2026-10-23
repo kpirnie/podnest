@@ -133,6 +133,9 @@ const (
 // each pod's isolated network namespace regardless of how many pods exist
 const VarnishNginxPort = 8080
 
+// FastCGICachePath is the nginx fastcgi cache directory inside the nginx container's /var/cache/nginx tmpfs
+const FastCGICachePath = "/var/cache/nginx/fastcgi"
+
 // backup destination types
 const (
 	BackupTypeLocal = 1
