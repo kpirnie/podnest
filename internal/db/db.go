@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"podnest/internal/config"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 
@@ -101,7 +102,12 @@ func Migrate(db *sql.DB) error {
 	}
 
 	// purge pre-hash bearer tokens
-	return migrateTokenHashing(db)
+	if err := migrateTokenHashing(db); err != nil {
+		return err
+	}
+
+	// backfill fastcgi cache keys into existing PHP and WordPress sites
+	return migrateFastCGICacheKeys(db)
 }
 
 // migrateColumns adds new columns and removes obsolete ones without breaking existing data
@@ -205,6 +211,40 @@ func migrateTokenHashing(db *sql.DB) error {
 	}
 
 	logger.Debug("purged pre-hash bearer tokens")
+	return nil
+}
+
+// migrateFastCGICacheKeys adds the nginx fastcgi cache defaults to every
+// existing PHP and WordPress site that predates them. Guarded by a settings
+// flag rather than run from the migrations slice, which would re-add keys an
+// operator deliberately removed on every boot.
+func migrateFastCGICacheKeys(db *sql.DB) error {
+
+	// skip when the one-time backfill has already run
+	if done, err := GetSetting(db, "schema_fastcgi_cache"); err == nil && done == "1" {
+		return nil
+	}
+
+	// insert each default key per site, leaving any existing value untouched
+	now := time.Now().UTC()
+	for k, v := range config.DefaultNginxFastCGI {
+		if _, err := db.Exec(`
+			INSERT OR IGNORE INTO kppn_configs (site_id, type, key, value, created, updated)
+			SELECT id, ?, ?, ?, ?, ? FROM kppn_sites WHERE site_type IN (?, ?)`,
+			models.ConfigNginx, k, v, now, now, models.SiteTypeWordPress, models.SiteTypePHP,
+		); err != nil {
+			logger.Error("fastcgi cache key backfill failed: %v", err)
+			return err
+		}
+	}
+
+	// record completion so this never runs again
+	if err := SetSetting(db, "schema_fastcgi_cache", "1"); err != nil {
+		logger.Error("failed to record fastcgi cache key backfill: %v", err)
+		return err
+	}
+
+	logger.Debug("backfilled fastcgi cache keys")
 	return nil
 }
 
