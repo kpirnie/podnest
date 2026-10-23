@@ -40,7 +40,7 @@ All sites share a single global SFTP container for file management. The same con
 
 The recommended and fully supported deployment method is as a container. The binary option is available for those who prefer to compile and run it directly.
 
-> **Full documentation** — feature guides, configuration reference, the security model, and the complete API reference — lives in the [PodNest Knowledge Base](https://podnest.us). This README covers only what you need to get an instance up and running. See [Documentation](#documentation) below for the topic index.
+> **Full documentation** — feature guides, configuration reference, the security model, and the complete API reference — lives in the [PodNest Knowledge Base](https://podnest.app). This README covers only what you need to get an instance up and running. See [Documentation](#documentation) below for the topic index.
 
 ---
 
@@ -388,7 +388,7 @@ The `.env` file inside each site directory holds the auto-generated database and
 
 ## Documentation
 
-Day-to-day usage, configuration, and the full API reference are documented in the [PodNest Knowledge Base](https://podnest.us). Topic index:
+Day-to-day usage, configuration, and the full API reference are documented in the [PodNest Knowledge Base](https://podnest.app). Topic index:
 
 - **Managing Sites** — creating sites, site actions, container health, cloning, domains
 - **SFTP Access** — global SFTP container, directory access, Fail2Ban integration
