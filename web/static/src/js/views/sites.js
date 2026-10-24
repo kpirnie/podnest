@@ -240,11 +240,21 @@ function wireBulkSelection() {
     const selAll  = document.getElementById("sites-select-all");
     const search  = document.getElementById("sites-search");
     const sortSel = document.getElementById("sites-sort");
+    const typeSel = document.getElementById("sites-type");
+    const statSel = document.getElementById("sites-status");
+    const dirBtn  = document.getElementById("sites-sort-dir");
+    const reset   = document.getElementById("sites-reset");
+    let sortDir   = 1;
     const grid    = document.getElementById("sites-grid");
     if (!bar || !selAll || !grid) return;
 
     const getChecked = () =>
         [...document.querySelectorAll(".kp-site-row-check:checked")];
+
+    // -- row checkboxes on cards not hidden by the filter
+    const visibleChecks = () =>
+        [...grid.querySelectorAll(".kp-site-row-check")]
+            .filter(cb => cb.closest(".kp-list-card").style.display !== "none");
 
     const updateBulk = () => {
         const checked = getChecked();
@@ -261,24 +271,31 @@ function wireBulkSelection() {
         const mobileBtn = document.getElementById("kp-bulk-mobile-btn");
         if (mobileBtn) mobileBtn.disabled = n === 0;
 
-        const all = document.querySelectorAll(".kp-site-row-check");
+        const all = visibleChecks();
         selAll.indeterminate = n > 0 && n < all.length;
         selAll.checked = all.length > 0 && n === all.length;
     };
 
-    // -- sort/filter value for a card
-    const cardVal = (card, key) => key === "name"
-        ? (card.querySelector(".kp-site-row-name")?.textContent.trim().toLowerCase() ?? "")
-        : (card.dataset[key] ?? "").toLowerCase();
+    // -- sort/filter value for a card, reverse proxies count as running
+    const cardVal = (card, key) => {
+        if (key === "name") return card.querySelector(".kp-site-row-name")?.textContent.trim().toLowerCase() ?? "";
+        if (key === "status" && card.dataset.type === "6") return "1";
+        return (card.dataset[key] ?? "").toLowerCase();
+    };
 
-    // -- filtering
+    // -- filtering, hidden cards are unchecked so bulk actions only hit visible ones
     const applyFilter = () => {
-        const q = search.value.trim().toLowerCase();
+        const q  = search.value.trim().toLowerCase();
+        const t  = typeSel?.value ?? "";
+        const st = statSel?.value ?? "";
         grid.querySelectorAll(".kp-list-card").forEach(card => {
-            const name   = cardVal(card, "name");
-            const domain = cardVal(card, "domain");
-            card.style.display = (!q || name.includes(q) || domain.includes(q)) ? "" : "none";
+            const show = (!q || cardVal(card, "name").includes(q) || cardVal(card, "domain").includes(q))
+                && (!t || cardVal(card, "type") === t)
+                && (!st || cardVal(card, "status") === st);
+            card.style.display = show ? "" : "none";
+            if (!show) card.querySelector(".kp-site-row-check").checked = false;
         });
+        updateBulk();
     };
 
     // -- sorting, ties fall back to name
@@ -286,14 +303,21 @@ function wireBulkSelection() {
         const key   = sortSel?.value ?? "name";
         const cards = [...grid.querySelectorAll(".kp-list-card")];
         cards.sort((a, b) =>
-            cardVal(a, key).localeCompare(cardVal(b, key), undefined, { numeric: true })
+            sortDir * cardVal(a, key).localeCompare(cardVal(b, key), undefined, { numeric: true })
             || cardVal(a, "name").localeCompare(cardVal(b, "name")));
         cards.forEach(c => grid.appendChild(c));
     };
 
+    // -- direction icon state
+    const setDir = (d) => {
+        sortDir = d;
+        dirBtn?.classList.toggle("kp-sort-asc", d === 1);
+        dirBtn?.classList.toggle("kp-sort-desc", d === -1);
+    };
+
     // -- events
     selAll.addEventListener("change", () => {
-        document.querySelectorAll(".kp-site-row-check").forEach(cb => {
+        visibleChecks().forEach(cb => {
             cb.checked = selAll.checked;
         });
         updateBulk();
@@ -305,6 +329,22 @@ function wireBulkSelection() {
 
     search?.addEventListener("input", applyFilter);
     sortSel?.addEventListener("change", applySort);
+    typeSel?.addEventListener("change", applyFilter);
+    statSel?.addEventListener("change", applyFilter);
+    dirBtn?.addEventListener("click", (e) => {
+        e.preventDefault();
+        setDir(-sortDir);
+        applySort();
+    });
+    reset?.addEventListener("click", () => {
+        search.value = "";
+        if (typeSel) typeSel.value = "";
+        if (statSel) statSel.value = "";
+        if (sortSel) sortSel.value = "name";
+        setDir(1);
+        applyFilter();
+        applySort();
+    });
 
     // desktop button clicks
     ["bulk-start","bulk-stop","bulk-restart","bulk-flush","bulk-recreate"].forEach(action => {
