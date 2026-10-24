@@ -22,6 +22,7 @@ import { initSecurityPills, loadSecurityPanel, renderSecurityPanel, wireSecurity
 import { loadStatsTab, renderStatsTab, wireStatsTab } from './site-stats.js';
 import { loadWAFTab, wireWAFTab } from './site-waf.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
+import { loadWPUpdatesTab, renderWPUpdatesTab, wireWPUpdatesTab } from './site-wpupdates.js';
 
 // aborts accumulated root-level listeners when a new RP site detail view is wired
 let _rpWireAbort = null;
@@ -394,6 +395,7 @@ export async function viewSiteDetail(root, { id, tab }) {
                     <hr>
                     <div class="kp-pill-dropdown-section">Tools</div>
                     ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 11 : 10}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
+                    ${site.SiteType === 1 ? `<a href="#" data-switcher="wordpress"><span uk-icon="icon: wordpress; ratio: 0.85"></span> WordPress</a>` : ""}
                     <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
                     ${hasDB ? `<a href="#" data-switcher="database"><span uk-icon="icon: table; ratio: 0.85"></span> Database</a>` : ""}
                     ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
@@ -423,6 +425,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             ${showCrons ? `<li>${renderCronsTab(id)}</li>` : ""}
             <li>${renderRedirectsTab()}</li>
             ${hasDB ? `<li>${renderDBToolsTab(id, site.SiteType)}</li>` : ""}
+            ${site.SiteType === 1 ? `<li>${renderWPUpdatesTab()}</li>` : ""}
             <li>${renderFilesTab(id)}</li>
         </ul>`}`;
 
@@ -522,6 +525,15 @@ export async function viewSiteDetail(root, { id, tab }) {
         if (_fmSwitcher && _dbLink && _dbPanel) _dbLink.dataset.switcher = String([..._fmSwitcher.children].findIndex(li => li.contains(_dbPanel)));
         wireDBToolsTab(root, id);
         initDBToolsPills(root, tab);
+    }
+
+    // resolve the WordPress dropdown index to its panel's position, then wire it
+    if (site.SiteType === 1) {
+        const _wpLink = root.querySelector('a[data-switcher="wordpress"]');
+        const _wpPanel = root.querySelector("#wpupdates-panel");
+        if (_fmSwitcher && _wpLink && _wpPanel) _wpLink.dataset.switcher = String([..._fmSwitcher.children].findIndex(li => li.contains(_wpPanel)));
+        wireWPUpdatesTab(root, id);
+        loadWPUpdatesTab(root, id);
     }
 
     wireHealthBadges(root, id);
