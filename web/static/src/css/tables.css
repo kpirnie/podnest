@@ -41,7 +41,7 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 /* -- bulk action bar ------------------------------------------------------- */
 .kp-bulk-bar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     background: var(--kp-bg-card);
