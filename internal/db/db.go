@@ -162,6 +162,9 @@ func migrateColumns(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS kppn_node_parent (id INTEGER PRIMARY KEY CHECK(id = 1), link_id TEXT NOT NULL, parent_pub TEXT NOT NULL, created DATETIME NOT NULL DEFAULT (datetime('now')), updated DATETIME)`,
 		`CREATE TABLE IF NOT EXISTS kppn_node_pair_codes (code_hash TEXT PRIMARY KEY, origin TEXT NOT NULL, expires_at DATETIME NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS kppn_node_nonces (nonce TEXT PRIMARY KEY, expires_at DATETIME NOT NULL)`,
+		// wordpress update dashboard + wp-admin sso
+		`CREATE TABLE IF NOT EXISTS kppn_wp_updates (site_id INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE, core_version TEXT NOT NULL DEFAULT '', core_update TEXT NOT NULL DEFAULT '', plugins TEXT NOT NULL DEFAULT '[]', themes TEXT NOT NULL DEFAULT '[]', error TEXT NOT NULL DEFAULT '', checked DATETIME)`,
+		`CREATE TABLE IF NOT EXISTS kppn_wp_sso (site_id INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE, wp_user_id INTEGER NOT NULL DEFAULT 0, updated DATETIME)`,
 	}
 
 	for _, m := range migrations {
@@ -864,5 +867,21 @@ CREATE TABLE IF NOT EXISTS kppn_node_pair_codes (
 CREATE TABLE IF NOT EXISTS kppn_node_nonces (
     nonce      TEXT PRIMARY KEY,
     expires_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS kppn_wp_updates (
+    site_id      INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    core_version TEXT    NOT NULL DEFAULT '',
+    core_update  TEXT    NOT NULL DEFAULT '',
+    plugins      TEXT    NOT NULL DEFAULT '[]',
+    themes       TEXT    NOT NULL DEFAULT '[]',
+    error        TEXT    NOT NULL DEFAULT '',
+    checked      DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS kppn_wp_sso (
+    site_id    INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    wp_user_id INTEGER NOT NULL DEFAULT 0,
+    updated    DATETIME
 );
 `

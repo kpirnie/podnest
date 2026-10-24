@@ -367,6 +367,26 @@ type MalwareFinding struct {
 	Quarantined *time.Time `json:"quarantined"`
 }
 
+// WPUpdateItem represents one plugin or theme with an update available
+type WPUpdateItem struct {
+	Name          string `json:"name"`
+	Title         string `json:"title"`
+	Version       string `json:"version"`
+	UpdateVersion string `json:"update_version"`
+}
+
+// WPUpdateStatus is the cached core/plugin/theme update state for a WordPress
+// site; CoreUpdate is empty when core is current
+type WPUpdateStatus struct {
+	SiteID      int64           `json:"site_id"`
+	CoreVersion string          `json:"core_version"`
+	CoreUpdate  string          `json:"core_update"`
+	Plugins     []*WPUpdateItem `json:"plugins"`
+	Themes      []*WPUpdateItem `json:"themes"`
+	Error       string          `json:"error"`
+	Checked     *time.Time      `json:"checked"`
+}
+
 // ResourceWarning holds the current host resource threshold breach state.
 type ResourceWarning struct {
 	Active      bool      `json:"active"`
