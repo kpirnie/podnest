@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io/fs"
 	"podnest/internal/logger"
+	"podnest/internal/version"
 	"time"
 )
 
@@ -49,6 +50,12 @@ func init() {
 
 		// currentYear renders the current year server-side — avoids inline JS in templates
 		"currentYear": func() int { return time.Now().Year() },
+
+		// appVersion renders the running build version — used to cache-bust static assets
+		"appVersion": func() string { return version.AppVersion },
+
+		// unixNow renders the current unix timestamp — used to cache-bust custom.css
+		"unixNow": func() int64 { return time.Now().Unix() },
 	}).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		logger.Error("failed to parse templates: %v", err)
