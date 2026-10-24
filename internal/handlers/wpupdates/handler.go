@@ -22,6 +22,7 @@ import (
 // Handler handles per-site WordPress update API routes.
 type Handler struct {
 	DB       *sql.DB
+	AppPath  string
 	WPUpdate *wpupdate.Manager
 	Resolve  modules.SiteResolver
 }
@@ -52,6 +53,9 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/wpupdates", h.apiGetStatus)
 	api.HandleFunc("POST /sites/{id}/wpupdates/check", h.apiCheckNow)
 	api.HandleFunc("GET /sites/{id}/wpupdates/run", h.apiRunUpdates)
+	api.HandleFunc("GET /sites/{id}/wpsso", h.apiGetSSO)
+	api.HandleFunc("PUT /sites/{id}/wpsso", h.apiSetSSO)
+	api.HandleFunc("POST /sites/{id}/wpsso/login", h.apiSSOLogin)
 }
 
 // resolveWP resolves the site and rejects non-WordPress sites.

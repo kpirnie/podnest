@@ -37,6 +37,9 @@ const (
 
 	// staggerDelay spaces scheduled checks so sites are never hit back to back
 	staggerDelay = 10 * time.Second
+
+	// lookupTimeout bounds the quick read-only wp-cli lookups used by SSO
+	lookupTimeout = time.Minute
 )
 
 // ErrCheckRunning reports a check refused because the site already has one running
@@ -51,6 +54,13 @@ var updateSteps = map[string][][]string{
 	"plugins": {{"plugin", "update", "--all"}},
 	"themes":  {{"theme", "update", "--all"}},
 	"all":     {{"core", "update"}, {"core", "update-db"}, {"plugin", "update", "--all"}, {"theme", "update", "--all"}},
+}
+
+// WPAdmin is a WordPress administrator selectable for wp-admin SSO
+type WPAdmin struct {
+	ID          int64  `json:"id"`
+	Login       string `json:"login"`
+	DisplayName string `json:"display_name"`
 }
 
 // ErrNotWordPress reports a check requested for a non-WordPress site
@@ -175,6 +185,65 @@ func (m *Manager) acquire(siteID int64) bool {
 	}
 	m.active[siteID] = true
 	return true
+}
+
+// ListAdmins returns the site's WordPress administrators
+func (m *Manager) ListAdmins(ctx context.Context, site *models.Site) ([]*WPAdmin, error) {
+	lCtx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+
+	container := podman.ContainerName(site.Name, "php")
+	if err := m.ensureWPCLI(lCtx, container); err != nil {
+		return nil, err
+	}
+
+	out, err := m.wp(lCtx, container, strconv.Itoa(sftp.UIDForSite(site.ID)),
+		"user", "list", "--role=administrator", "--fields=ID,user_login,display_name",
+		"--format=json", "--skip-plugins", "--skip-themes")
+	if err != nil {
+		return nil, err
+	}
+
+	var rows []struct {
+		ID          int64  `json:"ID"`
+		Login       string `json:"user_login"`
+		DisplayName string `json:"display_name"`
+	}
+	if line := jsonLine(out); line != nil {
+		if err := json.Unmarshal(line, &rows); err != nil {
+			return nil, fmt.Errorf("parse user list: %w", err)
+		}
+	}
+
+	admins := make([]*WPAdmin, 0, len(rows))
+	for _, r := range rows {
+		admins = append(admins, &WPAdmin{ID: r.ID, Login: r.Login, DisplayName: r.DisplayName})
+	}
+	return admins, nil
+}
+
+// SiteURL returns the site's siteurl option — the host WordPress issues its
+// auth cookies for, and the base wp-login.php lives under
+func (m *Manager) SiteURL(ctx context.Context, site *models.Site) (string, error) {
+	lCtx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+
+	container := podman.ContainerName(site.Name, "php")
+	if err := m.ensureWPCLI(lCtx, container); err != nil {
+		return "", err
+	}
+
+	out, err := m.wp(lCtx, container, strconv.Itoa(sftp.UIDForSite(site.ID)),
+		"option", "get", "siteurl", "--skip-plugins", "--skip-themes")
+	if err != nil {
+		return "", err
+	}
+
+	u := strings.TrimRight(strings.TrimSpace(string(out)), "/")
+	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		return "", fmt.Errorf("unexpected siteurl %q", u)
+	}
+	return u, nil
 }
 
 // CheckAll checks every running WordPress site one after another, pausing

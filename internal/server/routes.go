@@ -212,6 +212,7 @@ func (s *Server) routes() http.Handler {
 	// wordpress updates
 	wpUpdatesHandler := &wpupdateshandler.Handler{
 		DB:       s.cfg.DB,
+		AppPath:  s.cfg.AppPath,
 		WPUpdate: s.wpupdate,
 		Resolve:  sitesHandler.ResolveSite,
 	}
