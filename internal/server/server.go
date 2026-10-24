@@ -26,6 +26,7 @@ import (
 	"podnest/internal/podman"
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
+	"podnest/internal/wpupdate"
 )
 
 // shutdownDrainTimeout bounds the panel, proxy, and background goroutine drain
@@ -54,6 +55,7 @@ type Config struct {
 	BackupManager   *backup.Manager
 	CronManager     *cron.Manager
 	MalwareManager  *malware.Manager
+	WPUpdateManager *wpupdate.Manager
 }
 
 // Server is the main HTTP server
@@ -67,6 +69,7 @@ type Server struct {
 	backup   *backup.Manager
 	cron     *cron.Manager
 	malware  *malware.Manager
+	wpupdate *wpupdate.Manager
 	stats    *statsCache
 	resource *resourceState
 	audit    *audit.Recorder
@@ -86,6 +89,7 @@ func New(cfg Config) *Server {
 		backup:   cfg.BackupManager,
 		cron:     cfg.CronManager,
 		malware:  cfg.MalwareManager,
+		wpupdate: cfg.WPUpdateManager,
 		stats:    newStatsCache(),
 		resource: newResourceState(),
 		audit:    audit.New(cfg.DB),
@@ -199,6 +203,9 @@ func (s *Server) Start() error {
 
 	// scan every site's html directory nightly at midnight
 	s.goTracked(s.malwareScheduler)
+
+	// check every WordPress site for updates nightly at 11 PM
+	s.goTracked(s.wpUpdateScheduler)
 
 	// read the admin domain from the database, falling back to the flag value
 	adminDomain := s.cfg.AdminDomain

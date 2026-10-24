@@ -639,6 +639,24 @@ func (s *Server) malwareScheduler() {
 	}
 }
 
+// wpUpdateScheduler checks every running WordPress site for core, plugin and
+// theme updates at 11 PM local, ahead of the midnight malware scan. The next
+// run is computed each pass so DST changes never shift the schedule.
+func (s *Server) wpUpdateScheduler() {
+	for {
+		now := time.Now()
+		next := time.Date(now.Year(), now.Month(), now.Day(), 23, 0, 0, 0, now.Location())
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
+		}
+		if !s.sleep(time.Until(next)) {
+			return
+		}
+
+		s.wpupdate.CheckAll(s.ctx)
+	}
+}
+
 // archiveAuditDay exports all audit rows for the given UTC day to
 // {AppPath}/logs/audit/audit-YYYY-MM-DD.csv.tar.gz.
 func archiveAuditDay(database *sql.DB, appPath string, day time.Time) error {

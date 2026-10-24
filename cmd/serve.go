@@ -37,6 +37,7 @@ import (
 	"podnest/internal/podman"
 	"podnest/internal/server"
 	sftpmanager "podnest/internal/sftp"
+	"podnest/internal/wpupdate"
 
 	"github.com/spf13/cobra"
 )
@@ -126,6 +127,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// create the malware scan manager
 	malwareMgr := malware.New(podmanClient, database, appPath, "")
 
+	// create the WordPress update check manager
+	wpUpdateMgr := wpupdate.New(podmanClient, database)
+
 	// register site type modules
 	modules.RegisterType(wordpress.Module{})
 	modules.RegisterType(php.Module{})
@@ -147,6 +151,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BackupManager:   backupMgr,
 		CronManager:     cronMgr,
 		MalwareManager:  malwareMgr,
+		WPUpdateManager: wpUpdateMgr,
 		CertDir:         appPath + "/certs",
 		AdminDomain:     adminDomain,
 	})
