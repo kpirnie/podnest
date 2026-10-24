@@ -256,6 +256,26 @@ window.addEventListener("hashchange", () => {
     });
 })();
 
+/* -- bottom nav "More" menu ------------------------------------------------ */
+(() => {
+    const more     = document.getElementById("kp-bn-more");
+    const menu     = document.getElementById("kp-bn-more-menu");
+    const backdrop = document.getElementById("kp-bn-backdrop");
+    if (!more || !menu || !backdrop) return;
+
+    const setOpen = (open) => {
+        menu.hidden     = !open;
+        backdrop.hidden = !open;
+        more.classList.toggle("kp-bn-open", open);
+    };
+
+    more.addEventListener("click", () => setOpen(menu.hidden));
+    backdrop.addEventListener("click", () => setOpen(false));
+    menu.addEventListener("click", (e) => {
+        if (e.target.closest("[data-view]")) setOpen(false);
+    });
+})();
+
 /* -- node pairing code ----------------------------------------------------- */
 (() => {
     const links = document.querySelectorAll(".kp-pair-code-link");

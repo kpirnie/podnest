@@ -187,6 +187,43 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     opacity: 1;
 }
 
+/* ── bottom nav "More" menu (portrait only) ─────────────────────────────────── */
+
+.kp-bn-more,
+.kp-bn-more-menu,
+.kp-bn-backdrop {
+    display: none;
+}
+
+.kp-bn-more-menu {
+    position: absolute;
+    right: 8px;
+    bottom: calc(100% + 8px);
+    z-index: 1;
+}
+
+.kp-bn-backdrop {
+    position: fixed;
+    inset: 0 0 64px 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 199;
+}
+
+.kp-bn-more.kp-bn-open {
+    color: var(--kp-cyan);
+}
+
+.kp-bn-more.kp-bn-open .kp-bn-icon {
+    opacity: 1;
+}
+
+@media (max-width: 959px) and (orientation: portrait) {
+    .kp-bn-overflow { display: none; }
+    .kp-bn-more { display: flex; }
+    .kp-bn-more-menu,
+    .kp-bn-backdrop { display: block; }
+}
+
 /* -- site nav selector ----------------------------------------------------- */
 .kp-site-nav-wrap {
     position: relative;

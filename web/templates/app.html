@@ -76,7 +76,7 @@
         <nav class="kp-bottom-nav" id="kp-bottom-nav">
             <a href="#" class="kp-bn-item" data-view="dashboard">
                 <span class="kp-bn-icon" uk-icon="icon: home; ratio: 1.1"></span>
-                Dashboard
+                Dash
             </a>
             <a href="#" class="kp-bn-item" data-view="sites">
                 <span class="kp-bn-icon" uk-icon="icon: world; ratio: 1.1"></span>
@@ -87,11 +87,11 @@
                     <span class="kp-bn-icon" uk-icon="icon: users; ratio: 1.1"></span>
                     Users
                 </a>
-                <a href="#" class="kp-bn-item" data-view="nodes">
+                <a href="#" class="kp-bn-item kp-bn-overflow" data-view="nodes">
                     <span class="kp-bn-icon" uk-icon="icon: git-fork; ratio: 1.1"></span>
                     Nodes
                 </a>
-                <a href="#" class="kp-bn-item" data-view="settings">
+                <a href="#" class="kp-bn-item kp-bn-overflow" data-view="settings">
                     <span class="kp-bn-icon" uk-icon="icon: cog; ratio: 1.1"></span>
                     Settings
                 </a>
@@ -99,18 +99,30 @@
                     <span class="kp-bn-icon" uk-icon="icon: server; ratio: 1.1"></span>
                     Security
                 </a>
-                <a href="#" class="kp-bn-item" data-view="waf">
+                <a href="#" class="kp-bn-item kp-bn-overflow" data-view="waf">
                     <span class="kp-bn-icon" uk-icon="icon: lifesaver; ratio: 1.1"></span>
                     WAF
                 </a>
-                <a href="#" class="kp-bn-item" data-view="admin-logs">
+                <a href="#" class="kp-bn-item kp-bn-overflow" data-view="admin-logs">
                     <span class="kp-bn-icon" uk-icon="icon: list; ratio: 1.1"></span>
                     Logs
                 </a>
-                <a href="#" class="kp-bn-item" data-view="audit-log">
+                <a href="#" class="kp-bn-item kp-bn-overflow" data-view="audit-log">
                     <span class="kp-bn-icon" uk-icon="icon: file-text; ratio: 1.1"></span>
                     Audit Log
                 </a>
+                <!-- portrait only: overflow items move into this menu -->
+                <button type="button" class="kp-bn-item kp-bn-more" id="kp-bn-more">
+                    <span class="kp-bn-icon" uk-icon="icon: more; ratio: 1.1"></span>
+                    More
+                </button>
+                <div class="kp-pill-dropdown kp-bn-more-menu" id="kp-bn-more-menu" hidden>
+                    <a href="#" data-view="nodes"><span uk-icon="icon: git-fork; ratio: 0.85"></span> Nodes</a>
+                    <a href="#" data-view="settings"><span uk-icon="icon: cog; ratio: 0.85"></span> Settings</a>
+                    <a href="#" data-view="waf"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                    <a href="#" data-view="admin-logs"><span uk-icon="icon: list; ratio: 0.85"></span> Logs</a>
+                    <a href="#" data-view="audit-log"><span uk-icon="icon: file-text; ratio: 0.85"></span> Audit Log</a>
+                </div>
             {{else}}
                 <a href="#" class="kp-bn-item kp-logout-link">
                     <span class="kp-bn-icon" uk-icon="icon: sign-out; ratio: 1.1"></span>
@@ -118,6 +130,9 @@
                 </a>
             {{end}}
         </nav>
+        {{if eq .User.Role 99}}
+        <div class="kp-bn-backdrop" id="kp-bn-backdrop" hidden></div>
+        {{end}}
 
         <!-- -- main layout --------------------------------------------------------- -->
         <div class="kp-layout">

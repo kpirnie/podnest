@@ -31,6 +31,12 @@ export const router = {
             el.classList.toggle("kp-active", el.dataset.view === view);
         });
 
+        // sync bottom nav "More" menu, highlighting More when the view lives in it
+        const moreLinks = [...document.querySelectorAll(".kp-bn-more-menu a[data-view]")];
+        moreLinks.forEach((el) => el.classList.toggle("kp-dd-active", el.dataset.view === view));
+        document.getElementById("kp-bn-more")
+            ?.classList.toggle("kp-active", moreLinks.some((el) => el.dataset.view === view));
+
         const fn = this.routes[view];
         if (!fn) return;
         const el = document.getElementById("kp-view");
