@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,12 +32,26 @@ const (
 	// checkTimeout bounds a single site's update check
 	checkTimeout = 5 * time.Minute
 
+	// updateTimeout bounds a full update run, including the post-run recheck
+	updateTimeout = 30 * time.Minute
+
 	// staggerDelay spaces scheduled checks so sites are never hit back to back
 	staggerDelay = 10 * time.Second
 )
 
 // ErrCheckRunning reports a check refused because the site already has one running
-var ErrCheckRunning = errors.New("an update check is already running for this site")
+var ErrCheckRunning = errors.New("an update check or update is already running for this site")
+
+// ErrBadScope reports an update run requested with an unknown scope
+var ErrBadScope = errors.New("scope must be one of core, plugins, themes, all")
+
+// updateSteps maps each update scope to the wp-cli commands it runs, in order
+var updateSteps = map[string][][]string{
+	"core":    {{"core", "update"}, {"core", "update-db"}},
+	"plugins": {{"plugin", "update", "--all"}},
+	"themes":  {{"theme", "update", "--all"}},
+	"all":     {{"core", "update"}, {"core", "update-db"}, {"plugin", "update", "--all"}, {"theme", "update", "--all"}},
+}
 
 // ErrNotWordPress reports a check requested for a non-WordPress site
 var ErrNotWordPress = errors.New("update checks are only available for WordPress sites")
@@ -66,21 +81,81 @@ func (m *Manager) Check(ctx context.Context, site *models.Site) (*models.WPUpdat
 	if site.SiteType != models.SiteTypeWordPress {
 		return nil, ErrNotWordPress
 	}
-
-	m.mu.Lock()
-	if m.active[site.ID] {
-		m.mu.Unlock()
+	if !m.acquire(site.ID) {
 		return nil, ErrCheckRunning
 	}
-	m.active[site.ID] = true
-	m.mu.Unlock()
 	defer m.release(site.ID)
 
 	cCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 
+	return m.refresh(cCtx, site)
+}
+
+// ValidScope reports whether scope is a known update scope
+func ValidScope(scope string) bool {
+	_, ok := updateSteps[scope]
+	return ok
+}
+
+// Update runs the wp-cli commands for scope against the site, streaming their
+// output to w, stopping at the first failing command, then rechecks the site
+// so the cached status reflects whatever was applied
+func (m *Manager) Update(ctx context.Context, site *models.Site, scope string, w io.Writer) error {
+	steps, ok := updateSteps[scope]
+	if !ok {
+		return ErrBadScope
+	}
+	if site.SiteType != models.SiteTypeWordPress {
+		return ErrNotWordPress
+	}
+	if !m.acquire(site.ID) {
+		return ErrCheckRunning
+	}
+	defer m.release(site.ID)
+
+	uCtx, cancel := context.WithTimeout(ctx, updateTimeout)
+	defer cancel()
+
+	container := podman.ContainerName(site.Name, "php")
+	user := strconv.Itoa(sftp.UIDForSite(site.ID))
+
+	if err := m.ensureWPCLI(uCtx, container); err != nil {
+		return err
+	}
+
+	var runErr error
+	for _, args := range steps {
+		label := strings.Join(args, " ")
+		fmt.Fprintf(w, "$ wp %s\n", label)
+
+		argv := append([]string{wpcliPath, "--path=/var/www/html", "--no-color", "--allow-root"}, args...)
+		res, err := m.client.ExecStreamOut(uCtx, container, user, argv, w)
+		if err != nil {
+			runErr = fmt.Errorf("wp %s: %w", label, err)
+			break
+		}
+		if len(res.Stderr) > 0 {
+			w.Write(res.Stderr)
+		}
+		if res.ExitCode != 0 {
+			runErr = fmt.Errorf("wp %s exited %d", label, res.ExitCode)
+			break
+		}
+	}
+
+	if _, err := m.refresh(uCtx, site); err != nil {
+		logger.Warn("wpupdate: post-update recheck failed for site %s: %v", site.Name, err)
+	}
+
+	logger.Debug("wpupdate: %s update finished for site %s (err=%v)", scope, site.Name, runErr)
+	return runErr
+}
+
+// refresh collects and caches the site's update status; the caller holds the site's slot
+func (m *Manager) refresh(ctx context.Context, site *models.Site) (*models.WPUpdateStatus, error) {
 	status := &models.WPUpdateStatus{SiteID: site.ID}
-	if err := m.collect(cCtx, site, status); err != nil {
+	if err := m.collect(ctx, site, status); err != nil {
 		logger.Error("wpupdate: check failed for site %s: %v", site.Name, err)
 		status.Error = err.Error()
 	}
@@ -89,6 +164,17 @@ func (m *Manager) Check(ctx context.Context, site *models.Site) (*models.WPUpdat
 		return nil, err
 	}
 	return status, nil
+}
+
+// acquire claims the site's check/update slot, reporting false if it is taken
+func (m *Manager) acquire(siteID int64) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.active[siteID] {
+		return false
+	}
+	m.active[siteID] = true
+	return true
 }
 
 // CheckAll checks every running WordPress site one after another, pausing

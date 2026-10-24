@@ -27,6 +27,7 @@ import (
 	"podnest/internal/handlers/ssl"
 	"podnest/internal/handlers/users"
 	"podnest/internal/handlers/wpcli"
+	wpupdateshandler "podnest/internal/handlers/wpupdates"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
 	"podnest/web"
@@ -207,6 +208,14 @@ func (s *Server) routes() http.Handler {
 		Go:      s.goTracked,
 	}
 	malwareHandler.RegisterRoutes(api)
+
+	// wordpress updates
+	wpUpdatesHandler := &wpupdateshandler.Handler{
+		DB:       s.cfg.DB,
+		WPUpdate: s.wpupdate,
+		Resolve:  sitesHandler.ResolveSite,
+	}
+	wpUpdatesHandler.RegisterRoutes(api)
 
 	// ssl status
 	sslHandler := &ssl.Handler{DB: s.cfg.DB}
