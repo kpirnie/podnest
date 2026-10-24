@@ -53,6 +53,8 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 			{Type: "bind", Source: cfg.SiteDir + "/html", Destination: "/var/www/html", Options: []string{"rw"}},
 			{Type: "bind", Source: cfg.SiteDir + "/php-fpm/www.conf", Destination: "/usr/local/etc/php-fpm.d/www.conf", Options: []string{"ro", "z"}},
 			{Type: "bind", Source: cfg.SiteDir + "/php-fpm/php.ini", Destination: "/usr/local/etc/php/conf.d/99-custom.ini", Options: []string{"ro", "z"}},
+			// managed wp-admin SSO mu-plugin — read-only so the site cannot tamper with it
+			{Type: "bind", Source: cfg.SiteDir + "/" + SSOPluginName, Destination: "/var/www/html/wp-content/mu-plugins/" + SSOPluginName, Options: []string{"ro", "z"}},
 			// writable scratch backed by tmpfs so the rest of the rootfs can be read-only —
 			// confines a webshell to the site's own /var/www/html plus RAM that is wiped on
 			// restart; nosuid/nodev block setuid binaries and device nodes a payload might drop

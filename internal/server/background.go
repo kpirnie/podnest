@@ -28,6 +28,7 @@ import (
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
+	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/proxy"
 	"podnest/internal/sftp"
@@ -654,6 +655,31 @@ func (s *Server) wpUpdateScheduler() {
 		}
 
 		s.wpupdate.CheckAll(s.ctx)
+	}
+}
+
+// ensureWPSSOPlugins writes the current managed SSO mu-plugin into every
+// WordPress site's directory, so a pod recreate always finds its mount source
+// and panel upgrades ship the latest copy.
+func (s *Server) ensureWPSSOPlugins() {
+	sites, err := db.GetAllSites(s.cfg.DB)
+	if err != nil {
+		logger.Error("ensureWPSSOPlugins: failed to load sites: %v", err)
+		return
+	}
+
+	for _, site := range sites {
+		if site.SiteType != models.SiteTypeWordPress {
+			continue
+		}
+		dir, err := fileutil.SiteDir(s.sitesBase(), site.Name)
+		if err != nil {
+			logger.Warn("ensureWPSSOPlugins: site %s: %v", site.Name, err)
+			continue
+		}
+		if err := wordpress.WriteSSOPlugin(dir); err != nil {
+			logger.Warn("ensureWPSSOPlugins: site %s: %v", site.Name, err)
+		}
 	}
 }
 

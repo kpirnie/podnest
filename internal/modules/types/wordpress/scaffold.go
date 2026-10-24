@@ -143,6 +143,10 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 		logger.Warn("could not chown wp-config.php: %v", err)
 	}
 
+	if err := WriteSSOPlugin(dir); err != nil {
+		return err
+	}
+
 	if !cfg.SkipCoreDownload {
 		if err := DownloadWordPress(dir+"/html", cfg.SiteUID); err != nil {
 			return fmt.Errorf("download WordPress: %w", err)

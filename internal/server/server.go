@@ -131,6 +131,9 @@ func (s *Server) Start() error {
 		logger.Error("failed to create sites directory: %v", err)
 	}
 
+	// refresh the managed wp-admin SSO mu-plugin before any pod can be recreated
+	s.ensureWPSSOPlugins()
+
 	// ensure fail2ban and sftp log directories exist before containers start
 	for _, dir := range []string{
 		s.cfg.AppPath + "/logs",
