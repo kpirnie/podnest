@@ -1091,6 +1091,19 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	// fetch all configuration key-value pairs for the site from the database to be used in pod recreation
 	allConfigs, _ := db.GetAllConfigsBySite(h.DB, site.ID)
 	rm := modules.TypeModule(site.SiteType)
+
+	// re-render nginx from the stored config so template changes reach existing sites
+	if rm.HasPod() {
+		nginxBlob, _ := json.Marshal(allConfigs[models.ConfigNginx])
+		if main, err := config.RenderNginxMain(string(nginxBlob), site.SiteType); err == nil {
+			_ = fileutil.WriteFile(siteDir+"/nginx/nginx.conf", main, 0644)
+		}
+		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON)); err == nil {
+			_ = fileutil.WriteFile(siteDir+"/nginx/conf.d/site.conf", siteConf, 0644)
+		}
+	}
+
+	// create the pod
 	if err := rm.Create(podCtx, &modules.PodmanClientAdapter{Client: h.PodmanClient}, modules.PodConfig{
 		Site:       site,
 		SiteUID:    sftp.UIDForSite(site.ID),
