@@ -94,6 +94,10 @@
       "description": "WP-CLI command execution against a site."
     },
     {
+      "name": "WordPress",
+      "description": "Per-site WordPress core/plugin/theme update status, streamed update runs, and wp-admin SSO."
+    },
+    {
       "name": "SSL",
       "description": "Panel SSL certificate status."
     },
@@ -11134,6 +11138,129 @@
         "parameters": [
           { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } },
           { "name": "findingID", "in": "path", "required": true, "description": "Malware finding ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/wpupdates": {
+      "get": {
+        "tags": ["WordPress"],
+        "summary": "Get cached update status",
+        "description": "Returns the site's cached update status from the last nightly (11 PM) or manual check: core_version, core_update (empty when current), plugins and themes with updates available (name, title, version, update_version), error, and checked. status is null until the first check. WordPress sites only.",
+        "operationId": "get_sites_id_wpupdates",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Not a WordPress site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/wpupdates/check": {
+      "post": {
+        "tags": ["WordPress"],
+        "summary": "Check for updates now",
+        "description": "Runs a WP-CLI update check against the site, caches the result, and returns the fresh status. A failed check is cached with its error. The site must be running.",
+        "operationId": "post_sites_id_wpupdates_check",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Not a WordPress site, or site not running", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "An update check or update is already running for this site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/wpupdates/run": {
+      "get": {
+        "tags": ["WordPress"],
+        "summary": "Run updates (WebSocket)",
+        "description": "Upgrades to a WebSocket and streams a WP-CLI update run. core runs core update then core update-db; plugins runs plugin update --all; themes runs theme update --all; all runs every step in that order. The run stops at the first failing command, then rechecks and caches the site's status. The final frame is [done] or an [error] line. Same-origin only; the site must be running.",
+        "operationId": "get_sites_id_wpupdates_run",
+        "responses": {
+          "101": { "description": "Switching to WebSocket" },
+          "400": { "description": "Not a WordPress site, invalid scope, or site not running", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } },
+          { "name": "scope", "in": "query", "required": true, "description": "What to update.", "schema": { "type": "string", "enum": ["core", "plugins", "themes", "all"] } }
+        ]
+      }
+    },
+    "/sites/{id}/wpsso": {
+      "get": {
+        "tags": ["WordPress"],
+        "summary": "Get wp-admin SSO settings",
+        "description": "Returns selected (the WordPress user ID used for wp-admin SSO, 0 = the site's first administrator) and, when the site is running, admins (id, login, display_name). If the administrators cannot be listed, error carries the reason and admins is empty.",
+        "operationId": "get_sites_id_wpsso",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Not a WordPress site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      },
+      "put": {
+        "tags": ["WordPress"],
+        "summary": "Set the wp-admin SSO administrator",
+        "description": "Stores the WordPress user every panel user signs in as. 0 clears the selection so the site's first administrator is used. If the stored user is no longer an administrator when a link is used, the site falls back to its first administrator.",
+        "operationId": "put_sites_id_wpsso",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["wp_user_id"],
+                "properties": {
+                  "wp_user_id": { "type": "integer", "minimum": 0, "example": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Not a WordPress site, or invalid wp_user_id", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/sites/{id}/wpsso/login": {
+      "post": {
+        "tags": ["WordPress"],
+        "summary": "Mint a wp-admin SSO link",
+        "description": "Returns url, a single-use wp-login.php link valid for 60 seconds that signs in as the selected administrator. The token is an HMAC keyed off the site's AUTH_KEY and AUTH_SALT and is verified by the managed, read-only podnest-sso mu-plugin. The site must be running and define both salts as plain string literals in wp-config.php.",
+        "operationId": "post_sites_id_wpsso_login",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Not a WordPress site, or site not running", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "AUTH_KEY or AUTH_SALT cannot be read from wp-config.php", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
         ]
       }
     },
