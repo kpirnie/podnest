@@ -56,15 +56,45 @@ export async function viewSites(root) {
                     </div>
                 </li>
             </div>
+
             <div class="kp-bulk-tools">
-                <select class="uk-select kp-select kp-input-sm kp-sites-sort" id="sites-sort" uk-tooltip="Sort">
-                    <option value="name" selected>Name</option>
-                    <option value="status">Status</option>
-                    <option value="type">Type</option>
-                    <option value="domain">Domain</option>
-                </select>
-                <input class="uk-input kp-input kp-input-sm kp-sites-search"
-                       id="sites-search" type="text" placeholder="Filter sites…" autocomplete="off">
+                <!-- line 1: sort + direction + reset -->
+                <div class="kp-bulk-tools-row">
+                    <div class="uk-inline kp-sites-sort">
+                        <a class="uk-form-icon kp-sort-dir kp-sort-asc" href="javascript:void(0)" id="sites-sort-dir"
+                           uk-icon="icon: arrow-down-arrow-up" uk-tooltip="Toggle Sort Direction" aria-label="Toggle Sort Direction"></a>
+                        <select class="uk-select kp-select kp-input-sm" id="sites-sort" uk-tooltip="Sort">
+                            <option value="name" selected>Name</option>
+                            <option value="status">Status</option>
+                            <option value="type">Type</option>
+                            <option value="domain">Domain</option>
+                        </select>
+                    </div>
+                    <button class="uk-button kp-btn-secondary kp-btn-icon kp-btn-sm" id="sites-reset" uk-tooltip="Reset Sort & Filters">
+                        <span uk-icon="refresh"></span>
+                    </button>
+                </div>
+                <!-- line 2: type + status filters + search -->
+                <div class="kp-bulk-tools-row">
+                    <select class="uk-select kp-select kp-input-sm kp-sites-filter" id="sites-type" uk-tooltip="Filter by Type">
+                        <option value="" selected>All Types</option>
+                        ${[...new Set(sites.map(s => s.SiteType))]
+                            .sort((a, b) => siteTypeLabel(a).localeCompare(siteTypeLabel(b)))
+                            .map(t => `<option value="${t}">${siteTypeLabel(t)}</option>`).join("")}
+                    </select>
+                    <select class="uk-select kp-select kp-input-sm kp-sites-filter" id="sites-status" uk-tooltip="Filter by Status">
+                        <option value="" selected>All Statuses</option>
+                        <option value="1">Running</option>
+                        <option value="2">Stopped</option>
+                        <option value="3">Restarting</option>
+                        <option value="4">Error</option>
+                    </select>
+                    <div class="uk-inline kp-sites-search">
+                        <span class="uk-form-icon" uk-icon="icon: search"></span>
+                        <input class="uk-input kp-input kp-input-sm"
+                               id="sites-search" type="text" placeholder="Filter sites…" autocomplete="off">
+                    </div>
+                </div>
             </div>
         </div>
 

@@ -63,19 +63,44 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     font-family: var(--kp-font-mono);
     white-space: nowrap;
 }
-.kp-sites-search {
-    width: 220px;
-    flex-shrink: 0;
-}
 .kp-bulk-tools {
     display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+.kp-bulk-tools-row {
+    display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
     flex-wrap: wrap;
 }
 .kp-sites-sort {
-    width: 140px;
+    width: 180px;
     flex-shrink: 0;
+}
+.kp-sites-filter {
+    width: 150px;
+    flex-shrink: 0;
+}
+.kp-sites-search {
+    width: 220px;
+    flex-shrink: 0;
+}
+.kp-sites-sort .uk-select,
+.kp-sites-search .uk-input {
+    padding-left: 40px !important;
+}
+.kp-sort-dir svg > * {
+    opacity: 0.35;
+    transition: opacity var(--kp-transition), stroke var(--kp-transition);
+}
+.kp-sort-dir.kp-sort-asc svg > :nth-child(n+3),
+.kp-sort-dir.kp-sort-desc svg > :nth-child(-n+2) {
+    opacity: 1;
+    stroke: var(--kp-cyan);
+    stroke-width: 1.6;
 }
 
 /* -- sortable column headers ----------------------------------------------- */
