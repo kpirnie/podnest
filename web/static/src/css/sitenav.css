@@ -9,7 +9,8 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     position: relative;
 }
 
-#kp-manage-dropdown {
+#kp-manage-dropdown,
+#kp-bulk-mobile-dropdown {
     position: absolute;
     top: calc(100% + 6px);
     left: 0;

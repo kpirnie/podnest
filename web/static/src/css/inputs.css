@@ -49,6 +49,14 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     box-shadow: 0 0 0 3px var(--kp-blue-glow) !important;
     outline: none;
 }
+.kp-select:not([multiple]):not([size]),
+.uk-select.kp-input:not([multiple]):not([size]) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpolyline fill='none' stroke='%236b8cae' stroke-width='1.03' points='16 7 10 13 4 7'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 12px center !important;
+    background-size: 16px 16px !important;
+    padding-right: 36px !important;
+}
 
 .kp-textarea {
     background: var(--kp-bg-input) !important;
