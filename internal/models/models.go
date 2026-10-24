@@ -426,8 +426,8 @@ func GenerateSessionID() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// PHPImage returns the WordPress FPM Alpine image for WordPress sites;
-// the official WordPress image includes mysqli which WordPress requires
+// PHPImage returns the ghcr.io/kpirnie/php FPM Alpine image for a given
+// php_version int; shared by WordPress and plain PHP sites
 func PHPImage(phpVersion int) string {
 	ver, ok := PHPVersionMap[phpVersion]
 	if !ok {
@@ -436,8 +436,8 @@ func PHPImage(phpVersion int) string {
 	return ImgPHPBase + ver + "-latest"
 }
 
-// PHPOnlyImage returns the serversideup FPM Alpine image for plain PHP sites;
-// includes pdo_mysql, redis, and other extensions non-WordPress apps need
+// PHPOnlyImage returns the PHP image for plain PHP sites; an alias of
+// PHPImage since both site types share the ghcr.io/kpirnie/php image
 func PHPOnlyImage(phpVersion int) string {
 	return PHPImage(phpVersion)
 }
