@@ -349,6 +349,10 @@ Once PodNest is running with a persistent volume, the following structure is cre
 ├── fail2ban/           # Fail2Ban config and jail data
 ├── waf/
 │   └── crs/            # Downloaded OWASP CRS rule files — auto-updated on startup
+├── malscan/            # Malware scanning
+│   ├── clamav/         # Persisted ClamAV signatures — only deltas are downloaded per run
+│   ├── maldet/         # Persisted Linux Malware Detect signatures
+│   └── quarantine/     # Quarantined files, per site ID — outside SFTP reach
 ├── sftp/               # Global SFTP container config
 │   ├── keys/           # Persistent SSH host keys
 │   ├── etc-ssh/
@@ -379,6 +383,7 @@ Once PodNest is running with a persistent volume, the following structure is cre
         │   └── default.vcl
         ├── backups/        # Restic backup repositories
         │   └── local/      # Local restic repo (SFTP accessible, read-only)
+        ├── podnest-sso.php # WordPress sites only — managed wp-admin SSO mu-plugin, mounted read-only
         └── .env            # Auto-generated credentials — do not delete
 ```
 
@@ -397,8 +402,10 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 - **Site Configurations** — nginx, PHP, MariaDB, Redis, Varnish, resetting a config
 - **Security Rules** — IP rules, User-Agent rules, country blocking, ASN blocking, ASN lookup, Spamhaus DROP, global vs per-site, import/export
 - **WAF** — CRS rule management, global settings, per-site overrides, exclusions, auto-ban (429 cooldowns, bans, permanent bans, global escalation), WAF log
+- **Malware Scanning** — nightly ClamAV and Linux Malware Detect scans, manual scans, findings, quarantine, retention and resource settings
 - **Live Logs** — per-site and global log streams
 - **WP-CLI Terminal** — browser terminal for WordPress sites
+- **WordPress** — nightly core/plugin/theme update checks, one-click updates, and wp-admin single sign-on
 - **phpMyAdmin** — database management
 - **Stats & Traffic** — dashboard and per-site stats
 - **Resource Monitoring** — host resource watcher and throttling
