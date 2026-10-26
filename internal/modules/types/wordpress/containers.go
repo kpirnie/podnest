@@ -35,6 +35,11 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		return err
 	}
 
+	// the SSO mu-plugin bind needs a site-owned mu-plugins dir to mount into
+	if err := EnsureMUPluginsDir(cfg.SiteDir, cfg.SiteUID); err != nil {
+		return err
+	}
+
 	// PHP-FPM
 	if err := client.CreateContainer(ctx, modules.ContainerConfig{
 		Name:    modules.ContainerName(cfg.Site.Name, "php"),

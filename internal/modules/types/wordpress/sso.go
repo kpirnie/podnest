@@ -28,3 +28,19 @@ func WriteSSOPlugin(siteDir string) error {
 	}
 	return nil
 }
+
+
+// EnsureMUPluginsDir creates wp-content/mu-plugins in the site's html dir and
+// hands it to the site user, so the runtime can create the SSO mu-plugin's
+// mount point inside it. Only the directory itself is chowned; its contents
+// are left untouched.
+func EnsureMUPluginsDir(siteDir string, uid int) error {
+	dir := filepath.Join(siteDir, "html", "wp-content", "mu-plugins")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create mu-plugins dir: %w", err)
+	}
+	if err := os.Chown(dir, uid, uid); err != nil {
+		return fmt.Errorf("chown mu-plugins dir: %w", err)
+	}
+	return nil
+}
