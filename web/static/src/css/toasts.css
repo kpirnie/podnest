@@ -64,12 +64,27 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     text-decoration: underline;
 }
 
+.kp-update-banner-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.kp-update-banner-row p { margin: 0; }
+
 /* the panel update action is desktop only, matching the sidebar breakpoint */
 .kp-update-banner .kp-panel-update-btn {
     display: none;
-    margin-left: 8px;
-    vertical-align: middle;
+    flex-shrink: 0;
+    background: rgba(255,176,32,0.12);
+    border-color: rgba(255,176,32,0.4);
+    color: var(--kp-warning);
+}
+.kp-update-banner .kp-panel-update-btn:hover {
+    background: rgba(255,176,32,0.22);
+    border-color: var(--kp-warning);
+    color: var(--kp-warning);
 }
 @media (min-width: 960px) {
-    .kp-update-banner .kp-panel-update-btn { display: inline-flex; }
+    .kp-update-banner .kp-panel-update-btn { display: inline-flex; margin-right:25px; }
 }

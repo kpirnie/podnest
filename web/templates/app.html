@@ -144,20 +144,24 @@
 
             <!-- main content -->
             <main class="kp-main">
+                
                 {{if and (eq .User.Role 99) .UpdateAvailable}}
                 <div uk-alert class="uk-alert-warning kp-update-banner">
                     <a class="uk-alert-close" uk-close></a>
-                    <p>
-                        <span uk-icon="icon: bolt"></span>
-                        <strong>A PodNest update is available</strong> &mdash; you are running {{.AppVersion}}.
-                        <a href="{{.ReleaseURL}}" target="_blank" rel="noopener">View release</a> &nbsp;|&nbsp;
-                        <a href="{{.UpdateURL}}" target="_blank" rel="noopener">Update instructions</a>
+                    <div class="kp-update-banner-row">
+                        <p>
+                            <span uk-icon="icon: bolt"></span>
+                            <strong>A PodNest update is available</strong> &mdash; you are running {{.AppVersion}}.
+                            <a href="{{.ReleaseURL}}" target="_blank" rel="noopener">View release</a> &nbsp;|&nbsp;
+                            <a href="{{.UpdateURL}}" target="_blank" rel="noopener">Update instructions</a>
+                        </p>
                         <button class="kp-btn-icon kp-btn-sm kp-panel-update-btn" type="button" aria-label="Update PodNest now" uk-tooltip="Update PodNest now">
                             <span uk-icon="icon: download"></span>
                         </button>
-                    </p>
+                    </div>
                 </div>
                 {{end}}
+
                 <div id="kp-resource-warning" style="display:none" class="uk-alert-danger kp-resource-warning-banner">
                     <p>
                         <span uk-icon="icon: warning"></span>
@@ -254,7 +258,7 @@
     {{if and (eq .User.Role 99) .UpdateAvailable}}
     <!-- panel update -->
     <div class="kp-sidebar-update">
-        <button class="kp-btn-primary kp-btn-sm uk-width-1-1 kp-panel-update-btn" type="button">
+        <button class="kp-btn-primary kp-btn-sm kp-panel-update-btn uk-width-1-1" type="button">
             <span uk-icon="icon: download; ratio: 0.8"></span> Update PodNest
         </button>
     </div>

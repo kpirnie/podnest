@@ -72,7 +72,12 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 }
 .kp-user-role { margin-top: 4px; }
 
-.kp-sidebar-update { margin: 0 14px 12px; }
+.kp-sidebar-update {
+    display: flex;
+    justify-content: center;
+    padding: 0 14px 12px;
+}
+.kp-sidebar-update .kp-btn-primary { justify-content: center; }
 
 .kp-nav { padding: 0 14px; flex: 1; }
 
