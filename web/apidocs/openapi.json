@@ -1695,6 +1695,68 @@
         }
       }
     },
+    "/settings/panel-update": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Queue a PodNest update",
+        "description": "Admin only. Queues an update of the running channel; the host's pdnctl update timer runs it within a minute and restarts the panel.",
+        "operationId": "post_settings_panel_update",
+        "responses": {
+          "202": {
+            "description": "Update queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No update available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not queue the update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/settings/resource-warning": {
       "get": {
         "tags": [

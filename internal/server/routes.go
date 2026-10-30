@@ -226,6 +226,9 @@ func (s *Server) routes() http.Handler {
 	auditHandler := &auditlog.Handler{DB: s.cfg.DB}
 	auditHandler.RegisterRoutes(api)
 
+	// panel self-update — queues an update for the host's root pdnctl timer
+	api.Handle("POST /settings/panel-update", auth.RequireAPIAdmin(http.HandlerFunc(s.apiQueuePanelUpdate)))
+
 	// feature module routes
 	for _, f := range modules.AllFeatureModules() {
 		f.RegisterRoutes(api, sitesHandler.ResolveSite)

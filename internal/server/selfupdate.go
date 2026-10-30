@@ -7,13 +7,16 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"podnest/internal/apiutil"
 	"podnest/internal/logger"
 	"podnest/internal/version"
 )
@@ -23,6 +26,10 @@ const panelUpdateTTL = 1 * time.Hour
 
 // panelUpdateTimeout bounds one registry check so a slow registry cannot stall page loads
 const panelUpdateTimeout = 10 * time.Second
+
+// panelUpdateFlag is the request flag the host's root pdnctl timer watches for,
+// relative to the app path — must match updateFlagPath in cmd/pdnctl
+const panelUpdateFlag = "data/.update-requested"
 
 // panelUpdate caches the last registry check of the panel's own image
 var panelUpdate struct {
@@ -135,4 +142,30 @@ func (s *Server) checkPanelImage(ctx context.Context) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// apiQueuePanelUpdate drops the update request flag for the host's root pdnctl
+// timer, which runs the full update within a minute. The panel cannot update
+// itself — its podman socket is rootless and pdnctl is root-owned — so the flag
+// is a request only; its content is never read by the host.
+func (s *Server) apiQueuePanelUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.panelUpdateAvailable() {
+		apiutil.ErrorMsg(w, http.StatusConflict, "no update is available for the running version")
+		return
+	}
+
+	flag := filepath.Join(s.cfg.AppPath, panelUpdateFlag)
+	if err := os.MkdirAll(filepath.Dir(flag), 0o755); err != nil {
+		logger.Error("selfupdate: could not create %s: %v", filepath.Dir(flag), err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := os.WriteFile(flag, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+		logger.Error("selfupdate: could not write %s: %v", flag, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	logger.Info("selfupdate: panel update queued")
+	apiutil.JSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
