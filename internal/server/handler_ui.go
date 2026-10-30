@@ -37,11 +37,9 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 		"UpdateURL":       version.UpdateURL,
 	}
 
-	// check for updates only for admin users
+	// check for a newer build of the running image tag only for admin users
 	if user != nil && user.Role == models.RoleAdmin {
-		latest, updateAvailable := version.CheckLatest()
-		data["UpdateAvailable"] = updateAvailable
-		data["LatestVersion"] = latest
+		data["UpdateAvailable"] = s.panelUpdateAvailable()
 	}
 
 	// the pairing code link is offered only while this node has no parent and no children
