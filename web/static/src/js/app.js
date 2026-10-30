@@ -256,6 +256,26 @@ window.addEventListener("hashchange", () => {
     });
 })();
 
+/* -- panel self-update ----------------------------------------------------- */
+(() => {
+    const btns = document.querySelectorAll(".kp-panel-update-btn");
+    if (!btns.length) return;
+
+    btns.forEach(el => {
+        el.addEventListener("click", async e => {
+            e.preventDefault();
+            if (!await confirm("Update PodNest", "PodNest will update and restart, and the panel will be unavailable for a minute or two. Continue?")) return;
+            try {
+                await api.post("/settings/panel-update");
+                btns.forEach(b => { b.disabled = true; });
+                toast.success("The update has been queued, please wait a minute or 2 and refresh");
+            } catch (err) {
+                toast.error(err.message);
+            }
+        });
+    });
+})();
+
 /* -- bottom nav "More" menu ------------------------------------------------ */
 (() => {
     const more     = document.getElementById("kp-bn-more");
