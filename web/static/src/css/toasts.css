@@ -63,3 +63,13 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
     color: var(--kp-warning);
     text-decoration: underline;
 }
+
+/* the panel update action is desktop only, matching the sidebar breakpoint */
+.kp-update-banner .kp-panel-update-btn {
+    display: none;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+@media (min-width: 960px) {
+    .kp-update-banner .kp-panel-update-btn { display: inline-flex; }
+}

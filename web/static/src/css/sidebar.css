@@ -72,6 +72,8 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 }
 .kp-user-role { margin-top: 4px; }
 
+.kp-sidebar-update { margin: 0 14px 12px; }
+
 .kp-nav { padding: 0 14px; flex: 1; }
 
 .kp-nav-section {

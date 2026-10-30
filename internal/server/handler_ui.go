@@ -32,7 +32,6 @@ func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {
 		"CSRFToken":       auth.CSRFTokenFromContext(r.Context()),
 		"AppVersion":      version.AppVersion,
 		"UpdateAvailable": false,
-		"LatestVersion":   "",
 		"ReleaseURL":      version.ReleaseURL,
 		"UpdateURL":       version.UpdateURL,
 	}
