@@ -53,6 +53,9 @@ func runUninstall() error {
 	os.Remove(home + "/.config/systemd/user/sockets.target.wants/podman.socket")
 	userRun(s.User, s.UID, "systemctl", "--user", "daemon-reload")
 
+	// remove the root timer that runs panel-queued updates
+	removeUpdateTimer()
+
 	// undo the install-time host tweaks
 	run("loginctl", "disable-linger", s.User)
 	os.Remove("/etc/sysctl.d/99-podnest.conf")

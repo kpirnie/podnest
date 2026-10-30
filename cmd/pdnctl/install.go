@@ -230,6 +230,11 @@ func runInstall() error {
 	}
 	userRun(installUser, uid, "systemctl", "--user", "status", "podnest.service", "--no-pager")
 
+	// 6. root timer that runs update when the panel queues one
+	if err := ensureUpdateTimer(); err != nil {
+		return err
+	}
+
 	// persist the install state so every other subcommand needs zero flags
 	if err := saveState(&State{
 		User:      installUser,

@@ -49,6 +49,11 @@ func runUpdate() error {
 		return err
 	}
 
+	// installs that predate panel updates get the timer; a failure must not block the update
+	if err := ensureUpdateTimer(); err != nil {
+		fmt.Printf("WARNING: update timer setup skipped: %v\n", err)
+	}
+
 	// no flag means stay on the channel the install (or last switch) recorded
 	ver := s.Version
 	if updateVersion != "" {
