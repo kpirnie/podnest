@@ -394,7 +394,7 @@ func tailWAFLog(path string, domains []string, n int) ([]string, error) {
 	})
 }
 
-// apiSiteProxyLog streams proxy-access.log entries filtered to this site's domains via WebSocket.
+// apiSiteProxyLog streams this site's per-site access.log via WebSocket.
 func (h *Handler) apiSiteProxyLog(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
