@@ -46,10 +46,11 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 	mux.HandleFunc("GET /sites/{id}/stats/disk", h.apiSiteDisk)
 	mux.HandleFunc("GET /sites/{id}/stats/drilldown", h.apiSiteDrilldown)
 
-	// global dashboard routes — aggregate every tenant's traffic and pod usage, admin only
-	mux.Handle("GET /stats/traffic", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalTraffic)))
+	// global dashboard routes — traffic and drilldown are scoped per role inside
+	// the handlers; host stats remain admin only
+	mux.HandleFunc("GET /stats/traffic", h.apiGlobalTraffic)
 	mux.Handle("GET /stats/host", auth.RequireAPIAdmin(http.HandlerFunc(h.apiHostStats)))
-	mux.Handle("GET /stats/drilldown", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGlobalDrilldown)))
+	mux.HandleFunc("GET /stats/drilldown", h.apiGlobalDrilldown)
 }
 
 // OnSiteCreate is a no-op; stats are computed on demand.
