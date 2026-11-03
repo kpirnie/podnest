@@ -30,7 +30,7 @@ var globalCache = &trafficCache{
 }
 
 // get returns a cached TrafficStats for the given key, or nil if absent/expired.
-func (c *trafficCache) set(key int64, data *TrafficStats) {
+func (c *trafficCache) get(key string) *TrafficStats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
