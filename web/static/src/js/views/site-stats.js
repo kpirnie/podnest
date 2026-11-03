@@ -523,7 +523,7 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
     }
 
     try {
-        entries = await api.get(`${endpoint}?hour=${encodeURIComponent(hour)}&status=${statusClass}`);
+        entries = await api.get(`${endpoint}${endpoint.includes('?') ? '&' : '?'}hour=${encodeURIComponent(hour)}&status=${statusClass}`);
     } catch (err) {
         body.innerHTML = `<p class="kp-muted uk-text-small">Failed to load: ${escapeHtml(err.message)}</p>`;
         return;

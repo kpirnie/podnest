@@ -47,6 +47,123 @@ function wireHostStats() {
     ws.onclose = () => { if (_hostWS === ws) _hostWS = null; };
 }
 
+// renderDashChart (re)builds the dashboard hits-per-hour chart from a traffic
+// payload; scope is forwarded to the drilldown so it matches the chart
+async function renderDashChart(traffic, scope) {
+    if (_dashChart) {
+        _dashChart.destroy();
+        _dashChart = null;
+    }
+    if (!traffic?.hits_per_hour?.length) return;
+
+    await loadChartJS();
+    const canvas = document.getElementById('dash-traffic-chart');
+    if (!canvas || !window.Chart) return;
+
+    _dashChart = new window.Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: traffic.hits_per_hour.map((b) => {
+                const d = new Date(b.hour);
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }),
+            datasets: [
+                {
+                    label: '2xx',
+                    data: traffic.hits_per_hour.map((b) => b['2xx']),
+                    backgroundColor: 'rgba(39,174,96,0.75)',
+                    borderColor:     'rgba(39,174,96,1)',
+                    borderWidth: 1,
+                    borderRadius: 3,
+                },
+                {
+                    label: '3xx',
+                    data: traffic.hits_per_hour.map((b) => b['3xx']),
+                    backgroundColor: 'rgba(43,142,255,0.75)',
+                    borderColor:     'rgba(43,142,255,1)',
+                    borderWidth: 1,
+                    borderRadius: 3,
+                },
+                {
+                    label: '4xx',
+                    data: traffic.hits_per_hour.map((b) => b['4xx']),
+                    backgroundColor: 'rgba(255,171,0,0.75)',
+                    borderColor:     'rgba(255,171,0,1)',
+                    borderWidth: 1,
+                    borderRadius: 3,
+                },
+                {
+                    label: '5xx',
+                    data: traffic.hits_per_hour.map((b) => b['5xx']),
+                    backgroundColor: 'rgba(235,59,90,0.75)',
+                    borderColor:     'rgba(235,59,90,1)',
+                    borderWidth: 1,
+                    borderRadius: 3,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: (evt, elements) => {
+                if (!elements || !elements.length) return;
+
+                // only handle 4xx and 5xx dataset clicks
+                const datasetIndex = elements[0].datasetIndex;
+                const label = _dashChart.data.datasets[datasetIndex].label;
+                if (label !== '4xx' && label !== '5xx') return;
+
+                // get raw RFC3339 hour straight from the traffic payload
+                const rawHour = traffic.hits_per_hour[elements[0].index]?.hour;
+                if (!rawHour) return;
+
+                openDrilldown(`/stats/drilldown?scope=${scope}`, rawHour, label, true);
+            },
+            onHover: (evt, elements) => {
+                if (!elements || !elements.length) {
+                    evt.native.target.style.cursor = 'default';
+                    return;
+                }
+                const label = _dashChart.data.datasets[elements[0].datasetIndex].label;
+                evt.native.target.style.cursor = (label === '4xx' || label === '5xx') ? 'pointer' : 'default';
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#6b8cae', font: { size: 11 } },
+                    onHover: (event) => {
+                        event.native.target.style.cursor = 'pointer';
+                    },
+                    onLeave: (event) => {
+                        event.native.target.style.cursor = 'default';
+                    },
+                },
+                tooltip: {
+                    mode: 'index',
+                    backgroundColor: '#0c1530',
+                    borderColor:     '#1a2a4a',
+                    borderWidth: 1,
+                    titleColor: '#dde8f5',
+                    bodyColor:  '#6b8cae',
+                },
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    ticks: { color: '#6b8cae', font: { size: 10 }, maxRotation: 45 },
+                    grid:  { color: 'rgba(26,42,74,0.6)' },
+                },
+                y: {
+                    stacked: true,
+                    ticks: { color: '#6b8cae', font: { size: 10 } },
+                    grid:  { color: 'rgba(26,42,74,0.6)' },
+                    beginAtZero: true,
+                },
+            },
+        },
+    });
+}
+
 export async function viewDashboard(root) {
     const [sites, traffic, nodes] = await Promise.all([
         api.get("/sites").catch(() => []),
@@ -182,29 +299,36 @@ export async function viewDashboard(root) {
             <h2 class="kp-view-title" style="font-size:1.25rem">Traffic
                 <span class="kp-muted uk-text-small" style="font-weight:400"> — last 24 hours</span>
             </h2>
+            ${isAdmin ? `
+            <div id="dash-traffic-scope" class="uk-flex" style="gap:6px">
+                ${[["all", "All"], ["sites", "Sites"], ["panel", "Panel"]].map(([v, l]) => `
+                <button class="uk-button ${v === "all" ? "kp-btn-primary" : "kp-btn-ghost"} kp-btn-sm"
+                    data-action="dash-scope" data-scope="${v}">${l}</button>`).join("")}
+            </div>
+            ` : ""}
         </div>
         <div class="kp-card uk-padding-small uk-margin-medium-bottom">
             <div class="uk-grid-small uk-child-width-1-2 uk-child-width-1-4@m uk-margin-small-bottom" uk-grid>
                 <div><div class="kp-stat-card" style="padding:16px">
-                    <div class="kp-stat-value" style="font-size:1.6rem;color:var(--kp-success)">
+                    <div class="kp-stat-value" id="dash-traffic-2xx" style="font-size:1.6rem;color:var(--kp-success)">
                         ${(traffic?.status_codes?.['2xx'] ?? 0).toLocaleString()}
                     </div>
                     <div class="kp-stat-label" style="color:var(--kp-success)">2xx Success</div>
                 </div></div>
                 <div><div class="kp-stat-card" style="padding:16px">
-                    <div class="kp-stat-value" style="font-size:1.6rem;color:var(--kp-cyan)">
+                    <div class="kp-stat-value" id="dash-traffic-3xx" style="font-size:1.6rem;color:var(--kp-cyan)">
                         ${(traffic?.status_codes?.['3xx'] ?? 0).toLocaleString()}
                     </div>
                     <div class="kp-stat-label" style="color:var(--kp-cyan)">3xx Redirect</div>
                 </div></div>
                 <div><div class="kp-stat-card" style="padding:16px">
-                    <div class="kp-stat-value" style="font-size:1.6rem;color:var(--kp-warning)">
+                    <div class="kp-stat-value" id="dash-traffic-4xx" style="font-size:1.6rem;color:var(--kp-warning)">
                         ${(traffic?.status_codes?.['4xx'] ?? 0).toLocaleString()}
                     </div>
                     <div class="kp-stat-label" style="color:var(--kp-warning)">4xx Client Err</div>
                 </div></div>
                 <div><div class="kp-stat-card" style="padding:16px">
-                    <div class="kp-stat-value" style="font-size:1.6rem;color:var(--kp-danger)">
+                    <div class="kp-stat-value" id="dash-traffic-5xx" style="font-size:1.6rem;color:var(--kp-danger)">
                         ${(traffic?.status_codes?.['5xx'] ?? 0).toLocaleString()}
                     </div>
                     <div class="kp-stat-label" style="color:var(--kp-danger)">5xx Server Err</div>
@@ -212,7 +336,7 @@ export async function viewDashboard(root) {
             </div>
             <div class="uk-margin-small-bottom" style="color:var(--kp-text-dim);font-size:0.85rem">
                 Total Bandwidth:
-                <span style="color:var(--kp-cyan);font-family:'JetBrains Mono',monospace">
+                <span id="dash-traffic-bw" style="color:var(--kp-cyan);font-family:'JetBrains Mono',monospace">
                     ${fmtBytes(traffic?.total_bandwidth ?? 0)}
                 </span>
             </div>
@@ -293,118 +417,32 @@ export async function viewDashboard(root) {
     });
 
     // render hits-per-hour chart once Chart.js is ready
-    if (traffic?.hits_per_hour?.length) {
-        await loadChartJS();
-        const canvas = document.getElementById('dash-traffic-chart');
-        if (canvas && window.Chart) {
-            if (_dashChart) {
-                _dashChart.destroy();
-                _dashChart = null;
-            }
-            _dashChart = new window.Chart(canvas, {
-                type: 'bar',
-                data: {
-                    labels: traffic.hits_per_hour.map((b) => {
-                        const d = new Date(b.hour);
-                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    }),
-                    datasets: [
-                        {
-                            label: '2xx',
-                            data: traffic.hits_per_hour.map((b) => b['2xx']),
-                            backgroundColor: 'rgba(39,174,96,0.75)',
-                            borderColor:     'rgba(39,174,96,1)',
-                            borderWidth: 1,
-                            borderRadius: 3,
-                        },
-                        {
-                            label: '3xx',
-                            data: traffic.hits_per_hour.map((b) => b['3xx']),
-                            backgroundColor: 'rgba(43,142,255,0.75)',
-                            borderColor:     'rgba(43,142,255,1)',
-                            borderWidth: 1,
-                            borderRadius: 3,
-                        },
-                        {
-                            label: '4xx',
-                            data: traffic.hits_per_hour.map((b) => b['4xx']),
-                            backgroundColor: 'rgba(255,171,0,0.75)',
-                            borderColor:     'rgba(255,171,0,1)',
-                            borderWidth: 1,
-                            borderRadius: 3,
-                        },
-                        {
-                            label: '5xx',
-                            data: traffic.hits_per_hour.map((b) => b['5xx']),
-                            backgroundColor: 'rgba(235,59,90,0.75)',
-                            borderColor:     'rgba(235,59,90,1)',
-                            borderWidth: 1,
-                            borderRadius: 3,
-                        },
-                    ],
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    onClick: (evt, elements) => {
-                        if (!elements || !elements.length) return;
+    await renderDashChart(traffic, "all");
 
-                        // only handle 4xx and 5xx dataset clicks
-                        const datasetIndex = elements[0].datasetIndex;
-                        const label = _dashChart.data.datasets[datasetIndex].label;
-                        if (label !== '4xx' && label !== '5xx') return;
+    // scope toggle — re-pulls traffic for the chosen scope and redraws the
+    // stat cards and chart; Top Sites is left on its initial site-only data
+    document.getElementById("dash-traffic-scope")?.addEventListener("click", async (e) => {
+        const btn = e.target.closest('[data-action="dash-scope"]');
+        if (!btn || btn.classList.contains("kp-btn-primary")) return;
 
-                        // get raw RFC3339 hour straight from the traffic payload
-                        const rawHour = traffic.hits_per_hour[elements[0].index]?.hour;
-                        if (!rawHour) return;
+        const scope = btn.dataset.scope;
+        let data;
+        try {
+            data = await api.get(`/stats/traffic?scope=${scope}`);
+        } catch (err) { toast.error(err.message); return; }
 
-                        openDrilldown('/stats/drilldown', rawHour, label, true);
-                    },
-                    onHover: (evt, elements) => {
-                        if (!elements || !elements.length) {
-                            evt.native.target.style.cursor = 'default';
-                            return;
-                        }
-                        const label = _dashChart.data.datasets[elements[0].datasetIndex].label;
-                        evt.native.target.style.cursor = (label === '4xx' || label === '5xx') ? 'pointer' : 'default';
-                    },
-                    plugins: {
-                        legend: {
-                            display: true,
-                            labels: { color: '#6b8cae', font: { size: 11 } },
-                            onHover: (event) => {
-                                event.native.target.style.cursor = 'pointer';
-                            },
-                            onLeave: (event) => {
-                                event.native.target.style.cursor = 'default';
-                            },
-                        },
-                        tooltip: {
-                            mode: 'index',
-                            backgroundColor: '#0c1530',
-                            borderColor:     '#1a2a4a',
-                            borderWidth: 1,
-                            titleColor: '#dde8f5',
-                            bodyColor:  '#6b8cae',
-                        },
-                    },
-                    scales: {
-                        x: {
-                            stacked: true,
-                            ticks: { color: '#6b8cae', font: { size: 10 }, maxRotation: 45 },
-                            grid:  { color: 'rgba(26,42,74,0.6)' },
-                        },
-                        y: {
-                            stacked: true,
-                            ticks: { color: '#6b8cae', font: { size: 10 } },
-                            grid:  { color: 'rgba(26,42,74,0.6)' },
-                            beginAtZero: true,
-                        },
-                    },
-                },
-            });
+        btn.parentElement.querySelectorAll('[data-action="dash-scope"]').forEach((b) => {
+            b.classList.toggle("kp-btn-primary", b === btn);
+            b.classList.toggle("kp-btn-ghost", b !== btn);
+        });
+
+        for (const k of ["2xx", "3xx", "4xx", "5xx"]) {
+            document.getElementById(`dash-traffic-${k}`).textContent = (data?.status_codes?.[k] ?? 0).toLocaleString();
         }
-    }
+        document.getElementById("dash-traffic-bw").textContent = fmtBytes(data?.total_bandwidth ?? 0);
+
+        await renderDashChart(data, scope);
+    });
 
     document.getElementById("dash-new-site")
         ?.addEventListener("click", () => showCreateSiteModal());
