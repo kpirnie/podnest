@@ -205,7 +205,7 @@ func (h *Handler) apiSiteDrilldown(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logPath := fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)
-	entries, err := parseDrilldown(r.Context(), logPath, hour, statusClass, nil)
+	entries, err := parseDrilldown(r.Context(), []trafficSource{{path: logPath}}, hour, statusClass)
 	if err != nil {
 		logger.Error("stats: drilldown parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -353,8 +353,8 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 }
 
 // apiGlobalDrilldown returns individual request records for a given hour and
-// status class across all sites for admins, or scoped to the requesting
-// user's own sites for managers. Used by the dashboard drilldown modal.
+// status class across the requested dashboard scope for admins, or across the
+// requesting user's own sites otherwise. Used by the dashboard drilldown modal.
 func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
@@ -375,17 +375,15 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// admins see the full log; any non-admin is scoped to their own sites
-	var (
-		domains []string
-		sites   []*models.Site
-		err     error
-	)
-	if user.Role == models.RoleAdmin {
-		sites, err = db.GetAllSites(h.DB)
-	} else {
-		sites, err = db.GetSitesByUser(h.DB, user.ID)
+	scope, ok := dashboardScope(r, user)
+	if !ok {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "scope must be all, sites, or panel")
+		return
 	}
+
+	// the site list is loaded for every scope — it drives both the log sources
+	// and the host-to-site-name translation, including panel-log hosts
+	sites, err := h.userSites(user)
 	if err != nil {
 		logger.Error("stats: global drilldown — load sites: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -404,18 +402,9 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 		for _, d := range ds {
 			siteNames[d] = s.Name
 		}
-		if user.Role != models.RoleAdmin {
-			domains = append(domains, ds...)
-		}
 	}
 
-	// a manager with no domains must see zero entries, not the full log —
-	// seed a sentinel host that matches nothing so the filter stays active
-	if user.Role != models.RoleAdmin && len(domains) == 0 {
-		domains = []string{"\x00"}
-	}
-
-	entries, err := parseDrilldown(r.Context(), h.AppPath+"/logs/proxy-access.log", hour, statusClass, domains)
+	entries, err := parseDrilldown(r.Context(), h.scopeLogSources(scope, sites), hour, statusClass)
 	if err != nil {
 		logger.Error("stats: global drilldown parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -762,21 +751,10 @@ func parseTrafficLog(ctx context.Context, sources []trafficSource) (*TrafficStat
 	return &stats, nil
 }
 
-// parseDrilldown reads an access log and returns every entry matching
-// the given hour and status class ("4xx" or "5xx"). Pass a non-nil domains
-// slice to filter to matching hosts (manager-scoped global drilldown); pass
-// nil when the log is already the correct scope (a per-site file, or the
-// full merged log for an admin).
-func parseDrilldown(ctx context.Context, logPath, hour, statusClass string, domains []string) ([]DrilldownEntry, error) {
-	f, err := os.Open(logPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []DrilldownEntry{}, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
+// parseDrilldown reads every source access log and returns each entry
+// matching the given hour and status class ("4xx" or "5xx"). Missing logs are
+// skipped; ordering across sources is left to the caller.
+func parseDrilldown(ctx context.Context, sources []trafficSource, hour, statusClass string) ([]DrilldownEntry, error) {
 	// parse the hour boundary once
 	hourTime, err := time.Parse(time.RFC3339, hour)
 	if err != nil {
@@ -784,87 +762,97 @@ func parseDrilldown(ctx context.Context, logPath, hour, statusClass string, doma
 	}
 	hourEnd := hourTime.Add(time.Hour)
 
-	domainSet := make(map[string]struct{}, len(domains))
-	for _, d := range domains {
-		domainSet[d] = struct{}{}
-	}
+	results := []DrilldownEntry{}
 
-	var results []DrilldownEntry
-	scanner := bufio.NewScanner(f)
-	scanned := 0
-	for scanner.Scan() {
-		scanned++
-		if scanned&8191 == 0 {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-		}
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		fields := strings.Fields(line)
-		// format: timestamp method host path status bytes duration clientIP "ua"
-		if len(fields) < 8 {
-			continue
-		}
-
-		ts, err := time.Parse(time.RFC3339, fields[0])
+	// scanSource appends a single log's matches; a closure so the file handle
+	// is released per source rather than held until return
+	scanSource := func(src trafficSource) error {
+		f, err := os.Open(src.path)
 		if err != nil {
-			continue
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
 		}
+		defer f.Close()
 
-		// filter to matching domains when a domain set is provided
-		if len(domainSet) > 0 {
-			if _, ok := domainSet[fields[2]]; !ok {
+		scanner := bufio.NewScanner(f)
+		scanned := 0
+		for scanner.Scan() {
+			scanned++
+			if scanned&8191 == 0 {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
+			line := scanner.Text()
+			if line == "" {
 				continue
 			}
+
+			fields := strings.Fields(line)
+			// format: timestamp method host path status bytes duration clientIP "ua"
+			if len(fields) < 8 {
+				continue
+			}
+
+			ts, err := time.Parse(time.RFC3339, fields[0])
+			if err != nil {
+				continue
+			}
+
+			// filter to the requested hour window
+			if ts.Before(hourTime) || !ts.Before(hourEnd) {
+				continue
+			}
+
+			statusCode, err := strconv.Atoi(fields[4])
+			if err != nil {
+				continue
+			}
+
+			// filter to the requested status class
+			match := (statusClass == "4xx" && statusCode >= 400 && statusCode < 500) ||
+				(statusClass == "5xx" && statusCode >= 500)
+			if !match {
+				continue
+			}
+
+			// PodNest-blocked requests carry a trailing "reason=<value>" token after
+			// the quoted UA — exclude them from the drilldown entirely
+			last := len(fields)
+			if strings.HasPrefix(fields[last-1], "reason=") && !strings.HasSuffix(fields[last-1], "\"") {
+				continue
+			}
+
+			ua := ""
+			if last >= 9 {
+				ua = strings.Trim(strings.Join(fields[8:last], " "), "\"")
+			}
+
+			results = append(results, DrilldownEntry{
+				Time:     ts.UTC().Format(time.RFC3339),
+				Method:   fields[1],
+				Host:     fields[2],
+				Path:     fields[3],
+				Status:   statusCode,
+				ClientIP: fields[7],
+				UA:       ua,
+			})
 		}
 
-		// filter to the requested hour window
-		if ts.Before(hourTime) || !ts.Before(hourEnd) {
-			continue
-		}
-
-		statusCode, err := strconv.Atoi(fields[4])
-		if err != nil {
-			continue
-		}
-
-		// filter to the requested status class
-		match := (statusClass == "4xx" && statusCode >= 400 && statusCode < 500) ||
-			(statusClass == "5xx" && statusCode >= 500)
-		if !match {
-			continue
-		}
-
-		// PodNest-blocked requests carry a trailing "reason=<value>" token after
-		// the quoted UA — exclude them from the drilldown entirely
-		last := len(fields)
-		if strings.HasPrefix(fields[last-1], "reason=") && !strings.HasSuffix(fields[last-1], "\"") {
-			continue
-		}
-
-		ua := ""
-		if last >= 9 {
-			ua = strings.Trim(strings.Join(fields[8:last], " "), "\"")
-		}
-
-		results = append(results, DrilldownEntry{
-			Time:     ts.UTC().Format(time.RFC3339),
-			Method:   fields[1],
-			Host:     fields[2],
-			Path:     fields[3],
-			Status:   statusCode,
-			ClientIP: fields[7],
-			UA:       ua,
-		})
-
+		return scanner.Err()
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	// one unreadable site log must not fail the whole drilldown — log it and
+	// move on; only a cancelled request aborts the scan
+	for _, src := range sources {
+		if err := scanSource(src); err != nil {
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			logger.Error("stats: drilldown parse %s: %v", src.path, err)
+		}
 	}
 
 	return results, nil
