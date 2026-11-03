@@ -7,6 +7,7 @@ package stats
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"podnest/internal/auth"
@@ -60,6 +61,6 @@ func (m Module) OnSiteCreate(_ context.Context, _ *models.Site) error { return n
 func (m Module) OnSiteDelete(_ context.Context, site *models.Site) error {
 	globalCache.mu.Lock()
 	defer globalCache.mu.Unlock()
-	delete(globalCache.entries, site.ID)
+	delete(globalCache.entries, fmt.Sprintf("site:%d", site.ID))
 	return nil
 }

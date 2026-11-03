@@ -11,10 +11,11 @@ import (
 
 const cacheTTL = 60 * time.Second
 
-// trafficCache holds computed traffic stats entries per site (0 = global).
+// trafficCache holds computed traffic stats entries keyed by scope —
+// "site:<id>", "global:<scope>" (admin), or "user:<uid>" (non-admin).
 type trafficCache struct {
 	mu      sync.Mutex
-	entries map[int64]trafficCacheEntry
+	entries map[string]trafficCacheEntry
 }
 
 // trafficCacheEntry is a single cached result with its expiry time.
@@ -25,11 +26,11 @@ type trafficCacheEntry struct {
 
 // globalCache is the package-level traffic cache shared across all handlers.
 var globalCache = &trafficCache{
-	entries: make(map[int64]trafficCacheEntry),
+	entries: make(map[string]trafficCacheEntry),
 }
 
 // get returns a cached TrafficStats for the given key, or nil if absent/expired.
-func (c *trafficCache) get(key int64) *TrafficStats {
+func (c *trafficCache) set(key int64, data *TrafficStats) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -41,7 +42,7 @@ func (c *trafficCache) get(key int64) *TrafficStats {
 }
 
 // set stores a TrafficStats result under the given key with a 60s TTL.
-func (c *trafficCache) set(key int64, data *TrafficStats) {
+func (c *trafficCache) set(key string, data *TrafficStats) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

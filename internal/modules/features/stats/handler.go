@@ -33,6 +33,20 @@ import (
 // seekProbeLines caps how far a probe scans for a timestamped line
 const seekProbeLines = 64
 
+// Dashboard traffic scopes accepted by the global stats routes.
+const (
+	scopeAll   = "all"
+	scopeSites = "sites"
+	scopePanel = "panel"
+)
+
+// trafficSource is a single access log to aggregate. countSite marks per-site
+// logs whose hosts feed TopSites.
+type trafficSource struct {
+	path      string
+	countSite bool
+}
+
 // TrafficStats is the parsed result from the proxy access log.
 type TrafficStats struct {
 	HitsPerHour    []HourBucket    `json:"hits_per_hour"`
@@ -141,7 +155,8 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if cached := globalCache.get(site.ID); cached != nil {
+	cacheKey := fmt.Sprintf("site:%d", site.ID)
+	if cached := globalCache.get(cacheKey); cached != nil {
 		apiutil.JSON(w, http.StatusOK, cached)
 		return
 	}
@@ -157,14 +172,14 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// per-site log is already filtered — no domain matching needed
-	stats, err := parseTrafficLog(r.Context(), fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name), nil, false)
+	stats, err := parseTrafficLog(r.Context(), []trafficSource{{path: fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)}})
 	if err != nil {
 		logger.Error("stats: traffic parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	globalCache.set(site.ID, stats)
+	globalCache.set(cacheKey, stats)
 	apiutil.JSON(w, http.StatusOK, stats)
 }
 
@@ -286,8 +301,9 @@ func (h *Handler) apiSiteDisk(w http.ResponseWriter, r *http.Request) {
 
 // -- global routes -----------------------------------------------------------
 
-// apiGlobalTraffic returns cached traffic stats aggregated across all sites for
-// admins, or scoped to the requesting user's own sites for managers.
+// apiGlobalTraffic returns cached traffic stats for the dashboard. Admins may
+// pick any scope (all, sites, panel); every other role is pinned to their own
+// sites' logs.
 func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
@@ -295,37 +311,17 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// admins aggregate every site (cache key 0); any non-admin is scoped to
-	// their own sites and cached under their uid so one role's data can never
-	// be served from another's cached entry
-	var (
-		cacheKey int64 = 0
-		domains  []string
-	)
+	scope, ok := dashboardScope(r, user)
+	if !ok {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "scope must be all, sites, or panel")
+		return
+	}
+
+	// admins share one entry per scope; any non-admin is cached under their uid
+	// so one user's data can never be served from another's cached entry
+	cacheKey := "global:" + scope
 	if user.Role != models.RoleAdmin {
-		cacheKey = user.ID
-
-		// gather every domain across the manager's own sites
-		sites, err := db.GetSitesByUser(h.DB, user.ID)
-		if err != nil {
-			logger.Error("stats: global traffic — GetSitesByUser(%d): %v", user.ID, err)
-			apiutil.Error(w, http.StatusInternalServerError, err)
-			return
-		}
-		for _, s := range sites {
-			ds, err := h.siteDomainsFor(s)
-			if err != nil {
-				logger.Error("stats: global traffic — siteDomainsFor(%d): %v", s.ID, err)
-				continue
-			}
-			domains = append(domains, ds...)
-		}
-
-		// a manager with no domains must see zero traffic, not the full log —
-		// seed a sentinel host that matches nothing so the filter stays active
-		if len(domains) == 0 {
-			domains = []string{"\x00"}
-		}
+		cacheKey = fmt.Sprintf("user:%d", user.ID)
 	}
 
 	if cached := globalCache.get(cacheKey); cached != nil {
@@ -333,7 +329,19 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stats, err := parseTrafficLog(r.Context(), h.AppPath+"/logs/proxy-access.log", domains, true)
+	// the panel scope reads only the global log, so the site list is skipped
+	var sites []*models.Site
+	if scope != scopePanel {
+		var err error
+		sites, err = h.userSites(user)
+		if err != nil {
+			logger.Error("stats: global traffic — load sites: %v", err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
+	stats, err := parseTrafficLog(r.Context(), h.scopeLogSources(scope, sites))
 	if err != nil {
 		logger.Error("stats: global traffic parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -428,6 +436,49 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 }
 
 // -- helpers -----------------------------------------------------------------
+
+// dashboardScope reads and validates the scope query param, defaulting to
+// scopeAll. Non-admins are always pinned to scopeSites — the panel log carries
+// admin-domain and unmatched-host traffic they do not own.
+func dashboardScope(r *http.Request, user *models.User) (string, bool) {
+	if user.Role != models.RoleAdmin {
+		return scopeSites, true
+	}
+	switch s := r.URL.Query().Get("scope"); s {
+	case "":
+		return scopeAll, true
+	case scopeAll, scopeSites, scopePanel:
+		return s, true
+	}
+	return "", false
+}
+
+// userSites returns every site for admins, or only the user's own sites otherwise.
+func (h *Handler) userSites(user *models.User) ([]*models.Site, error) {
+	if user.Role == models.RoleAdmin {
+		return db.GetAllSites(h.DB)
+	}
+	return db.GetSitesByUser(h.DB, user.ID)
+}
+
+// scopeLogSources builds the access log list behind a dashboard scope. Site
+// traffic lives in each site's own access.log; the global proxy-access.log
+// only holds panel and unmatched-host traffic.
+func (h *Handler) scopeLogSources(scope string, sites []*models.Site) []trafficSource {
+	var sources []trafficSource
+	if scope == scopeAll || scope == scopePanel {
+		sources = append(sources, trafficSource{path: h.AppPath + "/logs/proxy-access.log"})
+	}
+	if scope == scopeAll || scope == scopeSites {
+		for _, s := range sites {
+			sources = append(sources, trafficSource{
+				path:      fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, s.Name),
+				countSite: true,
+			})
+		}
+	}
+	return sources
+}
 
 // siteDomainsFor returns the registered domain strings for any site type.
 func (h *Handler) siteDomainsFor(site *models.Site) ([]string, error) {
@@ -530,157 +581,157 @@ func seekToCutoff(ctx context.Context, f *os.File, cutoff time.Time) error {
 	return err
 }
 
-// parseTrafficLog reads the proxy-access.log and computes TrafficStats.
-// Pass a non-nil domains slice to filter to a single site; pass nil + global=true
-// for the full-log aggregate (which also populates TopSites).
-func parseTrafficLog(ctx context.Context, logPath string, domains []string, global bool) (*TrafficStats, error) {
-	f, err := os.Open(logPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &TrafficStats{HitsPerHour: []HourBucket{}}, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
+// parseTrafficLog reads every source access log and computes one merged
+// TrafficStats over the last 24 hours. Missing logs are skipped. TopSites is
+// populated only from sources flagged countSite, so panel and unmatched hosts
+// never appear in it.
+func parseTrafficLog(ctx context.Context, sources []trafficSource) (*TrafficStats, error) {
 	now := time.Now().UTC()
 	cutoff := now.Add(-24 * time.Hour)
-
-	// skip past everything older than the window before scanning
-	if err := seekToCutoff(ctx, f, cutoff); err != nil {
-		if ctx.Err() != nil {
-			return nil, err
-		}
-		logger.Debug("parseTrafficLog: seek failed, scanning from start: %v", err)
-		if _, serr := f.Seek(0, io.SeekStart); serr != nil {
-			return nil, serr
-		}
-	}
-
-	domainSet := make(map[string]struct{}, len(domains))
-	for _, d := range domains {
-		domainSet[d] = struct{}{}
-	}
 
 	type hourData struct{ s2xx, s3xx, s4xx, s5xx int }
 	hourCounts := make(map[string]*hourData)
 	ipCounts := make(map[string]int)
 	uaCounts := make(map[string]int)
-	siteCounts := make(map[string]int) // global only
+	siteCounts := make(map[string]int)
 	var stats TrafficStats
 
-	scanner := bufio.NewScanner(f)
+	// scanSource folds a single log into the shared counters; a closure so the
+	// file handle is released per source rather than held until return
+	scanSource := func(src trafficSource) error {
+		f, err := os.Open(src.path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		defer f.Close()
 
-	scanned := 0
-	for scanner.Scan() {
-		scanned++
-		if scanned&8191 == 0 {
-			if err := ctx.Err(); err != nil {
-				return nil, err
+		// skip past everything older than the window before scanning
+		if err := seekToCutoff(ctx, f, cutoff); err != nil {
+			if ctx.Err() != nil {
+				return err
+			}
+			logger.Debug("parseTrafficLog: seek failed on %s, scanning from start: %v", src.path, err)
+			if _, serr := f.Seek(0, io.SeekStart); serr != nil {
+				return serr
 			}
 		}
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
 
-		fields := strings.Fields(line)
-		// format: timestamp method host path status bytes duration clientIP "ua"
-		// minimum 8 fields; WAF lines begin with a WAF action, not a timestamp
-		if len(fields) < 8 {
-			continue
-		}
+		scanner := bufio.NewScanner(f)
 
-		// skip WAF log lines — they don't start with an RFC3339 timestamp
-		ts, err := time.Parse(time.RFC3339, fields[0])
-		if err != nil {
-			continue
-		}
-
-		// skip PodNest-blocked requests — they carry a trailing "reason=" token
-		// after the quoted UA; only non-blocked traffic counts toward stats
-		if last := fields[len(fields)-1]; strings.HasPrefix(last, "reason=") && !strings.HasSuffix(last, "\"") {
-			continue
-		}
-
-		host := fields[2]
-		// filter to matching domains whenever a domain set is provided —
-		// applies to per-site calls and to the manager-scoped global aggregate;
-		// when domainSet is empty the log is already the correct scope (a
-		// site-specific file, or the full merged log for an admin)
-		if len(domainSet) > 0 {
-			if _, ok := domainSet[host]; !ok {
+		scanned := 0
+		for scanner.Scan() {
+			scanned++
+			if scanned&8191 == 0 {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
+			line := scanner.Text()
+			if line == "" {
 				continue
 			}
+
+			fields := strings.Fields(line)
+			// format: timestamp method host path status bytes duration clientIP "ua"
+			// minimum 8 fields; WAF lines begin with a WAF action, not a timestamp
+			if len(fields) < 8 {
+				continue
+			}
+
+			// skip WAF log lines — they don't start with an RFC3339 timestamp
+			ts, err := time.Parse(time.RFC3339, fields[0])
+			if err != nil {
+				continue
+			}
+
+			// skip PodNest-blocked requests — they carry a trailing "reason=" token
+			// after the quoted UA; only non-blocked traffic counts toward stats
+			if last := fields[len(fields)-1]; strings.HasPrefix(last, "reason=") && !strings.HasSuffix(last, "\"") {
+				continue
+			}
+
+			host := fields[2]
+
+			// skip static asset requests
+			if isStaticAsset(fields[3]) {
+				continue
+			}
+
+			statusCode, err := strconv.Atoi(fields[4])
+			if err != nil {
+				continue
+			}
+			bytes, err := strconv.ParseInt(fields[5], 10, 64)
+			if err != nil {
+				continue
+			}
+
+			clientIP := fields[7]
+			ua := ""
+			if len(fields) >= 9 {
+				// ua field is quoted; join remaining fields and strip quotes
+				raw := strings.Join(fields[8:], " ")
+				ua = strings.Trim(raw, "\"")
+			}
+
+			// skip anything outside the 24h window
+			if !ts.After(cutoff) {
+				continue
+			}
+
+			// status code buckets
+			switch {
+			case statusCode >= 200 && statusCode < 300:
+				stats.StatusCodes.S2xx++
+			case statusCode >= 300 && statusCode < 400:
+				stats.StatusCodes.S3xx++
+			case statusCode >= 400 && statusCode < 500:
+				stats.StatusCodes.S4xx++
+			case statusCode >= 500:
+				stats.StatusCodes.S5xx++
+			}
+
+			stats.TotalBandwidth += bytes
+			ipCounts[clientIP]++
+			if ua != "" {
+				uaCounts[ua]++
+			}
+			if src.countSite {
+				siteCounts[host]++
+			}
+
+			// hits per hour bucketing
+			hourKey := ts.UTC().Truncate(time.Hour).Format(time.RFC3339)
+			if hourCounts[hourKey] == nil {
+				hourCounts[hourKey] = &hourData{}
+			}
+			switch {
+			case statusCode >= 200 && statusCode < 300:
+				hourCounts[hourKey].s2xx++
+			case statusCode >= 300 && statusCode < 400:
+				hourCounts[hourKey].s3xx++
+			case statusCode >= 400 && statusCode < 500:
+				hourCounts[hourKey].s4xx++
+			case statusCode >= 500:
+				hourCounts[hourKey].s5xx++
+			}
 		}
 
-		// skip static asset requests
-		if isStaticAsset(fields[3]) {
-			continue
-		}
-
-		statusCode, err := strconv.Atoi(fields[4])
-		if err != nil {
-			continue
-		}
-		bytes, err := strconv.ParseInt(fields[5], 10, 64)
-		if err != nil {
-			continue
-		}
-
-		clientIP := fields[7]
-		ua := ""
-		if len(fields) >= 9 {
-			// ua field is quoted; join remaining fields and strip quotes
-			raw := strings.Join(fields[8:], " ")
-			ua = strings.Trim(raw, "\"")
-		}
-
-		// skip anything outside the 24h window
-		if !ts.After(cutoff) {
-			continue
-		}
-
-		// status code buckets
-		switch {
-		case statusCode >= 200 && statusCode < 300:
-			stats.StatusCodes.S2xx++
-		case statusCode >= 300 && statusCode < 400:
-			stats.StatusCodes.S3xx++
-		case statusCode >= 400 && statusCode < 500:
-			stats.StatusCodes.S4xx++
-		case statusCode >= 500:
-			stats.StatusCodes.S5xx++
-		}
-
-		stats.TotalBandwidth += bytes
-		ipCounts[clientIP]++
-		if ua != "" {
-			uaCounts[ua]++
-		}
-		if global {
-			siteCounts[host]++
-		}
-
-		// hits per hour bucketing
-		hourKey := ts.UTC().Truncate(time.Hour).Format(time.RFC3339)
-		if hourCounts[hourKey] == nil {
-			hourCounts[hourKey] = &hourData{}
-		}
-		switch {
-		case statusCode >= 200 && statusCode < 300:
-			hourCounts[hourKey].s2xx++
-		case statusCode >= 300 && statusCode < 400:
-			hourCounts[hourKey].s3xx++
-		case statusCode >= 400 && statusCode < 500:
-			hourCounts[hourKey].s4xx++
-		case statusCode >= 500:
-			hourCounts[hourKey].s5xx++
-		}
+		return scanner.Err()
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	// one unreadable site log must not blank the whole aggregate — log it and
+	// move on; only a cancelled request aborts the scan
+	for _, src := range sources {
+		if err := scanSource(src); err != nil {
+			if ctx.Err() != nil {
+				return nil, err
+			}
+			logger.Error("stats: traffic parse %s: %v", src.path, err)
+		}
 	}
 
 	// build ordered 24-hour buckets (all 24 slots, zero-filled)
@@ -704,7 +755,7 @@ func parseTrafficLog(ctx context.Context, logPath string, domains []string, glob
 	stats.TopIPs = topN(ipCounts, 10)
 	stats.TopUAs = topN(uaCounts, 10)
 
-	if global {
+	if len(siteCounts) > 0 {
 		stats.TopSites = topN(siteCounts, 10)
 	}
 
