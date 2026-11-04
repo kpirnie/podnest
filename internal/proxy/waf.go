@@ -82,6 +82,12 @@ const wafBodyBudgetBytes = 512 << 20 // 512 MB
 // engages when the budget is genuinely saturated by large concurrent uploads.
 const wafBudgetWait = 2 * time.Second
 
+// wafBodyReadTimeout bounds how long buffering the inspected body prefix may
+// take. The budget charge is taken before the read, so without it a client
+// trickling bytes holds its share of wafBodyBudget indefinitely — enough
+// stalled requests starve every site's body-carrying traffic.
+const wafBodyReadTimeout = 30 * time.Second
+
 // wafBodyBudget is a weighted semaphore over wafBodyBudgetBytes. Each request
 // is charged its actual body size rather than a fixed slot, so ordinary small
 // POSTs admit in the thousands while only genuinely large uploads consume real
@@ -269,11 +275,17 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 			once.Do(func() { wafBodyBudget.Release(weight) })
 		}
 
-		// read up to wafMaxBodyBytes for inspection, then restore the full stream for
-		// the upstream (inspected prefix + any unread remainder). The buffer is handed
-		// to the upstream and outlives this function, so it cannot be pooled/reused —
-		// a per-request allocation is inherent to buffer-then-forward inspection
-		buf, _ := io.ReadAll(io.LimitReader(r.Body, wafMaxBodyBytes))
+		// bound the prefix read so a stalled client cannot pin its budget charge;
+		// the deadline is lifted again so the upstream can stream any remainder
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(wafBodyReadTimeout))
+		buf, err := io.ReadAll(io.LimitReader(r.Body, wafMaxBodyBytes))
+		_ = rc.SetReadDeadline(time.Time{})
+		if err != nil {
+			logger.Warn("waf: reading request body from %s failed: %v", clientIP, err)
+			http.Error(w, "Request Timeout", http.StatusRequestTimeout)
+			return false
+		}
 		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(buf), r.Body))
 
 		if len(buf) > 0 {
