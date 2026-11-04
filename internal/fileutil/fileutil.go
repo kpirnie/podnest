@@ -85,6 +85,17 @@ func Remove(dir, name string) error {
 	return nil
 }
 
+// ReadFile reads name inside dir without following a symlinked path component
+// out of dir.
+func ReadFile(dir, name string) ([]byte, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.ReadFile(name)
+}
+
 // ReadEnvValue reads a KEY=VALUE .env file and returns the value for the given key.
 func ReadEnvValue(base, name, key string) (string, error) {
 	dir, err := SiteDir(base, name)

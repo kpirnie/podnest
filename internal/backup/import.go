@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"podnest/internal/db"
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -138,7 +139,7 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 			if fromDomain != "" && fromDomain != toDomain {
 				if err := m.wpSearchReplace(ctx, targetSite, fromDomain, toDomain); err != nil {
 					logger.Error("ImportRestore: search-replace failed for site %s: %v", targetSite.Name, err)
-				} else if err := rewriteWPConfigDomain(wpCfgPath, toDomain); err != nil {
+				} else if err := rewriteWPConfigDomain(siteDir, toDomain); err != nil {
 					logger.Error("ImportRestore: rewrite DOMAIN_CURRENT_SITE for site %s: %v", targetSite.Name, err)
 				}
 			}
@@ -163,6 +164,15 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 // importFiles copies the extracted archive contents into siteDir, skipping
 // .env (target site credentials are preserved) and db_dump.sql (handled separately)
 func importFiles(srcDir, siteDir string) error {
+
+	// every destination resolves inside siteDir — the site owner can plant
+	// symlinks in its own directories, so no write may follow one out of the site
+	root, err := os.OpenRoot(siteDir)
+	if err != nil {
+		return fmt.Errorf("importFiles: open %s: %w", siteDir, err)
+	}
+	defer root.Close()
+
 	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -203,14 +213,19 @@ func importFiles(srcDir, siteDir string) error {
 			return nil
 		}
 
-		dest := filepath.Join(siteDir, rel)
-
 		// if it's a directory, create it and move on; we'll set permissions on the whole tree at the end
 		if info.IsDir() {
-			return os.MkdirAll(dest, 0755)
+			return root.MkdirAll(rel, 0755)
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(rel), 0755); err != nil {
 			return fmt.Errorf("importFiles: mkdir %s: %w", rel, err)
+		}
+
+		// a symlink already at the destination is replaced, never written through
+		if fi, err := root.Lstat(rel); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			if err := root.Remove(rel); err != nil {
+				return fmt.Errorf("importFiles: remove link %s: %w", rel, err)
+			}
 		}
 
 		// copy regular file contents into the destination path
@@ -221,7 +236,7 @@ func importFiles(srcDir, siteDir string) error {
 		defer src.Close()
 
 		// create the destination file with the same permissions as the source
-		dst, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		dst, err := root.OpenFile(rel, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
 		if err != nil {
 			return fmt.Errorf("importFiles: create %s: %w", rel, err)
 		}
@@ -264,7 +279,9 @@ func wipeHTMLRoot(siteDir string) error {
 	// must not abort, or the web root is left half-destroyed
 	var failed []string
 	for _, e := range entries {
-		if htmlPreserved(e.Name()) {
+		// only a regular file is preserved — a link or directory under a
+		// preserved name would otherwise survive and redirect the overlay
+		if htmlPreserved(e.Name()) && e.Type().IsRegular() {
 			continue
 		}
 
@@ -339,7 +356,7 @@ func wpSalt() (string, error) {
 // database and Redis and regenerates its keys and salts. Everything else the
 // archive carried — table prefix, multisite constants, custom defines — stands.
 func (m *Manager) rewriteWPConfig(wpCfgPath, siteDir string) error {
-	raw, err := os.ReadFile(wpCfgPath)
+	raw, err := fileutil.ReadFile(siteDir, filepath.Join("html", "wp-config.php"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -382,7 +399,7 @@ func (m *Manager) rewriteWPConfig(wpCfgPath, siteDir string) error {
 		src = setWPConst(src, name, s)
 	}
 
-	if err := os.WriteFile(wpCfgPath, []byte(src), 0640); err != nil {
+	if err := fileutil.WriteFile(siteDir, filepath.Join("html", "wp-config.php"), src, 0640); err != nil {
 		return fmt.Errorf("rewriteWPConfig: write: %w", err)
 	}
 
@@ -394,11 +411,9 @@ func (m *Manager) rewriteWPConfig(wpCfgPath, siteDir string) error {
 // Single-site installs have no such constant and are left untouched. This runs
 // only after search-replace, since wp-cli bootstraps multisite against the
 // domain still stored in the site and blogs tables.
-func rewriteWPConfigDomain(wpCfgPath, toDomain string) error {
-	if strings.Contains(wpCfgPath, "..") {
-		return fmt.Errorf("rewriteWPConfigDomain: refusing path %q", wpCfgPath)
-	}
-	raw, err := os.ReadFile(wpCfgPath)
+func rewriteWPConfigDomain(siteDir, toDomain string) error {
+	rel := filepath.Join("html", "wp-config.php")
+	raw, err := fileutil.ReadFile(siteDir, rel)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -407,7 +422,7 @@ func rewriteWPConfigDomain(wpCfgPath, toDomain string) error {
 	}
 
 	src := setWPConst(string(raw), "DOMAIN_CURRENT_SITE", toDomain)
-	if err := os.WriteFile(wpCfgPath, []byte(src), 0640); err != nil {
+	if err := fileutil.WriteFile(siteDir, rel, src, 0640); err != nil {
 		return fmt.Errorf("rewriteWPConfigDomain: write: %w", err)
 	}
 	return nil
