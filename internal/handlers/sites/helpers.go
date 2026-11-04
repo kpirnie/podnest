@@ -324,6 +324,13 @@ func (h *Handler) normalizeRequestDomains(raw []string) ([]string, int, error) {
 		if exists {
 			return nil, http.StatusConflict, fmt.Errorf("domain already registered: %s", clean)
 		}
+		taken, err := db.RPRouteDomainTaken(h.DB, clean, 0)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		if taken {
+			return nil, http.StatusConflict, fmt.Errorf("domain already registered: %s", clean)
+		}
 		out = append(out, clean)
 	}
 	return out, 0, nil

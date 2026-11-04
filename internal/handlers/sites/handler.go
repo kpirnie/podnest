@@ -1483,6 +1483,15 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusConflict, "domain already registered")
 		return
 	}
+	taken, err := db.RPRouteDomainTaken(h.DB, domain, 0)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if taken {
+		apiutil.ErrorMsg(w, http.StatusConflict, "domain already registered")
+		return
+	}
 
 	// check if a site with the requested clone name already exists in the database, returning a conflict response if it does
 	existing, err := db.GetSiteByName(h.DB, req.Name)

@@ -139,6 +139,14 @@ func (p *Proxy) warmCache() error {
 
 			// if the domain is in kppn_domains — attach pool to existing entry
 			if e, ok := next[domain]; ok {
+				// a domain registered to one site carrying another site's routes is
+				// a conflicting legacy claim — serving either would apply the wrong
+				// site's policy, so the domain is dropped from routing entirely
+				if e.siteID != siteIDs[domain] {
+					logger.Error("proxy: dropping '%s': registered to site %d but routed by site %d", domain, e.siteID, siteIDs[domain])
+					delete(next, domain)
+					continue
+				}
 				e.pool = pool
 				next[domain] = e
 			} else {

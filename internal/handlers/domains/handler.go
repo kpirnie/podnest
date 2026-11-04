@@ -113,6 +113,17 @@ func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	taken, err := db.RPRouteDomainTaken(h.DB, req.Domain, site.ID)
+	if err != nil {
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+	if taken {
+		logger.Error("domain '%s' is routed by another site, requested by site %d", req.Domain, site.ID)
+		apiutil.ErrorMsg(w, http.StatusConflict, "domain already registered")
+		return
+	}
+
 	domain := &models.Domain{
 		SiteID: site.ID,
 		Domain: req.Domain,

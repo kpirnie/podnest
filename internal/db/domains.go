@@ -34,6 +34,16 @@ func CreateDomain(db *sql.DB, d *models.Domain) error {
 		return fmt.Errorf("domain already exists: %s", d.Domain)
 	}
 
+	// a hostname routed by another site's reverse proxy is claimed even without a domain row
+	taken, err := RPRouteDomainTaken(db, d.Domain, d.SiteID)
+	if err != nil {
+		return err
+	}
+	if taken {
+		logger.Error("Domain is routed by another site: %s", d.Domain)
+		return fmt.Errorf("domain is routed by another site: %s", d.Domain)
+	}
+
 	// Insert the new domain record
 	res, err := db.Exec(`
 		INSERT INTO kppn_domains (siteid, domain)
