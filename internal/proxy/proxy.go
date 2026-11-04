@@ -142,6 +142,12 @@ type Config struct {
 // New creates and configures the proxy but does not start listeners
 func New(cfg Config) *Proxy {
 
+	// shared by both reverse proxy transports; its ControlContext is wired once p exists
+	rpDialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
 	// initialize the proxy with its dependencies and default transports
 	p := &Proxy{
 		database:    cfg.DB,
@@ -167,10 +173,7 @@ func New(cfg Config) *Proxy {
 		// connection reuse across multiple RP sites rather than each upstream having
 		// an isolated pool; TLS verification intentionally skipped for user-defined targets
 		rpTransport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
+			DialContext:           rpDialer.DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
 			MaxIdleConns:          200,
@@ -180,10 +183,7 @@ func New(cfg Config) *Proxy {
 		},
 		// verifying twin of rpTransport for upstreams whose certs probe as valid
 		rpVerifyTransport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 30 * time.Second,
-			}).DialContext,
+			DialContext:           rpDialer.DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
 			ResponseHeaderTimeout: 60 * time.Second,
 			MaxIdleConns:          200,
@@ -205,6 +205,10 @@ func New(cfg Config) *Proxy {
 			IdleConnTimeout:     90 * time.Second,
 		},
 	}
+
+	// every reverse proxy dial is checked on its resolved address so a hostname
+	// cannot route a site's traffic into another owner's site
+	rpDialer.ControlContext = p.upstreamDialControl
 
 	// seed empty caches so Load() never returns nil before Warm calls run
 	emptyDomain := make(map[string]domainEntry)
@@ -448,6 +452,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// reverse proxy sites — cascade through the pool, first response that isn't
 	// a transport error or >= 400 streams through unbuffered
 	if rpPool != nil {
+
+		// tag the request with its site so the dialer can refuse another owner's upstream
+		r = r.WithContext(context.WithValue(r.Context(), upstreamSiteKey{}, siteID))
+
 		startIdx := rpPool.NextIndex()
 
 		// a failed first attempt has already consumed r.Body, so the cascade
@@ -459,7 +467,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// first attempt
 		first := rpPool.At(startIdx)
 		firstTransport := p.rpTransportForTarget(first)
-		if tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, firstTransport)) {
+		if p.literalUpstreamAllowed(r.Context(), siteID, first) && tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, firstTransport)) {
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
@@ -473,7 +481,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// a verified upstream may have a newly-broken cert — flip it back and retry once unverified
 		if p.markTLSUnverified(first) {
 			resetReplayBody(r, body)
-			if tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, p.rpTransport)) {
+			if p.literalUpstreamAllowed(r.Context(), siteID, first) && tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, p.rpTransport)) {
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 				return
 			}
@@ -483,7 +491,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i := 1; i < rpPool.Len(); i++ {
 			target := rpPool.At(startIdx + i)
 			resetReplayBody(r, body)
-			if tryUpstream(sw, r, target, p.getOrCreateRPProxy(target.URL, target.PassHost, p.rpTransportForTarget(target))) {
+			if p.literalUpstreamAllowed(r.Context(), siteID, target) && tryUpstream(sw, r, target, p.getOrCreateRPProxy(target.URL, target.PassHost, p.rpTransportForTarget(target))) {
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 				return
 			}

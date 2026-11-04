@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"sync/atomic"
 
@@ -22,6 +23,7 @@ import (
 type UpstreamTarget struct {
 	URL      *url.URL
 	PassHost bool
+	literal  netip.AddrPort // set when the upstream host is an IP literal; zero for hostnames
 }
 
 // UpstreamPool holds a slice of upstream targets and an atomic round-robin counter.
@@ -64,7 +66,11 @@ func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
 			logger.Error("upstream: skipping upstream '%s': missing host", r.upstream)
 			continue
 		}
-		pool.targets = append(pool.targets, UpstreamTarget{URL: parsed, PassHost: r.passHost})
+		target := UpstreamTarget{URL: parsed, PassHost: r.passHost}
+		if ap, err := netip.ParseAddrPort(upstreamTLSKey(parsed)); err == nil {
+			target.literal = ap
+		}
+		pool.targets = append(pool.targets, target)
 	}
 	if len(pool.targets) == 0 {
 		return nil, fmt.Errorf("no valid upstreams in pool")

@@ -9,12 +9,17 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"syscall"
 	"time"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/podman"
 )
+
+// upstreamSiteKey carries the routing site's ID on a reverse proxy request so
+// the dialer knows whose upstream it is connecting to.
+type upstreamSiteKey struct{}
 
 // errForeignUpstream is returned when an upstream resolves to an address or
 // port belonging to a site owned by a different user.
@@ -185,4 +190,30 @@ func (p *Proxy) checkUpstream(ctx context.Context, siteID int64, addr netip.Addr
 		return fmt.Errorf("%w: %s", errForeignUpstream, addr)
 	}
 	return nil
+}
+
+// upstreamDialControl runs on every reverse proxy dial after DNS resolution, so
+// a hostname that resolves — or later re-resolves — into another owner's site
+// is refused before the connection opens. A dial with no site attached fails
+// closed.
+func (p *Proxy) upstreamDialControl(ctx context.Context, _, address string, _ syscall.RawConn) error {
+	siteID, ok := ctx.Value(upstreamSiteKey{}).(int64)
+	if !ok {
+		return fmt.Errorf("upstream dial to %s has no site", address)
+	}
+	addr, err := netip.ParseAddrPort(address)
+	if err != nil {
+		return fmt.Errorf("upstream dial: %w", err)
+	}
+	return p.checkUpstream(ctx, siteID, addr)
+}
+
+// literalUpstreamAllowed checks an IP-literal upstream on every request. The
+// dial check only runs on new connections, so without this a route could ride
+// an idle pooled connection another owner's route opened to the same address.
+func (p *Proxy) literalUpstreamAllowed(ctx context.Context, siteID int64, t UpstreamTarget) bool {
+	if !t.literal.IsValid() {
+		return true
+	}
+	return p.checkUpstream(ctx, siteID, t.literal) == nil
 }
