@@ -19,6 +19,7 @@ func (p *Proxy) AddDomain(domain string, port int, siteID int64, siteName string
 		next[domain] = domainEntry{port: port, siteID: siteID, siteName: siteName}
 		return next
 	})
+	p.invalidateUpstreamGuard()
 	logger.Debug("proxy: cache added '%s' → port %d site %d", domain, port, siteID)
 }
 
@@ -65,6 +66,7 @@ func (p *Proxy) ForgetSite(siteID int64, port int) {
 	p.forgetAutoBans(siteID)
 	p.ReopenLogs(siteID)
 	p.pruneUpstreamCaches()
+	p.invalidateUpstreamGuard()
 }
 
 // pruneUpstreamCaches drops cached reverse proxies and TLS verdicts for

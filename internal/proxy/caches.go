@@ -100,6 +100,7 @@ func (p *Proxy) warmCache() error {
 
 	// cache the domain→port+siteID mappings first
 	p.cache.Store(&m)
+	p.invalidateUpstreamGuard()
 
 	// load RP routes and attach upstream pools to matching cache entries
 	routes, err := db.GetAllRPRoutes(p.database)

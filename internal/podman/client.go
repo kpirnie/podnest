@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"podnest/internal/logger"
 	"strings"
 	"time"
@@ -302,6 +303,32 @@ func (c *Client) StreamPost(ctx context.Context, path string, body any) (io.Read
 
 	logger.Debug("StreamPost: stream started for %s", path)
 	return resp.Body, nil
+}
+
+// NetworkSubnets returns every Podman network's subnets keyed by network name.
+func (c *Client) NetworkSubnets(ctx context.Context) (map[string][]netip.Prefix, error) {
+	var nets []struct {
+		Name    string `json:"name"`
+		Subnets []struct {
+			Subnet string `json:"subnet"`
+		} `json:"subnets"`
+	}
+	if err := c.get(ctx, "/v4.0.0/libpod/networks/json", &nets); err != nil {
+		return nil, fmt.Errorf("list networks: %w", err)
+	}
+
+	out := make(map[string][]netip.Prefix, len(nets))
+	for _, n := range nets {
+		for _, s := range n.Subnets {
+			pfx, err := netip.ParsePrefix(s.Subnet)
+			if err != nil {
+				logger.Debug("NetworkSubnets: skipping unparseable subnet %q on %s: %v", s.Subnet, n.Name, err)
+				continue
+			}
+			out[n.Name] = append(out[n.Name], pfx.Masked())
+		}
+	}
+	return out, nil
 }
 
 // EnsurePodmanNetwork creates the named Podman network if it does not exist.

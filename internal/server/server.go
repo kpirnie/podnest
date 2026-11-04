@@ -219,6 +219,7 @@ func (s *Server) Start() error {
 	// fire up proxy and configure it
 	px := proxy.New(proxy.Config{
 		DB:          s.cfg.DB,
+		Podman:      s.podman,
 		CertDir:     s.cfg.CertDir,
 		HostGateway: s.cfg.HostGateway,
 		AdminDomain: adminDomain,

@@ -23,6 +23,7 @@ import (
 	"podnest/internal/auth"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/podman"
 
 	"github.com/oschwald/maxminddb-golang"
 	"github.com/quic-go/quic-go/http3"
@@ -80,6 +81,7 @@ func (sw *statusWriter) Flush() {
 // Proxy is the built-in TLS-terminating reverse proxy
 type Proxy struct {
 	database          *sql.DB
+	podman            *podman.Client
 	hostGateway       string
 	adminDomain       string
 	adminPort         int
@@ -111,6 +113,8 @@ type Proxy struct {
 	rpTransport       *http.Transport                                  // shared connection pool for all reverse-proxy-type upstream sites
 	rpVerifyTransport *http.Transport                                  // verifying twin of rpTransport for upstreams whose certs probe as valid
 	rpTLSVerified     sync.Map                                         // string(host:port) → tlsVerdict; probed cert-verification verdicts with downgrade expiry
+	guard             atomic.Pointer[upstreamGuard]                    // site-owned ports and subnets; nil until first check or after invalidation
+	guardMu           sync.Mutex                                       // serialises guard rebuilds
 	accessLog         *os.File                                         // structured access log for Fail2Ban consumption
 	accessLogCh       chan accessLogEntry                              // async drain channel — request goroutines never block on log writes
 	accessLogDone     chan struct{}                                    // closed when the drain goroutine has finished
@@ -127,6 +131,7 @@ type Proxy struct {
 // Config holds the proxy dependencies
 type Config struct {
 	DB          *sql.DB
+	Podman      *podman.Client
 	CertDir     string
 	HostGateway string
 	AdminDomain string
@@ -140,6 +145,7 @@ func New(cfg Config) *Proxy {
 	// initialize the proxy with its dependencies and default transports
 	p := &Proxy{
 		database:    cfg.DB,
+		podman:      cfg.Podman,
 		hostGateway: cfg.HostGateway,
 		adminDomain: cfg.AdminDomain,
 		adminPort:   cfg.AdminPort,
