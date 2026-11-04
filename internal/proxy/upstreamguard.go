@@ -8,7 +8,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
+	"net/url"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,9 +24,9 @@ import (
 // the dialer knows whose upstream it is connecting to.
 type upstreamSiteKey struct{}
 
-// errForeignUpstream is returned when an upstream resolves to an address or
+// ErrForeignUpstream is returned when an upstream resolves to an address or
 // port belonging to a site owned by a different user.
-var errForeignUpstream = errors.New("upstream targets another owner's site")
+var ErrForeignUpstream = errors.New("upstream targets another owner's site")
 
 const (
 	guardMaxAge    = 30 * time.Second
@@ -167,7 +170,7 @@ func (p *Proxy) invalidateUpstreamGuard() {
 	p.guard.Store(nil)
 }
 
-// checkUpstream returns an error wrapping errForeignUpstream when addr belongs
+// checkUpstream returns an error wrapping ErrForeignUpstream when addr belongs
 // to a site owned by someone other than the owner of siteID. A guard that
 // cannot decide is rebuilt once and asked again; a guard that cannot be built
 // refuses the upstream.
@@ -187,7 +190,7 @@ func (p *Proxy) checkUpstream(ctx context.Context, siteID int64, addr netip.Addr
 
 	if foreign {
 		logger.Warn("proxy: refused upstream %s for site %d: owned by another user", addr, siteID)
-		return fmt.Errorf("%w: %s", errForeignUpstream, addr)
+		return fmt.Errorf("%w: %s", ErrForeignUpstream, addr)
 	}
 	return nil
 }
@@ -216,4 +219,34 @@ func (p *Proxy) literalUpstreamAllowed(ctx context.Context, siteID int64, t Upst
 		return true
 	}
 	return p.checkUpstream(ctx, siteID, t.literal) == nil
+}
+
+// CheckUpstreamURL resolves an upstream URL and returns an error wrapping
+// ErrForeignUpstream when any resolved address lands on a site owned by
+// someone other than the owner of siteID. Every address is checked because
+// the dialer may connect to any of them.
+func (p *Proxy) CheckUpstreamURL(ctx context.Context, siteID int64, u *url.URL) error {
+	host, portStr, err := net.SplitHostPort(upstreamTLSKey(u))
+	if err != nil {
+		logger.Error("proxy: invalid upstream address '%s': %v", u.Host, err)
+		return fmt.Errorf("upstream address: %w", err)
+	}
+	port, err := strconv.ParseUint(portStr, 10, 16)
+	if err != nil {
+		logger.Error("proxy: invalid upstream port '%s': %v", portStr, err)
+		return fmt.Errorf("upstream port: %w", err)
+	}
+
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		logger.Error("proxy: failed to resolve upstream host '%s': %v", host, err)
+		return fmt.Errorf("resolve upstream %s: %w", host, err)
+	}
+
+	for _, ip := range ips {
+		if err := p.checkUpstream(ctx, siteID, netip.AddrPortFrom(ip, uint16(port))); err != nil {
+			return err
+		}
+	}
+	return nil
 }

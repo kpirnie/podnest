@@ -5,8 +5,11 @@
 package rproxy
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +19,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
+	"podnest/internal/proxy"
 )
 
 // ProxyRoutes is the subset of proxy.Proxy consumed by this handler.
@@ -23,6 +27,7 @@ type ProxyRoutes interface {
 	WarmCaches(justTrustedProxies bool) error
 	WarmRPRoutes() error
 	ObtainCert(domain string)
+	CheckUpstreamURL(ctx context.Context, siteID int64, u *url.URL) error
 }
 
 // Handler handles reverse proxy route management API routes.
@@ -96,6 +101,22 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 		if u.Host == "" {
 			logger.Error("apiUpdateRPRoutes: upstream missing host at index %d: '%s'", i, routes[i].Upstream)
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must include a host: "+routes[i].Upstream)
+			return
+		}
+
+		// a route must not reach another owner's site — the proxy applies the
+		// security settings of the domain a request arrives on, so the target
+		// site's basic auth, WAF and IP rules would never run
+		if err := h.Proxy.CheckUpstreamURL(r.Context(), site.ID, u); err != nil {
+			var dnsErr *net.DNSError
+			switch {
+			case errors.Is(err, proxy.ErrForeignUpstream):
+				apiutil.ErrorMsg(w, http.StatusForbidden, "upstream targets a site you do not own: "+routes[i].Upstream)
+			case errors.As(err, &dnsErr):
+				apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream host could not be resolved: "+routes[i].Upstream)
+			default:
+				apiutil.Error(w, http.StatusInternalServerError, err)
+			}
 			return
 		}
 	}
