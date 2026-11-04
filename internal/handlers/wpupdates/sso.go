@@ -105,7 +105,7 @@ func (h *Handler) apiSSOLogin(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
-	key, err := ssoKey(filepath.Join(dir, "html", "wp-config.php"))
+	key, err := ssoKey(dir)
 	if err != nil {
 		logger.Error("apiSSOLogin: site %d: %v", site.ID, err)
 		apiutil.ErrorMsg(w, http.StatusUnprocessableEntity, err.Error())
@@ -132,9 +132,26 @@ func (h *Handler) apiSSOLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // ssoKey derives the SSO signing key from the site's AUTH_KEY and AUTH_SALT,
-// matching the mu-plugin's hash_hmac('sha256', 'podnest-sso', AUTH_KEY . AUTH_SALT)
-func ssoKey(cfgPath string) ([]byte, error) {
-	src, err := os.ReadFile(cfgPath)
+// matching the mu-plugin's hash_hmac('sha256', 'podnest-sso', AUTH_KEY . AUTH_SALT).
+// wp-config.php sits in the owner-writable web root, so it must be a regular
+// file read inside that root — a link to another site's config would otherwise
+// mint a token that site accepts.
+func ssoKey(siteDir string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Join(siteDir, "html"))
+	if err != nil {
+		return nil, fmt.Errorf("open web root: %w", err)
+	}
+	defer root.Close()
+
+	fi, err := root.Lstat("wp-config.php")
+	if err != nil {
+		return nil, fmt.Errorf("stat wp-config.php: %w", err)
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("wp-config.php is not a regular file")
+	}
+
+	src, err := root.ReadFile("wp-config.php")
 	if err != nil {
 		return nil, fmt.Errorf("read wp-config.php: %w", err)
 	}
