@@ -16,7 +16,11 @@ func (p *Proxy) AddDomain(domain string, port int, siteID int64, siteName string
 		for k, v := range cur {
 			next[k] = v
 		}
-		next[domain] = domainEntry{port: port, siteID: siteID, siteName: siteName}
+		entry := domainEntry{port: port, siteID: siteID, siteName: siteName}
+		if existing, ok := next[domain]; ok && existing.siteID == siteID {
+			entry.pool = existing.pool
+		}
+		next[domain] = entry
 		return next
 	})
 	p.invalidateUpstreamGuard()
