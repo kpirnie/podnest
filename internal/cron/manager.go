@@ -342,6 +342,13 @@ func readMuxOutput(r io.Reader, maxBytes int) (string, error) {
 
 // -- cron parser -------------------------------------------------------------
 
+// ValidateSchedule reports whether expr is a 5-field cron expression with every
+// field inside its bounds and a matching time within the next year.
+func ValidateSchedule(expr string) error {
+	_, err := nextCronTime(expr, time.Now())
+	return err
+}
+
 // nextCronTime returns the next time after 'from' that satisfies the
 // 5-field cron expression (minute hour dom month dow)
 func nextCronTime(expr string, from time.Time) (time.Time, error) {
@@ -424,12 +431,12 @@ func parseCronField(field string, min, max int) (map[int]bool, error) {
 	if strings.Contains(field, "/") {
 		parts := strings.SplitN(field, "/", 2)
 		step, err := strconv.Atoi(parts[1])
-		if err != nil || step <= 0 {
+		if err != nil || step <= 0 || step > max-min+1 {
 			return nil, fmt.Errorf("invalid step '%s'", parts[1])
 		}
 		start := min
 		if parts[0] != "*" {
-			if start, err = strconv.Atoi(parts[0]); err != nil {
+			if start, err = strconv.Atoi(parts[0]); err != nil || start < min || start > max {
 				return nil, fmt.Errorf("invalid step base '%s'", parts[0])
 			}
 		}
@@ -443,7 +450,7 @@ func parseCronField(field string, min, max int) (map[int]bool, error) {
 		parts := strings.SplitN(field, "-", 2)
 		lo, err1 := strconv.Atoi(parts[0])
 		hi, err2 := strconv.Atoi(parts[1])
-		if err1 != nil || err2 != nil || lo > hi {
+		if err1 != nil || err2 != nil || lo < min || hi > max || lo > hi {
 			return nil, fmt.Errorf("invalid range '%s'", field)
 		}
 		for i := lo; i <= hi; i++ {

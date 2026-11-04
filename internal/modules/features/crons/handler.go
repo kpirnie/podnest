@@ -13,6 +13,7 @@ import (
 
 	"podnest/internal/apiutil"
 	"podnest/internal/audit"
+	"podnest/internal/cron"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -57,6 +58,11 @@ func (m Module) apiCreateCron(w http.ResponseWriter, r *http.Request, site *mode
 	req.Schedule = strings.TrimSpace(req.Schedule)
 	if req.Command == "" || req.Schedule == "" {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "command and schedule are required")
+		return
+	}
+
+	if err := cron.ValidateSchedule(req.Schedule); err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid schedule: "+err.Error())
 		return
 	}
 
@@ -119,6 +125,11 @@ func (m Module) apiUpdateCron(w http.ResponseWriter, r *http.Request, site *mode
 	req.Schedule = strings.TrimSpace(req.Schedule)
 	if req.Command == "" || req.Schedule == "" {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "command and schedule are required")
+		return
+	}
+
+	if err := cron.ValidateSchedule(req.Schedule); err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid schedule: "+err.Error())
 		return
 	}
 
