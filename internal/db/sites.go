@@ -185,7 +185,7 @@ func SiteOwnedBy(db *sql.DB, siteID, uid int64) (bool, error) {
 
 	// execute a query to count the number of site records that match the given site ID and user ID, and scan the result into the count variable
 	err := db.QueryRow(`
-		SELECT COUNT(*) FROM kppn_sites WHERE id=? AND uid=?`, siteID, uid,
+		SELECT COUNT(id) FROM kppn_sites WHERE id=? AND uid=?`, siteID, uid,
 	).Scan(&count)
 	if err != nil {
 		logger.Error("SiteOwnedBy: failed to query site ownership for site ID %d and user ID %d: %v", siteID, uid, err)
@@ -205,7 +205,7 @@ func PortInUse(db *sql.DB, port int, excludeSiteID int64) (bool, error) {
 
 	// execute a query to count the number of site records where any of the port columns (port, pma_port) match the given port value, excluding the specified site ID, and scan the result into the count variable
 	err := db.QueryRow(`
-		SELECT COUNT(*) FROM kppn_sites
+		SELECT COUNT(id) FROM kppn_sites
 		WHERE (port = ? OR pma_port = ?) AND id != ?`,
 		port, port, excludeSiteID,
 	).Scan(&count)

@@ -77,7 +77,7 @@ func GetAllRPRoutes(db *sql.DB) ([]RPRoute, error) {
 func RPRouteDomainTaken(db *sql.DB, domain string, siteID int64) (bool, error) {
 	var count int
 	err := db.QueryRow(`
-		SELECT COUNT(*) FROM kppn_rp_routes WHERE domain = ? AND site_id != ?`, domain, siteID,
+		SELECT COUNT(id) FROM kppn_rp_routes WHERE domain = ? AND site_id != ?`, domain, siteID,
 	).Scan(&count)
 	if err != nil {
 		logger.Error("RPRouteDomainTaken: failed to check domain '%s': %v", domain, err)
