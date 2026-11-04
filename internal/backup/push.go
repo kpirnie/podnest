@@ -290,10 +290,21 @@ func (m *Manager) dumpDB(ctx context.Context, site *models.Site, siteDir string,
 // pushHTML mirrors the source web root onto the target. The target's own
 // config files and every excluded path are left exactly as they were;
 // everything else on the target is replaced by the source's copy.
+// pushHTML mirrors the source web root onto the target. The target's own
+// config files and every excluded path are left exactly as they were;
+// everything else on the target is replaced by the source's copy.
 func pushHTML(srcHTML, dstHTML string, exclude []string) error {
 	if err := wipeExcept(dstHTML, "", exclude); err != nil {
 		return err
 	}
+
+	// every destination resolves inside the target web root — its owner can
+	// plant symlinks there, so no write may follow one out of the site
+	root, err := os.OpenRoot(dstHTML)
+	if err != nil {
+		return fmt.Errorf("pushHTML: open %s: %w", dstHTML, err)
+	}
+	defer root.Close()
 
 	// Walk uses Lstat, so symlinks are copied as links and never followed
 	return filepath.Walk(srcHTML, func(path string, info os.FileInfo, err error) error {
@@ -317,22 +328,21 @@ func pushHTML(srcHTML, dstHTML string, exclude []string) error {
 			return nil
 		}
 
-		dest := filepath.Join(dstHTML, rel)
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
 			link, err := os.Readlink(path)
 			if err != nil {
 				return fmt.Errorf("pushHTML: readlink %s: %w", rel, err)
 			}
-			if err := os.Symlink(link, dest); err != nil {
+			if err := root.Symlink(link, rel); err != nil {
 				return fmt.Errorf("pushHTML: symlink %s: %w", rel, err)
 			}
 		case info.IsDir():
-			if err := os.MkdirAll(dest, info.Mode().Perm()); err != nil {
+			if err := root.MkdirAll(rel, info.Mode().Perm()); err != nil {
 				return fmt.Errorf("pushHTML: mkdir %s: %w", rel, err)
 			}
 		case info.Mode().IsRegular():
-			if err := pushCopyFile(path, dest, info.Mode().Perm()); err != nil {
+			if err := pushCopyFile(root, path, rel, info.Mode().Perm()); err != nil {
 				return fmt.Errorf("pushHTML: copy %s: %w", rel, err)
 			}
 		}
@@ -340,15 +350,22 @@ func pushHTML(srcHTML, dstHTML string, exclude []string) error {
 	})
 }
 
-// pushCopyFile copies a single regular file's contents to dst.
-func pushCopyFile(src, dst string, mode os.FileMode) error {
+// pushCopyFile copies a single regular file's contents to name inside root. A
+// symlink already at name is replaced, never written through.
+func pushCopyFile(root *os.Root, src, name string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
 
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if fi, err := root.Lstat(name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if err := root.Remove(name); err != nil {
+			return err
+		}
+	}
+
+	out, err := root.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
