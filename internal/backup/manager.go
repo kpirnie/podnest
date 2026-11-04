@@ -159,8 +159,7 @@ func (m *Manager) localRepoPath(siteName string) string {
 func (m *Manager) enableMaintenance(ctx context.Context, site *models.Site, siteDir string) error {
 
 	// write the maintenance page into the site's web root
-	htmlPath := filepath.Join(siteDir, "html", maintHTMLName)
-	if err := os.WriteFile(htmlPath, maintenanceHTML, 0644); err != nil {
+	if err := fileutil.WriteFile(siteDir, filepath.Join("html", maintHTMLName), string(maintenanceHTML), 0644); err != nil {
 		return fmt.Errorf("write maintenance.html: %w", err)
 	}
 
@@ -175,8 +174,7 @@ func (m *Manager) enableMaintenance(ctx context.Context, site *models.Site, site
 `
 
 	// write the maintenance nginx conf into the site's nginx conf.d directory
-	confPath := filepath.Join(siteDir, "nginx", "conf.d", maintConfName)
-	if err := os.WriteFile(confPath, []byte(maintConf), 0644); err != nil {
+	if err := fileutil.WriteFile(siteDir, filepath.Join("nginx", "conf.d", maintConfName), maintConf, 0644); err != nil {
 		return fmt.Errorf("write maintenance nginx conf: %w", err)
 	}
 
@@ -192,15 +190,11 @@ func (m *Manager) enableMaintenance(ctx context.Context, site *models.Site, site
 // disableMaintenance removes the maintenance conf and page, then reloads nginx
 func (m *Manager) disableMaintenance(ctx context.Context, site *models.Site, siteDir string) error {
 
-	// set up paths to the maintenance conf and page
-	confPath := filepath.Join(siteDir, "nginx", "conf.d", maintConfName)
-
-	// remove the maintenance nginx conf; ignore if it doesn't exist, but log other errors
-	if err := os.Remove(confPath); err != nil && !os.IsNotExist(err) {
+	// remove the maintenance nginx conf and page; a missing file is not an error
+	if err := fileutil.Remove(siteDir, filepath.Join("nginx", "conf.d", maintConfName)); err != nil {
 		logger.Warn("disableMaintenance: remove conf: %v", err)
 	}
-	htmlPath := filepath.Join(siteDir, "html", maintHTMLName)
-	if err := os.Remove(htmlPath); err != nil && !os.IsNotExist(err) {
+	if err := fileutil.Remove(siteDir, filepath.Join("html", maintHTMLName)); err != nil {
 		logger.Warn("disableMaintenance: remove html: %v", err)
 	}
 

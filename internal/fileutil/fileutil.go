@@ -42,13 +42,46 @@ func SafeFileMode(m os.FileMode) os.FileMode {
 	return 0o644
 }
 
-// WriteFile writes content to path with the given file permissions.
-func WriteFile(path, content string, perm os.FileMode) error {
-	if err := os.WriteFile(path, []byte(content), perm); err != nil {
-		logger.Error("failed to write file %s: %v", path, err)
+// WriteFile writes content to name inside dir. The write is confined to dir: a
+// path component that is a symlink leading outside it is refused, and a symlink
+// sitting at name itself is replaced with a regular file. Site subdirectories
+// are writable by the site owner, so a planted link must never redirect a
+// privileged write onto another site or the host.
+func WriteFile(dir, name, content string, perm os.FileMode) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		logger.Error("failed to open %s for writing %s: %v", dir, name, err)
 		return err
 	}
-	logger.Debug("wrote file %s", path)
+	defer root.Close()
+
+	if fi, err := root.Lstat(name); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if err := root.Remove(name); err != nil {
+			logger.Error("failed to remove symlink %s/%s: %v", dir, name, err)
+			return err
+		}
+	}
+
+	if err := root.WriteFile(name, []byte(content), perm); err != nil {
+		logger.Error("failed to write file %s/%s: %v", dir, name, err)
+		return err
+	}
+	logger.Debug("wrote file %s/%s", dir, name)
+	return nil
+}
+
+// Remove deletes name inside dir without following a symlinked path component
+// out of dir. A missing file is not an error.
+func Remove(dir, name string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 	return nil
 }
 
