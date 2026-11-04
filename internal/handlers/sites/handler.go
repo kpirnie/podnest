@@ -1294,7 +1294,7 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		_ = setEnvValue(oldDir+"/.env", "DB_NAME", oldDB)
-		_ = setWPConfigDBName(oldDir+"/html/wp-config.php", oldDB)
+		_ = setWPConfigDBName(oldDir, oldDB)
 		site.Name = oldName
 		if err := db.UpdateSite(h.DB, site); err != nil {
 			logger.Error("rename rollback: restore site record for %s: %v", oldName, err)
@@ -1334,7 +1334,7 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 			apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not rewrite the site's .env — rename rolled back")
 			return
 		}
-		if err := setWPConfigDBName(newDir+"/html/wp-config.php", newName); err != nil {
+		if err := setWPConfigDBName(newDir, newName); err != nil {
 			rollback("wp-config rewrite", err)
 			apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not rewrite wp-config.php — rename rolled back")
 			return
@@ -1735,10 +1735,10 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	if clone.SiteType == models.SiteTypeWordPress {
 		wpCfgPath := cloneSiteDir + "/html/wp-config.php"
 		wpConfig := wordpress.GenerateWPConfig(clone.Name, dbUser, dbPass, redisPass)
-		if err := os.WriteFile(wpCfgPath, []byte(wpConfig), 0640); err != nil {
+		if err := fileutil.WriteFile(cloneSiteDir, "html/wp-config.php", wpConfig, 0640); err != nil {
 			logger.Warn("apiSiteClone: failed to write wp-config.php for clone %s: %v", clone.Name, err)
 		}
-		if err := os.Chown(wpCfgPath, sftpUID, sftpUID); err != nil {
+		if err := os.Lchown(wpCfgPath, sftpUID, sftpUID); err != nil {
 			logger.Warn("apiSiteClone: could not chown wp-config.php for clone %s: %v", clone.Name, err)
 		}
 	}

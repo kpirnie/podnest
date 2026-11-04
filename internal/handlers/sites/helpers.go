@@ -363,9 +363,10 @@ func setEnvValue(path, key, value string) error {
 var wpDBNamePattern = regexp.MustCompile(`(define\(\s*['"]DB_NAME['"]\s*,\s*)(['"])(?:[^'"]*)(['"])`)
 
 // setWPConfigDBName repoints an existing wp-config.php at the renamed schema.
-// A site without one — every non-WordPress type — is not an error.
-func setWPConfigDBName(path, dbName string) error {
-	raw, err := os.ReadFile(path)
+// A site without one — every non-WordPress type — is not an error. The file is
+// read and written inside siteDir so a planted symlink cannot redirect either.
+func setWPConfigDBName(siteDir, dbName string) error {
+	raw, err := fileutil.ReadFile(siteDir, "html/wp-config.php")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -373,14 +374,9 @@ func setWPConfigDBName(path, dbName string) error {
 		return fmt.Errorf("setWPConfigDBName: read: %w", err)
 	}
 
-	// keep the file's mode and ownership by writing back over it in place
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("setWPConfigDBName: stat: %w", err)
-	}
-
+	// an existing regular file is truncated in place, keeping its mode and ownership
 	src := wpDBNamePattern.ReplaceAllString(string(raw), "${1}${2}"+dbName+"${3}")
-	if err := os.WriteFile(path, []byte(src), info.Mode().Perm()); err != nil {
+	if err := fileutil.WriteFile(siteDir, "html/wp-config.php", src, 0640); err != nil {
 		return fmt.Errorf("setWPConfigDBName: write: %w", err)
 	}
 	return nil
