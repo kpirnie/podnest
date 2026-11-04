@@ -332,7 +332,7 @@ func writeWAFLog(sink wafLogSink, r *http.Request, clientIP string, ruleID int, 
 		time.Now().UTC().Format(time.RFC3339),
 		action,
 		r.Host,
-		r.URL.Path,
+		r.URL.EscapedPath(), // decoded Path can carry spaces and line breaks that forge records
 		ruleID,
 		matched,
 		clientIP,

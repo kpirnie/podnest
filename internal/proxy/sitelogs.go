@@ -185,7 +185,7 @@ func (p *Proxy) writeAccessLog(r *http.Request, status, bytes int, start time.Ti
 		start.UTC().Format(time.RFC3339),
 		r.Method,
 		r.Host,
-		r.URL.Path,
+		r.URL.EscapedPath(), // decoded Path can carry spaces and line breaks that forge records
 		status,
 		bytes,
 		dur.Round(time.Millisecond).String(),
