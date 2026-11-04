@@ -320,18 +320,17 @@ There is also a `security` command for recovering panel access when a security r
 
 ### Container
 
-When the container starts for the first time with no existing database, a default admin account is automatically created:
+When the container starts for the first time with no existing database, an admin account named `admin` is created with a randomly generated password, printed once to the service log:
 
-| Field | Value |
-| --- | --- |
-| Username | `admin` |
-| Password | `podnest1234@` |
+```bash
+podman logs podnest 2>&1 | grep "default admin created"
+```
 
-> **Change this password immediately after your first login.** The default credentials are well-known and should never be left in place on a production instance.
+> **Change this password after your first login.** It stays in the log history until the log is rotated or the container is recreated.
 
 ### Binary
 
-If you used `podnest init`, log in with the credentials you provided during setup. The `serve` command will only auto-seed the default admin credentials above if no admin account exists at startup.
+If you used `podnest init`, log in with the credentials you provided during setup. The `serve` command only auto-seeds the generated admin account above if no admin account exists at startup.
 
 ---
 

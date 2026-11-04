@@ -5,6 +5,7 @@
 package db
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
@@ -406,8 +407,11 @@ func SeedDefaultAdmin(database *sql.DB) error {
 		return nil
 	}
 
-	// Generate a bcrypt hash of the default password "podnest1234@" for secure storage
-	h := sha256.Sum256([]byte("podnest1234@"))
+	// every install gets its own password — a shared default hands admin to
+	// anyone who reaches the panel before its owner does
+	password := rand.Text()
+	h := sha256.Sum256([]byte(password))
+
 	prehashed := fmt.Sprintf("%x", h)
 	hash, err := bcrypt.GenerateFromPassword([]byte(prehashed), bcrypt.DefaultCost)
 	if err != nil {
@@ -433,8 +437,8 @@ func SeedDefaultAdmin(database *sql.DB) error {
 		return err
 	}
 
-	// Log that the default admin user was created successfully with the default credentials
-	logger.Debug("default admin user created with username 'admin' and password 'podnest1234@'")
+	// logged once at info level so the owner can find it without debug enabled
+	logger.Info("default admin created — username: admin  password: %s  (change it after first login)", password)
 	return err
 }
 
