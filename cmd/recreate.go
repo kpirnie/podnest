@@ -7,6 +7,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"podnest/internal/db"
 	"podnest/internal/handlers/sites"
@@ -41,8 +42,9 @@ func init() {
 	recreateCmd.Flags().BoolVar(&recreateAll, "all", false, "Recreate every site that has a pod (required)")
 }
 
-// runRecreate rebuilds every site pod in turn, stopping at the first failure so
-// a broken rebuild is never followed by cleanup that would hide it.
+// runRecreate rebuilds every site pod in turn, attempting every site even when
+// an earlier one fails, then returns a summary error so a partial rebuild is
+// never followed by cleanup that would hide it.
 func runRecreate(cmd *cobra.Command, args []string) error {
 
 	// only the full sweep exists today — refuse a bare call rather than guess
@@ -90,6 +92,8 @@ func runRecreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var failed []string
+
 	// rebuild each pod, waiting on the mariadb upgrade since this process exits after
 	for _, site := range all {
 		if !modules.TypeModule(site.SiteType).HasPod() {
@@ -98,9 +102,16 @@ func runRecreate(cmd *cobra.Command, args []string) error {
 		logger.Info("recreating site %s", site.Name)
 		status, err := h.RecreateSite(context.Background(), site, nil, false, true)
 		if err != nil {
-			return fmt.Errorf("recreate %s: %w", site.Name, err)
+			logger.Error("recreate %s failed: %v", site.Name, err)
+			failed = append(failed, fmt.Sprintf("%s (%v)", site.Name, err))
+			continue
 		}
 		logger.Info("site %s recreated — %s", site.Name, status)
+	}
+
+	// a partial rebuild is a failure — upgrade skips its prune on a non-zero exit
+	if len(failed) > 0 {
+		return fmt.Errorf("%d site(s) failed to recreate: %s", len(failed), strings.Join(failed, "; "))
 	}
 	return nil
 }
