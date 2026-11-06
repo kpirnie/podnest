@@ -69,19 +69,21 @@ var ErrNotWordPress = errors.New("update checks are only available for WordPress
 // Manager checks WordPress sites for core, plugin and theme updates via WP-CLI
 // and caches the results
 type Manager struct {
-	client *podman.Client
-	db     *sql.DB
+	client  *podman.Client
+	db      *sql.DB
+	appPath string
 
 	mu     sync.Mutex
 	active map[int64]bool
 }
 
 // New returns an update check manager bound to the given podman client and database
-func New(client *podman.Client, database *sql.DB) *Manager {
+func New(client *podman.Client, database *sql.DB, appPath string) *Manager {
 	return &Manager{
-		client: client,
-		db:     database,
-		active: map[int64]bool{},
+		client:  client,
+		db:      database,
+		appPath: appPath,
+		active:  map[int64]bool{},
 	}
 }
 
@@ -99,7 +101,11 @@ func (m *Manager) Check(ctx context.Context, site *models.Site) (*models.WPUpdat
 	cCtx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 
-	return m.refresh(cCtx, site)
+	status, err := m.refresh(cCtx, site)
+	if err == nil {
+		m.syncBurst(cCtx, site)
+	}
+	return status, err
 }
 
 // ValidScope reports whether scope is a known update scope

@@ -128,7 +128,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	malwareMgr := malware.New(podmanClient, database, appPath, "")
 
 	// create the WordPress update check manager
-	wpUpdateMgr := wpupdate.New(podmanClient, database)
+	wpUpdateMgr := wpupdate.New(podmanClient, database, appPath)
 
 	// register site type modules
 	modules.RegisterType(wordpress.Module{})

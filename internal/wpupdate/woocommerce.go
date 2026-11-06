@@ -6,13 +6,17 @@ package wpupdate
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"podnest/internal/config"
+	"podnest/internal/db"
+	"podnest/internal/fileutil"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/podman"
@@ -100,4 +104,48 @@ func (m *Manager) wpCheck(ctx context.Context, container, user string, args ...s
 		return false, errors.New(msg)
 	}
 	return false, nil
+}
+
+// syncBurst re-renders the site's nginx server block and reloads nginx when
+// the burst it carries no longer matches the detected WooCommerce state
+func (m *Manager) syncBurst(ctx context.Context, site *models.Site) {
+	siteDir, err := fileutil.SiteDir(m.appPath+"/sites", site.Name)
+	if err != nil {
+		return
+	}
+
+	burst := m.Burst(ctx, site, siteDir)
+	current, err := os.ReadFile(filepath.Join(siteDir, "nginx", "conf.d", "site.conf"))
+	if err != nil || strings.Contains(string(current), fmt.Sprintf("zone=general burst=%d nodelay", burst)) {
+		return
+	}
+
+	nginxKV, err := db.GetConfigsBySiteAndType(m.db, site.ID, models.ConfigNginx)
+	if err != nil || len(nginxKV) == 0 {
+		return
+	}
+	nginxBlob, err := json.Marshal(nginxKV)
+	if err != nil {
+		return
+	}
+
+	vEnabled := false
+	if varnishKV, _ := db.GetConfigsBySiteAndType(m.db, site.ID, models.ConfigVarnish); len(varnishKV) > 0 {
+		vb, _ := json.Marshal(varnishKV)
+		vEnabled = config.VarnishEnabled(string(vb))
+	}
+
+	siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, vEnabled, burst)
+	if err != nil {
+		logger.Error("wpupdate: render nginx site for site %s: %v", site.Name, err)
+		return
+	}
+	if err := fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", siteConf, 0644); err != nil {
+		logger.Error("wpupdate: write site.conf for site %s: %v", site.Name, err)
+		return
+	}
+	if err := m.client.KillContainer(ctx, podman.ContainerName(site.Name, "nginx"), "HUP"); err != nil {
+		logger.Warn("wpupdate: nginx reload for site %s failed: %v", site.Name, err)
+	}
+	logger.Info("wpupdate: nginx burst for site %s is now %d", site.Name, burst)
 }

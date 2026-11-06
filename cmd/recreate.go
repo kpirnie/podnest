@@ -84,7 +84,7 @@ func runRecreate(cmd *cobra.Command, args []string) error {
 		PodmanSock:   podmanSock,
 		Podman:       podmanClient,
 		PodmanClient: podmanClient,
-		WPUpdate:     wpupdate.New(podmanClient, database),
+		WPUpdate:     wpupdate.New(podmanClient, database, appPath),
 	}
 
 	// grab every site
