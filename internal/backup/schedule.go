@@ -134,6 +134,17 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 			defer wg.Done()
 			bCtx, cancel := context.WithTimeout(jctx, 2*time.Hour)
 			defer cancel()
+
+			// wait for whatever is running on the site to finish, bounded by the
+			// same timeout and the shutdown context; other sites are unaffected
+			claim, err := m.WaitClaim(bCtx, site.ID, ClaimScheduled)
+			if err != nil {
+				logger.Error("scheduler: backup not started for site %s, waiting for the site was cut short: %v", site.Name, err)
+				_ = db.SetBackupError(m.db, site.ID, err.Error())
+				return
+			}
+			defer claim.Release()
+
 			if _, err := m.Backup(bCtx, site, "scheduled"); err != nil {
 				logger.Error("scheduler: backup failed for site %s: %v", site.Name, err)
 				_ = db.SetBackupError(m.db, site.ID, err.Error())
