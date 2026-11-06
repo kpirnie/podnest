@@ -70,10 +70,20 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "this site type has no database")
 		return
 	}
-	if m.Manager.IsRestoring(site.ID) {
-		apiutil.ErrorMsg(w, http.StatusConflict, "an import or restore is already running for this site")
+
+	// claim before reading the body so concurrent uploads are refused rather
+	// than each streaming up to 512 MB to disk
+	claim, err := m.Manager.BeginImport(site.ID)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
 		return
 	}
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			claim.Release()
+		}
+	}()
 
 	// enforce the 512 MB hard limit before touching the body
 	const maxBytes = 512 << 20
@@ -135,8 +145,10 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 	}
 	out.Close()
 
-	// kick off the import asynchronously
+	// kick off the import asynchronously; the job now owns the claim
+	handedOff = true
 	m.Manager.Go(func(ctx context.Context) {
+		defer claim.Release()
 		if err := m.Manager.ImportSQL(ctx, site, destPath, wipe); err != nil {
 			logger.Error("apiImportUpload: ImportSQL site %d: %v", site.ID, err)
 			return
