@@ -566,6 +566,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		Site:       site,
 		SiteUID:    sftpUID,
 		SiteDir:    hostSiteDir,
+		LocalDir:   siteDir,
 		Configs:    configs,
 		DBUser:     dbUser,
 		DBPass:     dbPass,
@@ -1107,10 +1108,10 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	if rm.HasPod() {
 		nginxBlob, _ := json.Marshal(allConfigs[models.ConfigNginx])
 		if main, err := config.RenderNginxMain(string(nginxBlob), site.SiteType); err == nil {
-			_ = fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644)
+			_ = fileutil.WriteFile(siteDir, "nginx/nginx.conf", main, 0644)
 		}
 		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON)); err == nil {
-			_ = fileutil.WriteFile(siteDir, "/nginx/conf.d/site.conf", siteConf, 0644)
+			_ = fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", siteConf, 0644)
 		}
 	}
 
@@ -1119,15 +1120,14 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		Site:       site,
 		SiteUID:    sftp.UIDForSite(site.ID),
 		SiteDir:    hostSiteDir,
+		LocalDir:   siteDir,
 		Configs:    allConfigs,
 		DBUser:     dbUser,
 		DBPass:     dbPass,
 		DBRootPass: dbRootPass,
 		RedisPass:  redisPass,
 	}); err != nil {
-		logger.Error("recreating pod for site %s: %v", site.Name, err)
-		_ = h.Podman.StopPod(bgCtx, podman.PodName(site.Name))
-		_ = h.Podman.RemoveSitePod(bgCtx, site.Name)
+		logger.Error("recreating pod for site %s — pod left in place for inspection: %v", site.Name, err)
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
 		return "", err
 	}
@@ -1789,6 +1789,7 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 			Site:       clone,
 			SiteUID:    sftpUID,
 			SiteDir:    hostCloneSiteDir,
+			LocalDir:   cloneSiteDir,
 			Configs:    srcConfigs,
 			DBUser:     dbUser,
 			DBPass:     dbPass,

@@ -36,7 +36,7 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 	}
 
 	// the SSO mu-plugin bind needs a site-owned mu-plugins dir to mount into
-	if err := EnsureMUPluginsDir(cfg.SiteDir, cfg.SiteUID); err != nil {
+	if err := EnsureMUPluginsDir(cfg.LocalDir, cfg.SiteUID); err != nil {
 		return err
 	}
 
