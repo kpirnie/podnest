@@ -147,6 +147,7 @@ type PodConfig struct {
 	Site       *models.Site
 	Configs    map[int]map[string]string
 	SiteDir    string
+	LocalDir   string
 	SiteUID    int
 	DBUser     string
 	DBPass     string
