@@ -131,7 +131,13 @@ func (m Module) apiRestoreBackup(w http.ResponseWriter, r *http.Request, site *m
 		apiutil.ErrorMsg(w, http.StatusForbidden, "backup does not belong to this site")
 		return
 	}
+	claim, err := m.Manager.BeginRestore(site.ID)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
 	m.Manager.Go(func(ctx context.Context) {
+		defer claim.Release()
 		if err := m.Manager.Restore(ctx, site, backup); err != nil {
 			logger.Error("apiRestoreBackup: site %d backup %d: %v", site.ID, bid, err)
 			return
