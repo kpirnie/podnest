@@ -102,7 +102,7 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 		return fmt.Errorf("write nginx.conf: %w", err)
 	}
 
-	nginxSite, err := config.RenderNginxSite(marshalCfg(cfg.Configs[models.ConfigNginx]), models.SiteTypeWordPress, vEnabled)
+	nginxSite, err := config.RenderNginxSite(marshalCfg(cfg.Configs[models.ConfigNginx]), models.SiteTypeWordPress, vEnabled, config.NginxBurstDefault)
 	if err != nil {
 		return fmt.Errorf("render nginx site: %w", err)
 	}

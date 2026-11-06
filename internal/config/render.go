@@ -165,9 +165,14 @@ http {
 	), nil
 }
 
+const (
+	NginxBurstDefault     = 100
+	NginxBurstWooCommerce = 500
+)
+
 // RenderNginxSite renders the per-site server block (conf.d/site.conf).
 // When varnishEnabled is true, nginx listens on VarnishNginxPort instead of 80.
-func RenderNginxSite(configJSON string, siteType int, varnishEnabled bool) (string, error) {
+func RenderNginxSite(configJSON string, siteType int, varnishEnabled bool, burst int) (string, error) {
 	listenPort := 80
 	if varnishEnabled {
 		listenPort = models.VarnishNginxPort
@@ -187,7 +192,7 @@ func RenderNginxSite(configJSON string, siteType int, varnishEnabled bool) (stri
 		return renderNginxStatic(configJSON, listenPort)
 	default:
 		logger.Debug("rendering nginx.conf for PHP site")
-		return renderNginxPHP(configJSON, listenPort)
+		return renderNginxPHP(configJSON, listenPort, burst)
 	}
 }
 
@@ -595,7 +600,7 @@ sub vcl_deliver {
 // -- internal ----------------------------------------------------------------
 
 // renderNginxPHP renders the server block for WordPress and PHP sites
-func renderNginxPHP(configJSON string, listenPort int) (string, error) {
+func renderNginxPHP(configJSON string, listenPort int, burst int) (string, error) {
 
 	// The PHP server block is rendered with the PHP-specific directives, including the FastCGI cache settings
 	cfg, err := unmarshal(configJSON)
@@ -649,7 +654,7 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 	}
 
     limit_conn addr %s;
-    limit_req  zone=general burst=100 nodelay;
+    limit_req  zone=general burst=%d nodelay;
     %s
 
     location / {
@@ -710,6 +715,7 @@ func renderNginxPHP(configJSON string, listenPort int) (string, error) {
 `,
 		listenPort,
 		v("limit_conn_addr"),
+		burst,
 		fcgiSkip,
 		fcgiCache,
 	), nil

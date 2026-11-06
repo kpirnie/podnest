@@ -321,7 +321,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		if err := fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644); err != nil {
 			return err
 		}
-		site_, err := config.RenderNginxSite(blob, site.SiteType, vEnabled)
+		site_, err := config.RenderNginxSite(blob, site.SiteType, vEnabled, config.NginxBurstDefault)
 		if err != nil {
 			logger.Error("failed to render nginx site config for site %d: %v", site.ID, err)
 			return err
@@ -418,7 +418,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		if err := fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644); err != nil {
 			return err
 		}
-		site_, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, vEnabled)
+		site_, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, vEnabled, config.NginxBurstDefault)
 		if err != nil {
 			logger.Error("failed to render nginx site block during varnish rewrite for site %d: %v", site.ID, err)
 			return err

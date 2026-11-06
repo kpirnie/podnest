@@ -1110,7 +1110,7 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		if main, err := config.RenderNginxMain(string(nginxBlob), site.SiteType); err == nil {
 			_ = fileutil.WriteFile(siteDir, "nginx/nginx.conf", main, 0644)
 		}
-		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON)); err == nil {
+		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON), config.NginxBurstDefault); err == nil {
 			_ = fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", siteConf, 0644)
 		}
 	}
