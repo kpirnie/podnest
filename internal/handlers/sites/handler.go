@@ -1228,6 +1228,16 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// hold the site for the whole rename so no backup, restore, import, push or
+	// delete can run against it while it moves; keyed by ID, so it survives the
+	// name change
+	claim, err := h.Backup.TryClaim(site.ID, backup.ClaimRename)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+	defer claim.Release()
+
 	// the rename runs to completion regardless of the client connection
 	bgCtx := context.Background()
 	ctx, cancel := context.WithTimeout(bgCtx, 30*time.Minute)
