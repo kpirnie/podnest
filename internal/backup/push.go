@@ -292,9 +292,6 @@ func (m *Manager) dumpDB(ctx context.Context, site *models.Site, siteDir string,
 // pushHTML mirrors the source web root onto the target. The target's own
 // config files and every excluded path are left exactly as they were;
 // everything else on the target is replaced by the source's copy.
-// pushHTML mirrors the source web root onto the target. The target's own
-// config files and every excluded path are left exactly as they were;
-// everything else on the target is replaced by the source's copy.
 func pushHTML(srcHTML, dstHTML string, exclude []string) error {
 	if err := wipeExcept(dstHTML, "", exclude); err != nil {
 		return err
