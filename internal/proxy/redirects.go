@@ -48,12 +48,6 @@ func (p *Proxy) warmRedirectCache() error {
 		return err
 	}
 
-	// clear existing entries
-	p.redirectCache.Range(func(k, _ any) bool {
-		p.redirectCache.Delete(k)
-		return true
-	})
-
 	// group by site and store
 	grouped := make(map[int64][]db.Redirect)
 	for _, rd := range redirects {
@@ -62,6 +56,15 @@ func (p *Proxy) warmRedirectCache() error {
 	for siteID, rules := range grouped {
 		p.redirectCache.Store(siteID, compileRedirects(rules))
 	}
+
+	// prune only the sites that no longer have redirects, so the cache is never
+	// emptied while the refresh runs
+	p.redirectCache.Range(func(k, _ any) bool {
+		if id, ok := k.(int64); !ok || grouped[id] == nil {
+			p.redirectCache.Delete(k)
+		}
+		return true
+	})
 
 	logger.Debug("proxy: redirect cache warmed — %d total rules across %d sites", len(redirects), len(grouped))
 	return nil
