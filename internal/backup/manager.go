@@ -150,6 +150,96 @@ func (m *Manager) BeginRestore(siteID int64) error {
 	return nil
 }
 
+// ClaimKind identifies the kind of operation holding a site.
+type ClaimKind int
+
+const (
+	ClaimBackup ClaimKind = iota + 1
+	ClaimScheduled
+	ClaimRestore
+	ClaimSnapshotDelete
+	ClaimImport
+	ClaimPushSource
+	ClaimPushTarget
+	ClaimRename
+	ClaimDelete
+)
+
+// SiteClaim is one operation's hold on a site. Release frees the site only
+// while this claim still owns it, so an operation can never release another's.
+type SiteClaim struct {
+	m      *Manager
+	siteID int64
+	kind   ClaimKind
+	done   chan struct{}
+}
+
+// Release frees the site and wakes anything waiting on it. It is safe to call
+// more than once.
+func (c *SiteClaim) Release() {
+	if c.m.claims.CompareAndDelete(c.siteID, c) {
+		close(c.done)
+	}
+}
+
+// TryClaim claims the site for kind without waiting, failing with ErrSiteBusy
+// while another operation holds it. The claim is the check, so there is no
+// window between testing the site and taking it.
+func (m *Manager) TryClaim(siteID int64, kind ClaimKind) (*SiteClaim, error) {
+	c := &SiteClaim{m: m, siteID: siteID, kind: kind, done: make(chan struct{})}
+	if _, loaded := m.claims.LoadOrStore(siteID, c); loaded {
+		return nil, ErrSiteBusy
+	}
+	return c, nil
+}
+
+// WaitClaim claims the site for kind, blocking until the current holder
+// releases it or ctx is done.
+func (m *Manager) WaitClaim(ctx context.Context, siteID int64, kind ClaimKind) (*SiteClaim, error) {
+	for {
+		c, err := m.TryClaim(siteID, kind)
+		if err == nil {
+			return c, nil
+		}
+
+		// wait on the holder's release signal rather than polling
+		v, ok := m.claims.Load(siteID)
+		if !ok {
+			continue
+		}
+		select {
+		case <-v.(*SiteClaim).done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
+// claimKindOf returns the kind of operation holding the site, if any.
+func (m *Manager) claimKindOf(siteID int64) (ClaimKind, bool) {
+	v, ok := m.claims.Load(siteID)
+	if !ok {
+		return 0, false
+	}
+	return v.(*SiteClaim).kind, true
+}
+
+// restoreClaimed reports whether the site is held by a restore, import or
+// push — the operations the restore and import status polls represent.
+func (m *Manager) restoreClaimed(siteID int64) bool {
+	switch kind, _ := m.claimKindOf(siteID); kind {
+	case ClaimRestore, ClaimImport, ClaimPushSource, ClaimPushTarget:
+		return true
+	}
+	return false
+}
+
+// backupClaimed reports whether the site is held by a manual backup.
+func (m *Manager) backupClaimed(siteID int64) bool {
+	kind, _ := m.claimKindOf(siteID)
+	return kind == ClaimBackup
+}
+
 // localRepoPath returns the local restic repo directory for a site
 func (m *Manager) localRepoPath(siteName string) string {
 	return filepath.Join(m.appPath, "sites", siteName, "backups", "local")
