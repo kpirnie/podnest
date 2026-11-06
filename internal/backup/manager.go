@@ -46,6 +46,7 @@ type Manager struct {
 	appPath     string
 	schedulerCh chan string // send cron expression to reschedule; "" disables
 	restoring   sync.Map    // map[int64]bool
+	claims      sync.Map    // map[int64]*SiteClaim — the one operation holding each site
 	importErrs  sync.Map    // map[int64]string — last import failure per site
 	backupJobs  sync.Map    // map[int64]backupJob
 	pushJobs    sync.Map    // map[int64]backupJob — last push per source site
