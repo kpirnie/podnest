@@ -161,6 +161,13 @@ async function deleteSite(id) {
 
     hideProgressModal();
 
+    // a site busy with another job is refused up front — show why instead of polling
+    if (resp?.status === 409) {
+        const j = await resp.json().catch(() => null);
+        toast.error(j?.error || "Site is busy — try again when its current job finishes");
+        return;
+    }
+
     // browser-download final backup if S3 is not configured
     if (resp?.ok && resp.headers.get("Content-Type")?.includes("gzip")) {
         const cd = resp.headers.get("Content-Disposition") ?? "";
