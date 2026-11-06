@@ -694,6 +694,17 @@ func (h *Handler) apiDeleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// hold the site until it is gone so no backup, restore, import, push or
+	// rename can run against it mid-delete
+	if h.Backup != nil {
+		claim, err := h.Backup.TryClaim(site.ID, backup.ClaimDelete)
+		if err != nil {
+			apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+			return
+		}
+		defer claim.Release()
+	}
+
 	// create the final backup while the pod is still running
 	var archiveFile *os.File
 	var backupDest string
