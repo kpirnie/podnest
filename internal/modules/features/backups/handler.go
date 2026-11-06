@@ -183,10 +183,12 @@ func (m Module) apiDeleteBackup(w http.ResponseWriter, r *http.Request, site *mo
 	}
 
 	// claim the site up front so a clash is refused here rather than in the job
-	if err := m.Manager.BeginRestore(site.ID); err != nil {
+	claim, err := m.Manager.BeginRestore(site.ID)
+	if err != nil {
 		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
 		return
 	}
+	defer claim.Release()
 
 	if err := m.Manager.DeleteSnapshot(r.Context(), site, backup); err != nil {
 		logger.Error("apiDeleteBackup: delete snapshots for backup %d: %v", bid, err)
