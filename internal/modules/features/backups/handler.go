@@ -92,10 +92,14 @@ func (m Module) apiCreateBackup(w http.ResponseWriter, r *http.Request, site *mo
 	if req.Label == "" {
 		req.Label = "manual"
 	}
-	m.Manager.BeginBackupJob(site.ID)
+	claim, err := m.Manager.BeginBackupJob(site.ID)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
 	m.Manager.Go(func(ctx context.Context) {
 		id, err := m.Manager.Backup(ctx, site, req.Label)
-		m.Manager.EndBackupJob(site.ID, err)
+		m.Manager.EndBackupJob(claim, err)
 		if err != nil {
 			logger.Error("apiCreateBackup: site %d: %v", site.ID, err)
 			return
