@@ -72,47 +72,49 @@ func CleanPushExcludes(raw []string) ([]string, error) {
 	return out, nil
 }
 
-// BeginPush claims both sites for a push. The target is marked restoring so it
-// reports busy to the restore-status poll until EndPush.
-func (m *Manager) BeginPush(srcID, dstID int64) error {
-	if m.IsRestoring(srcID) {
-		return ErrPushBusy
-	}
-	if active, _ := m.BackupJobStatus(dstID); active {
-		return ErrPushBusy
-	}
-	if v, ok := m.pushJobs.Load(srcID); ok && v.(backupJob).active {
-		return ErrPushBusy
-	}
-
-	// LoadOrStore makes the claim on the target atomic against a second push
-	if _, loaded := m.restoring.LoadOrStore(dstID, true); loaded {
-		return ErrPushBusy
-	}
-	m.pushJobs.Store(srcID, backupJob{active: true})
-	return nil
+// PushClaim is a push's hold on its source and target sites.
+type PushClaim struct {
+	src *SiteClaim
+	dst *SiteClaim
 }
 
-// EndPush releases the target and records the outcome of the push against the
-// source site.
-func (m *Manager) EndPush(srcID, dstID int64, err error) {
-	m.restoring.Delete(dstID)
-	j := backupJob{}
+// BeginPush claims both sites for a push, failing with ErrPushBusy while
+// either is held. The push reads the source and overwrites the target, so
+// neither may be touched by another operation until EndPush.
+func (m *Manager) BeginPush(srcID, dstID int64) (*PushClaim, error) {
+	src, err := m.TryClaim(srcID, ClaimPushSource)
 	if err != nil {
-		j.err = err.Error()
+		return nil, ErrPushBusy
 	}
-	m.pushJobs.Store(srcID, j)
+	dst, err := m.TryClaim(dstID, ClaimPushTarget)
+	if err != nil {
+		src.Release()
+		return nil, ErrPushBusy
+	}
+	m.pushJobs.Delete(srcID)
+	return &PushClaim{src: src, dst: dst}, nil
+}
+
+// EndPush records the outcome of the push against the source site and releases
+// both claims. The outcome is stored first so the status poll never sees the
+// site idle without the error.
+func (m *Manager) EndPush(pc *PushClaim, err error) {
+	if err != nil {
+		m.pushJobs.Store(pc.src.siteID, err.Error())
+	}
+	pc.dst.Release()
+	pc.src.Release()
 }
 
 // PushJobStatus reports whether a push from the source site is running and the
 // error from the last one, if it failed.
 func (m *Manager) PushJobStatus(srcID int64) (active bool, errMsg string) {
-	v, ok := m.pushJobs.Load(srcID)
-	if !ok {
-		return false, ""
+	kind, _ := m.claimKindOf(srcID)
+	active = kind == ClaimPushSource
+	if v, ok := m.pushJobs.Load(srcID); ok {
+		errMsg = v.(string)
 	}
-	j := v.(backupJob)
-	return j.active, j.err
+	return active, errMsg
 }
 
 // Push overwrites the target site with the source site's files and/or

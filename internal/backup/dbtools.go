@@ -128,12 +128,8 @@ func (m *Manager) ListImportSQLFiles(siteName string) ([]string, error) {
 // deleted when it lives in the site's own import directory.
 func (m *Manager) ImportSQL(ctx context.Context, site *models.Site, dumpPath string, wipe bool) (err error) {
 
-	// share the restore guard and status poll with archive imports
-	m.restoring.Store(site.ID, true)
-	defer m.restoring.Delete(site.ID)
-
-	// record the outcome for the status poll; deferred after the restoring
-	// flag so the error is stored before the site reports idle
+	// record the outcome for the status poll; the caller releases its claim
+	// after this returns, so the error is stored before the site reports idle
 	m.importErrs.Delete(site.ID)
 	defer func() {
 		if err != nil {

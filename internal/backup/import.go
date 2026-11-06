@@ -42,11 +42,8 @@ var wpPrefixRe = regexp.MustCompile(`(?m)^\s*\$table_prefix\s*=\s*['"]([A-Za-z0-
 // maintenance mode for the duration of the restore.
 func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, archivePath string) (err error) {
 
-	// the caller claimed the site through BeginRestore; release it on exit
-	defer m.restoring.Delete(targetSite.ID)
-
-	// record the outcome for the status poll; deferred after the restoring
-	// flag so the error is stored before the site reports idle
+	// record the outcome for the status poll; the caller releases its claim
+	// after this returns, so the error is stored before the site reports idle
 	m.importErrs.Delete(targetSite.ID)
 	defer func() {
 		if err != nil {

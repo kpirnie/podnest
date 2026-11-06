@@ -45,20 +45,13 @@ type Manager struct {
 	podmanSock  string // socket path for podman CLI exec piping
 	appPath     string
 	schedulerCh chan string // send cron expression to reschedule; "" disables
-	restoring   sync.Map    // map[int64]bool
 	claims      sync.Map    // map[int64]*SiteClaim — the one operation holding each site
 	importErrs  sync.Map    // map[int64]string — last import failure per site
-	backupJobs  sync.Map    // map[int64]backupJob
-	pushJobs    sync.Map    // map[int64]backupJob — last push per source site
+	backupJobs  sync.Map    // map[int64]string — last manual backup failure per site
+	pushJobs    sync.Map    // map[int64]string — last push failure per source site
 	jobs        sync.WaitGroup
 	jobCtx      context.Context
 	jobCancel   context.CancelFunc
-}
-
-// backupJob is the state of the most recent manual backup for a site.
-type backupJob struct {
-	active bool
-	err    string
 }
 
 // New returns a backup Manager
@@ -108,46 +101,49 @@ func (m *Manager) WaitJobs(d time.Duration) bool {
 	}
 }
 
-// BeginBackupJob marks a manual backup as running for the site.
-func (m *Manager) BeginBackupJob(siteID int64) {
-	m.backupJobs.Store(siteID, backupJob{active: true})
+// BeginBackupJob claims the site for a manual backup, failing with ErrSiteBusy
+// while another operation holds it.
+func (m *Manager) BeginBackupJob(siteID int64) (*SiteClaim, error) {
+	c, err := m.TryClaim(siteID, ClaimBackup)
+	if err != nil {
+		return nil, err
+	}
+	m.backupJobs.Delete(siteID)
+	return c, nil
 }
 
-// EndBackupJob records the outcome of the site's manual backup.
-func (m *Manager) EndBackupJob(siteID int64, err error) {
-	j := backupJob{}
+// EndBackupJob records the outcome of the manual backup and releases its
+// claim. The outcome is stored first so the status poll never sees the site
+// idle without the error.
+func (m *Manager) EndBackupJob(c *SiteClaim, err error) {
 	if err != nil {
-		j.err = err.Error()
+		m.backupJobs.Store(c.siteID, err.Error())
 	}
-	m.backupJobs.Store(siteID, j)
+	c.Release()
 }
 
 // BackupJobStatus reports whether a manual backup is running for the site and
 // the error from the last one, if it failed.
 func (m *Manager) BackupJobStatus(siteID int64) (active bool, errMsg string) {
-	v, ok := m.backupJobs.Load(siteID)
-	if !ok {
-		return false, ""
+	active = m.backupClaimed(siteID)
+	if v, ok := m.backupJobs.Load(siteID); ok {
+		errMsg = v.(string)
 	}
-	j := v.(backupJob)
-	return j.active, j.err
+	return active, errMsg
 }
 
-// BeginRestore claims the site for a restore or import, failing while another
-// job holds it. Restore and ImportRestore release the claim when they return.
-func (m *Manager) BeginRestore(siteID int64) error {
-	if active, _ := m.BackupJobStatus(siteID); active {
-		return ErrSiteBusy
-	}
-	if active, _ := m.PushJobStatus(siteID); active {
-		return ErrSiteBusy
-	}
+// BeginRestore claims the site for a restore, failing with ErrSiteBusy while
+// another operation holds it. The caller releases the claim when the restore
+// ends.
+func (m *Manager) BeginRestore(siteID int64) (*SiteClaim, error) {
+	return m.TryClaim(siteID, ClaimRestore)
+}
 
-	// LoadOrStore makes the claim atomic against a concurrent restore, import or push
-	if _, loaded := m.restoring.LoadOrStore(siteID, true); loaded {
-		return ErrSiteBusy
-	}
-	return nil
+// BeginImport claims the site for an archive or SQL import, failing with
+// ErrSiteBusy while another operation holds it. The caller releases the claim
+// when the import ends.
+func (m *Manager) BeginImport(siteID int64) (*SiteClaim, error) {
+	return m.TryClaim(siteID, ClaimImport)
 }
 
 // ClaimKind identifies the kind of operation holding a site.

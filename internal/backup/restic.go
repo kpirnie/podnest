@@ -360,9 +360,6 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 // record. Nginx serves the maintenance page for the duration.
 func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models.Backup) error {
 
-	// the caller claimed the site through BeginRestore; release it on exit
-	defer m.restoring.Delete(site.ID)
-
 	// look up the repo for this site; we need the password and repo type to know
 	repo, err := db.GetBackupRepo(m.db, site.ID)
 	if err != nil || repo == nil {
@@ -426,10 +423,9 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 	return nil
 }
 
-// IsRestoring returns true if a restore operation is currently in progress for the given site ID
+// IsRestoring returns true if a restore, import or push is currently in progress for the given site ID
 func (m *Manager) IsRestoring(siteID int64) bool {
-	_, ok := m.restoring.Load(siteID)
-	return ok
+	return m.restoreClaimed(siteID)
 }
 
 // ImportError returns the error from the last failed import onto the given
