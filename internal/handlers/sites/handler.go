@@ -566,6 +566,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 		Site:       site,
 		SiteUID:    sftpUID,
 		SiteDir:    hostSiteDir,
+		LocalDir:   siteDir,
 		Configs:    configs,
 		DBUser:     dbUser,
 		DBPass:     dbPass,
@@ -1096,10 +1097,10 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	if rm.HasPod() {
 		nginxBlob, _ := json.Marshal(allConfigs[models.ConfigNginx])
 		if main, err := config.RenderNginxMain(string(nginxBlob), site.SiteType); err == nil {
-			_ = fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644)
+			_ = fileutil.WriteFile(siteDir, "nginx/nginx.conf", main, 0644)
 		}
 		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON)); err == nil {
-			_ = fileutil.WriteFile(siteDir, "/nginx/conf.d/site.conf", siteConf, 0644)
+			_ = fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", siteConf, 0644)
 		}
 	}
 
@@ -1108,15 +1109,14 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		Site:       site,
 		SiteUID:    sftp.UIDForSite(site.ID),
 		SiteDir:    hostSiteDir,
+		LocalDir:   siteDir,
 		Configs:    allConfigs,
 		DBUser:     dbUser,
 		DBPass:     dbPass,
 		DBRootPass: dbRootPass,
 		RedisPass:  redisPass,
 	}); err != nil {
-		logger.Error("recreating pod for site %s: %v", site.Name, err)
-		_ = h.Podman.StopPod(bgCtx, podman.PodName(site.Name))
-		_ = h.Podman.RemoveSitePod(bgCtx, site.Name)
+		logger.Error("recreating pod for site %s — pod left in place for inspection: %v", site.Name, err)
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
 		return "", err
 	}
@@ -1768,6 +1768,7 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 			Site:       clone,
 			SiteUID:    sftpUID,
 			SiteDir:    hostCloneSiteDir,
+			LocalDir:   cloneSiteDir,
 			Configs:    srcConfigs,
 			DBUser:     dbUser,
 			DBPass:     dbPass,
@@ -1889,7 +1890,8 @@ func (h *Handler) apiSitePush(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// claim both sites, refusing while either has another job running
-	if err := h.Backup.BeginPush(src.ID, dst.ID); err != nil {
+	claim, err := h.Backup.BeginPush(src.ID, dst.ID)
+	if err != nil {
 		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
 		return
 	}
@@ -1898,7 +1900,7 @@ func (h *Handler) apiSitePush(w http.ResponseWriter, r *http.Request) {
 	opts := backup.PushOptions{Files: req.Files, Database: req.Database, Exclude: exclude}
 	h.Backup.Go(func(jobCtx context.Context) {
 		err := h.Backup.Push(jobCtx, src, dst, opts)
-		h.Backup.EndPush(src.ID, dst.ID, err)
+		h.Backup.EndPush(claim, err)
 		if err != nil {
 			logger.Error("apiSitePush: push '%s' → '%s': %v", src.Name, dst.Name, err)
 			return
