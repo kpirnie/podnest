@@ -803,18 +803,21 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 			// X-Forwarded-For and X-Real-Ip are attacker-controlled, so SetXForwarded
 			// starts a fresh chain
 			trusted := p.peerTrusted(req.In)
+			var trustedProto string
 			if trusted {
 				if xff, ok := req.In.Header["X-Forwarded-For"]; ok {
 					req.Out.Header["X-Forwarded-For"] = xff
 				}
+				trustedProto = req.In.Header.Get("X-Forwarded-Proto")
 			} else {
 				req.Out.Header.Del("X-Real-Ip")
 			}
 			req.SetXForwarded()
 
-			// otherwise derive it from the TLS state of this connection
-			if proto := req.Out.Header.Get("X-Forwarded-Proto"); trusted && proto != "" {
-				req.Out.Header.Set("X-Forwarded-Proto", proto)
+			// a trusted peer's X-Forwarded-Proto is honoured, otherwise derive it
+			// from the TLS state of this connection
+			if trustedProto != "" {
+				req.Out.Header.Set("X-Forwarded-Proto", trustedProto)
 			} else if req.In.TLS != nil {
 				req.Out.Header.Set("X-Forwarded-Proto", "https")
 			} else {
