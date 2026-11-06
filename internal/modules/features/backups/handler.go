@@ -390,7 +390,8 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 	out.Close()
 
 	// claim the target up front so a clash is refused here rather than in the job
-	if err := m.Manager.BeginRestore(targetSite.ID); err != nil {
+	claim, err := m.Manager.BeginImport(targetSite.ID)
+	if err != nil {
 		os.Remove(destPath)
 		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
 		return
@@ -398,6 +399,7 @@ func (m Module) apiImportUpload(w http.ResponseWriter, r *http.Request, site *mo
 
 	// kick off the restore asynchronously
 	m.Manager.Go(func(ctx context.Context) {
+		defer claim.Release()
 		if err := m.Manager.ImportRestore(ctx, targetSite, destPath); err != nil {
 			logger.Error("apiImportUpload: ImportRestore site %d: %v", targetSite.ID, err)
 			return
@@ -461,12 +463,14 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 	}
 
 	// claim the target up front so a clash is refused here rather than in the job
-	if err := m.Manager.BeginRestore(targetSite.ID); err != nil {
+	claim, err := m.Manager.BeginImport(targetSite.ID)
+	if err != nil {
 		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
 		return
 	}
 
 	m.Manager.Go(func(ctx context.Context) {
+		defer claim.Release()
 		if err := m.Manager.ImportRestore(ctx, targetSite, archivePath); err != nil {
 			logger.Error("apiImportSFTP: ImportRestore site %d: %v", targetSite.ID, err)
 			return
