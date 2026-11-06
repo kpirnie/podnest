@@ -28,7 +28,8 @@ type basicAuthEntry struct {
 }
 
 // WarmBasicAuthCache loads all enabled basic auth configs and credentials
-// from the database and atomically replaces the in-memory cache.
+// from the database and refreshes the in-memory cache in place: fresh entries
+// are stored first, then stale ones are removed.
 // Called on startup and after any basic auth change.
 func (p *Proxy) warmBasicAuthCache() {
 	cfgs, users, err := db.GetAllBasicAuthData(p.database)
@@ -36,12 +37,6 @@ func (p *Proxy) warmBasicAuthCache() {
 		logger.Error("proxy: WarmBasicAuthCache: %v", err)
 		return
 	}
-
-	// clear existing entries before repopulating
-	p.basicAuthCache.Range(func(k, _ any) bool {
-		p.basicAuthCache.Delete(k)
-		return true
-	})
 
 	for siteID, cfg := range cfgs {
 		entry := &basicAuthEntry{
@@ -53,6 +48,15 @@ func (p *Proxy) warmBasicAuthCache() {
 		}
 		p.basicAuthCache.Store(siteID, entry)
 	}
+
+	// prune only the sites that no longer have basic auth; the cache is never
+	// emptied, so a protected site is not exposed while the refresh runs
+	p.basicAuthCache.Range(func(k, _ any) bool {
+		if id, ok := k.(int64); !ok || cfgs[id] == nil {
+			p.basicAuthCache.Delete(k)
+		}
+		return true
+	})
 	logger.Debug("proxy: basic auth cache warmed — %d sites", len(cfgs))
 }
 
