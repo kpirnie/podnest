@@ -115,8 +115,9 @@ func (p *Proxy) warmCache() error {
 	siteIDs := make(map[string]int64)
 	for _, r := range routes {
 		poolMap[r.Domain] = append(poolMap[r.Domain], upstreamEntry{
-			upstream: r.Upstream,
-			passHost: r.PassHost,
+			upstream:   r.Upstream,
+			passHost:   r.PassHost,
+			skipVerify: r.SkipVerify,
 		})
 		siteIDs[r.Domain] = r.SiteID
 	}

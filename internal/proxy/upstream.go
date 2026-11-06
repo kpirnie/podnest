@@ -19,11 +19,12 @@ import (
 	"podnest/internal/logger"
 )
 
-// UpstreamTarget pairs a parsed URL with its PassHost flag.
+// UpstreamTarget pairs a parsed URL with its PassHost and SkipVerify flags.
 type UpstreamTarget struct {
-	URL      *url.URL
-	PassHost bool
-	literal  netip.AddrPort // set when the upstream host is an IP literal; zero for hostnames
+	URL        *url.URL
+	PassHost   bool
+	SkipVerify bool
+	literal    netip.AddrPort // set when the upstream host is an IP literal; zero for hostnames
 }
 
 // UpstreamPool holds a slice of upstream targets and an atomic round-robin counter.
@@ -34,8 +35,9 @@ type UpstreamPool struct {
 
 // upstreamEntry is used internally when building a pool from DB routes.
 type upstreamEntry struct {
-	upstream string
-	passHost bool
+	upstream   string
+	passHost   bool
+	skipVerify bool
 }
 
 // the cached ReverseProxy's ModifyResponse can signal without closing over
@@ -66,7 +68,7 @@ func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
 			logger.Error("upstream: skipping upstream '%s': missing host", r.upstream)
 			continue
 		}
-		target := UpstreamTarget{URL: parsed, PassHost: r.passHost}
+		target := UpstreamTarget{URL: parsed, PassHost: r.passHost, SkipVerify: r.skipVerify}
 		if ap, err := netip.ParseAddrPort(upstreamTLSKey(parsed)); err == nil {
 			target.literal = ap
 		}
