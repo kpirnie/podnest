@@ -131,13 +131,16 @@ function renderRoutesTab() {
 }
 
 // renderRouteRow returns a single editable domain→upstream row
-function renderRouteRow(domain = "", upstream = "", passHost = false) {
+function renderRouteRow(domain = "", upstream = "", passHost = false, skipVerify = false) {
     return `
         <div class="rp-route-row uk-flex uk-flex-middle uk-margin-small-bottom" style="gap:8px">
             <span>Host:</span><input class="uk-input kp-input" style="flex:1" placeholder="example.com" value="${domain}" data-field="domain">
             <span>Upstream:</span><input class="uk-input kp-input" style="flex:2" placeholder="https://10.0.0.1:8080" value="${upstream}" data-field="upstream">
             <label style="white-space:nowrap;font-size:0.75rem;color:var(--kp-text-dim)" title="Send incoming domain as Host header instead of upstream hostname">
                 <input type="checkbox" class="uk-checkbox" data-field="pass_host" ${passHost ? "checked" : ""}> Pass Host
+            </label>
+            <label style="white-space:nowrap;font-size:0.75rem;color:var(--kp-text-dim)" title="Do not verify the upstream's TLS certificate. Insecure — only for self-signed or private-CA https upstreams you control">
+                <input type="checkbox" class="uk-checkbox" data-field="skip_verify" ${skipVerify ? "checked" : ""}> Skip TLS Verify
             </label>
             <button class="uk-button kp-btn-ghost kp-btn-sm rp-remove-row" uk-tooltip="Remove"><span uk-icon="trash"></span></button>
         </div>`;
@@ -150,7 +153,7 @@ async function loadRoutesTab(id) {
     try {
         const routes = await api.get(`/sites/${id}/rp-routes`);
         list.innerHTML = routes.length
-            ? routes.map(r => renderRouteRow(r.Domain, r.Upstream, r.PassHost)).join("")
+            ? routes.map(r => renderRouteRow(r.Domain, r.Upstream, r.PassHost, r.SkipVerify)).join("")
             : renderRouteRow();
     } catch (e) {
         toast.error("Failed to load routes: " + e.message);
@@ -180,6 +183,7 @@ function wireRoutesTab(root, id) {
             Domain: row.querySelector('[data-field="domain"]').value.trim(),
             Upstream: row.querySelector('[data-field="upstream"]').value.trim(),
             PassHost: row.querySelector('[data-field="pass_host"]').checked,
+            SkipVerify: row.querySelector('[data-field="skip_verify"]').checked,
         })).filter(r => r.Domain && r.Upstream);
 
         try {
