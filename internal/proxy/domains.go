@@ -73,11 +73,10 @@ func (p *Proxy) ForgetSite(siteID int64, port int) {
 	p.invalidateUpstreamGuard()
 }
 
-// pruneUpstreamCaches drops cached reverse proxies and TLS verdicts for
+// pruneUpstreamCaches drops cached reverse proxies for
 // upstreams no longer referenced by any pool in the domain cache.
 func (p *Proxy) pruneUpstreamCaches() {
 	live := make(map[string]struct{})
-	liveTLS := make(map[string]struct{})
 	if ptr := p.cache.Load(); ptr != nil {
 		for _, e := range *ptr {
 			if e.pool == nil {
@@ -85,7 +84,6 @@ func (p *Proxy) pruneUpstreamCaches() {
 			}
 			for _, t := range e.pool.Targets() {
 				live[t.String()] = struct{}{}
-				liveTLS[upstreamTLSKey(t)] = struct{}{}
 			}
 		}
 	}
@@ -95,14 +93,6 @@ func (p *Proxy) pruneUpstreamCaches() {
 		target, _, _ := strings.Cut(key, "|ph=")
 		if _, ok := live[target]; !ok {
 			p.rpProxyCache.Delete(k)
-		}
-		return true
-	})
-
-	p.rpTLSVerified.Range(func(k, _ any) bool {
-		key, _ := k.(string)
-		if _, ok := liveTLS[key]; !ok {
-			p.rpTLSVerified.Delete(k)
 		}
 		return true
 	})

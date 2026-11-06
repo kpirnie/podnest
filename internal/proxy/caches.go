@@ -77,7 +77,6 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	p.warmBasicAuthCache()
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
-	p.warmUpstreamTLS()
 
 	// default return
 	return nil
@@ -179,7 +178,6 @@ func (p *Proxy) WarmRPRoutes() error {
 		return err
 	}
 	p.warmTLSCache()
-	p.warmUpstreamTLS()
 	return nil
 }
 
@@ -204,27 +202,6 @@ func (p *Proxy) warmTLSCache() {
 			}
 		}
 		logger.Debug("WarmTLSCache: completed pre-load for %d domains", len(*ptr))
-	}()
-}
-
-// warmUpstreamTLS records a certificate verdict for every reverse proxy
-// upstream so serving can verify TLS opportunistically. It only completes a
-// TLS handshake — no request reaches the upstream or any container site.
-// Runs in a goroutine — failures are non-fatal.
-func (p *Proxy) warmUpstreamTLS() {
-	go func() {
-		ptr := p.cache.Load()
-		if ptr == nil {
-			return
-		}
-		for _, entry := range *ptr {
-			if entry.pool == nil {
-				continue
-			}
-			for _, target := range entry.pool.Targets() {
-				p.probeUpstreamTLS(target)
-			}
-		}
 	}()
 }
 

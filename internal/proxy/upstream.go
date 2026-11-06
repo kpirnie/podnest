@@ -68,6 +68,9 @@ func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
 			logger.Error("upstream: skipping upstream '%s': missing host", r.upstream)
 			continue
 		}
+		if r.skipVerify && parsed.Scheme == "https" {
+			logger.Warn("upstream: TLS verification is disabled for '%s' by route setting", r.upstream)
+		}
 		target := UpstreamTarget{URL: parsed, PassHost: r.passHost, SkipVerify: r.skipVerify}
 		if ap, err := netip.ParseAddrPort(upstreamTLSKey(parsed)); err == nil {
 			target.literal = ap

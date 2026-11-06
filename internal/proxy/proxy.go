@@ -110,9 +110,8 @@ type Proxy struct {
 	basicAuthCache    sync.Map                                         // int64(siteID) → *basicAuthEntry; nil entry means disabled
 	transport         *http.Transport                                  // shared connection pool across all reverse proxies
 	adminTransport    *http.Transport                                  // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
-	rpTransport       *http.Transport                                  // shared connection pool for all reverse-proxy-type upstream sites
-	rpVerifyTransport *http.Transport                                  // verifying twin of rpTransport for upstreams whose certs probe as valid
-	rpTLSVerified     sync.Map                                         // string(host:port) → tlsVerdict; probed cert-verification verdicts with downgrade expiry
+	rpTransport       *http.Transport                                  // shared connection pool for reverse-proxy-type upstreams whose route disables TLS verification
+	rpVerifyTransport *http.Transport                                  // verifying pool; the default for reverse-proxy-type upstreams
 	guard             atomic.Pointer[upstreamGuard]                    // site-owned ports and subnets; nil until first check or after invalidation
 	guardMu           sync.Mutex                                       // serialises guard rebuilds
 	accessLog         *os.File                                         // structured access log for Fail2Ban consumption
@@ -171,7 +170,7 @@ func New(cfg Config) *Proxy {
 		},
 		// shared transport for all reverse-proxy-type upstream sites — allows idle
 		// connection reuse across multiple RP sites rather than each upstream having
-		// an isolated pool; TLS verification intentionally skipped for user-defined targets
+		// an isolated pool; used only for routes the operator set to skip TLS verification
 		rpTransport: &http.Transport{
 			DialContext:           rpDialer.DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
@@ -179,9 +178,9 @@ func New(cfg Config) *Proxy {
 			MaxIdleConns:          200,
 			MaxIdleConnsPerHost:   20,
 			IdleConnTimeout:       90 * time.Second,
-			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — user-defined upstream
+			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true}, //nolint:gosec — explicit per-route operator setting
 		},
-		// verifying twin of rpTransport for upstreams whose certs probe as valid
+		// verifying twin of rpTransport; the default for every reverse-proxy-type upstream
 		rpVerifyTransport: &http.Transport{
 			DialContext:           rpDialer.DialContext,
 			TLSHandshakeTimeout:   10 * time.Second,
@@ -476,15 +475,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(sw, "upstream unavailable", http.StatusBadGateway)
 			p.writeAccessLog(r, http.StatusBadGateway, 0, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
-		}
-
-		// a verified upstream may have a newly-broken cert — flip it back and retry once unverified
-		if p.markTLSUnverified(first) {
-			resetReplayBody(r, body)
-			if p.literalUpstreamAllowed(r.Context(), siteID, first) && tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, p.rpTransport)) {
-				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
-				return
-			}
 		}
 
 		// first upstream failed — try the remaining upstreams
@@ -863,8 +853,7 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 
 // getOrCreateRPProxy returns the cached ReverseProxy for an upstream, building
 // it on first use. The key carries the transport identity because
-// rpTransportForTarget selects the verifying or non-verifying pool per target
-// and the markTLSUnverified retry deliberately forces the non-verifying one —
+// rpTransportForTarget selects the verifying or non-verifying pool per target —
 // a proxy built against one transport must never be reused for the other.
 func (p *Proxy) getOrCreateRPProxy(target *url.URL, passHost bool, transport *http.Transport) *httputil.ReverseProxy {
 	verify := transport == p.rpVerifyTransport
