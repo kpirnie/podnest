@@ -25,6 +25,7 @@ import (
 	"podnest/internal/modules"
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
+	"podnest/internal/wpupdate"
 )
 
 // ConfigPodman is the subset of podman.Client consumed by this handler.
@@ -38,10 +39,11 @@ type ConfigPodman interface {
 
 // Handler handles site configuration management API routes.
 type Handler struct {
-	DB      *sql.DB
-	AppPath string
-	Podman  ConfigPodman
-	Resolve modules.SiteResolver
+	DB       *sql.DB
+	AppPath  string
+	Podman   ConfigPodman
+	Resolve  modules.SiteResolver
+	WPUpdate *wpupdate.Manager
 }
 
 // RegisterRoutes mounts config management routes onto api.
@@ -321,7 +323,8 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		if err := fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644); err != nil {
 			return err
 		}
-		site_, err := config.RenderNginxSite(blob, site.SiteType, vEnabled, config.NginxBurstDefault)
+		burst := h.WPUpdate.Burst(context.Background(), site, siteDir)
+		site_, err := config.RenderNginxSite(blob, site.SiteType, vEnabled, burst)
 		if err != nil {
 			logger.Error("failed to render nginx site config for site %d: %v", site.ID, err)
 			return err
@@ -418,7 +421,8 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		if err := fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644); err != nil {
 			return err
 		}
-		site_, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, vEnabled, config.NginxBurstDefault)
+		burst := h.WPUpdate.Burst(context.Background(), site, siteDir)
+		site_, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, vEnabled, burst)
 		if err != nil {
 			logger.Error("failed to render nginx site block during varnish rewrite for site %d: %v", site.ID, err)
 			return err

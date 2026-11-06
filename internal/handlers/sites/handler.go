@@ -34,6 +34,7 @@ import (
 	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
+	"podnest/internal/wpupdate"
 )
 
 // SitesPodman is the subset of podman.Client consumed by this handler.
@@ -77,6 +78,7 @@ type Handler struct {
 	SFTP         SFTPManager
 	PodmanClient *podman.Client
 	Backup       *backup.Manager
+	WPUpdate     *wpupdate.Manager
 }
 
 // errPodNotRunning reports a recreated pod that never reached a running state.
@@ -1110,7 +1112,8 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		if main, err := config.RenderNginxMain(string(nginxBlob), site.SiteType); err == nil {
 			_ = fileutil.WriteFile(siteDir, "nginx/nginx.conf", main, 0644)
 		}
-		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON), config.NginxBurstDefault); err == nil {
+		burst := h.WPUpdate.Burst(ctx, site, siteDir)
+		if siteConf, err := config.RenderNginxSite(string(nginxBlob), site.SiteType, config.VarnishEnabled(varnishCfgJSON), burst); err == nil {
 			_ = fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", siteConf, 0644)
 		}
 	}

@@ -22,6 +22,7 @@ import (
 	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/server"
+	"podnest/internal/wpupdate"
 
 	"github.com/spf13/cobra"
 )
@@ -83,6 +84,7 @@ func runRecreate(cmd *cobra.Command, args []string) error {
 		PodmanSock:   podmanSock,
 		Podman:       podmanClient,
 		PodmanClient: podmanClient,
+		WPUpdate:     wpupdate.New(podmanClient, database),
 	}
 
 	// grab every site
