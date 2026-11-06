@@ -167,10 +167,6 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "this site type has no database")
 		return
 	}
-	if m.Manager.IsRestoring(site.ID) {
-		apiutil.ErrorMsg(w, http.StatusConflict, "an import or restore is already running for this site")
-		return
-	}
 
 	var req struct {
 		Filename string `json:"filename"`
@@ -201,7 +197,14 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 		return
 	}
 
+	claim, err := m.Manager.BeginImport(site.ID)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+
 	m.Manager.Go(func(ctx context.Context) {
+		defer claim.Release()
 		if err := m.Manager.ImportSQL(ctx, site, dumpPath, req.Wipe); err != nil {
 			logger.Error("apiImportSFTP: ImportSQL site %d: %v", site.ID, err)
 			return
