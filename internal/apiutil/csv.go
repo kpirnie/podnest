@@ -35,12 +35,12 @@ func ImportCSV(r *http.Request) ([][]string, error) {
 
 	// parse the multipart form with a reasonable size limit (2MB in this case)
 	if err := r.ParseMultipartForm(2 << 20); err != nil {
-		logger.Error("failed to parse multipart form: %w", err)
+		logger.Error("failed to parse multipart form: %v", err)
 		return nil, fmt.Errorf("failed to parse multipart form: %w", err)
 	}
 	f, _, err := r.FormFile("file")
 	if err != nil {
-		logger.Error("failed to retrieve file from form: %w", err)
+		logger.Error("failed to retrieve file from form: %v", err)
 		return nil, fmt.Errorf("file field is required")
 	}
 	defer f.Close()
@@ -49,7 +49,7 @@ func ImportCSV(r *http.Request) ([][]string, error) {
 	cr := csv.NewReader(io.LimitReader(f, 2<<20))
 	all, err := cr.ReadAll()
 	if err != nil {
-		logger.Error("failed to read CSV: %w", err)
+		logger.Error("failed to read CSV: %v", err)
 		return nil, fmt.Errorf("invalid CSV: %w", err)
 	}
 	if len(all) < 2 {
