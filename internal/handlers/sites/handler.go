@@ -1116,9 +1116,7 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		DBRootPass: dbRootPass,
 		RedisPass:  redisPass,
 	}); err != nil {
-		logger.Error("recreating pod for site %s: %v", site.Name, err)
-		_ = h.Podman.StopPod(bgCtx, podman.PodName(site.Name))
-		_ = h.Podman.RemoveSitePod(bgCtx, site.Name)
+		logger.Error("recreating pod for site %s — pod left in place for inspection: %v", site.Name, err)
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
 		return "", err
 	}
