@@ -794,33 +794,23 @@ func (p *Proxy) getOrCreateProxy(port int) *httputil.ReverseProxy {
 			req.Out.Body = req.In.Body
 			req.Out.ContentLength = req.In.ContentLength
 
-			// clone the inbound header map before modification — with Rewrite, req.Out is a
-			// shallow copy of req.In so Out.Header aliases In.Header; SetXForwarded() would
-			// otherwise mutate the original inbound request headers
-			outHeader := make(http.Header, len(req.In.Header))
-			for key, vals := range req.In.Header {
-				outHeader[key] = vals
-			}
-			req.Out.Header = outHeader
+			// req.Out.Header is the proxy's own sanitised clone: hop-by-hop headers,
+			// anything the inbound Connection header names, and client-supplied
+			// forwarding headers are already removed, and upgrade handling is done —
+			// it is deliberately not rebuilt from req.In.Header
 
-			// an untrusted peer's forwarding headers are attacker-controlled —
-			// drop them so SetXForwarded starts a fresh chain and the proto is
-			// derived from this connection rather than the client's claim
+			// only a trusted peer may supply the forwarding chain; anyone else's
+			// X-Forwarded-For and X-Real-Ip are attacker-controlled, so SetXForwarded
+			// starts a fresh chain
 			trusted := p.peerTrusted(req.In)
-			if !trusted {
-				req.Out.Header.Del("X-Forwarded-For")
-				req.Out.Header.Del("X-Forwarded-Proto")
+			if trusted {
+				if xff, ok := req.In.Header["X-Forwarded-For"]; ok {
+					req.Out.Header["X-Forwarded-For"] = xff
+				}
+			} else {
 				req.Out.Header.Del("X-Real-Ip")
 			}
-
-			// set X-Forwarded-* on the cloned map — In.Header is now unaffected
 			req.SetXForwarded()
-
-			// pass through WebSocket upgrade headers
-			if upgrade := req.In.Header.Get("Upgrade"); upgrade != "" {
-				req.Out.Header.Set("Upgrade", upgrade)
-				req.Out.Header.Set("Connection", "Upgrade")
-			}
 
 			// otherwise derive it from the TLS state of this connection
 			if proto := req.Out.Header.Get("X-Forwarded-Proto"); trusted && proto != "" {

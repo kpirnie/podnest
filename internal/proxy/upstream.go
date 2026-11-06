@@ -220,32 +220,21 @@ func newReverseProxy(target *url.URL, transport *http.Transport, passHost bool, 
 			req.Out.Body = req.In.Body
 			req.Out.ContentLength = req.In.ContentLength
 
-			// clone the inbound header map before modification — see getOrCreateProxy
-			// for full explanation of the aliasing issue with Rewrite + SetXForwarded
-			outHeader := make(http.Header, len(req.In.Header))
-			for key, vals := range req.In.Header {
-				outHeader[key] = vals
-			}
-			req.Out.Header = outHeader
-
-			// set X-Forwarded-* on the cloned map — In.Header is now unaffected
+			// req.Out.Header is the proxy's own sanitised clone: hop-by-hop headers,
+			// anything the inbound Connection header names, and client-supplied
+			// forwarding headers are already removed, and upgrade handling is done —
+			// it is deliberately not rebuilt from req.In.Header
 			req.SetXForwarded()
 
-			// pass through WebSocket upgrade headers
-			if upgrade := req.In.Header.Get("Upgrade"); upgrade != "" {
-				req.Out.Header.Set("Upgrade", upgrade)
-				req.Out.Header.Set("Connection", "Upgrade")
-			}
-
 			// set the client IP from the value already resolved against the trusted
-			// proxy ranges — passing the inbound header through would let any client
+			// proxy ranges — passing the inbound headers through would let any client
 			// dictate what the upstream app sees
 			if clientIP := clientIPFor(req.In); clientIP != "" {
+				req.Out.Header.Set("X-Forwarded-For", clientIP)
 				req.Out.Header.Set("X-Real-IP", clientIP)
 			} else {
 				req.Out.Header.Del("X-Real-IP")
 			}
-
 		},
 		ModifyResponse: func(resp *http.Response) error {
 
