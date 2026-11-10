@@ -320,7 +320,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render nginx main config for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "nginx/nginx.conf", main, 0644); err != nil {
 			return err
 		}
 		burst := h.WPUpdate.Burst(context.Background(), site, siteDir)
@@ -329,7 +329,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render nginx site config for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/nginx/conf.d/site.conf", site_, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", site_, 0644); err != nil {
 			return err
 		}
 		if err := h.Podman.KillContainer(context.Background(), podman.ContainerName(site.Name, "nginx"), "HUP"); err != nil {
@@ -343,7 +343,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render php-fpm config for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/php-fpm/www.conf", fpm, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "php-fpm/www.conf", fpm, 0644); err != nil {
 			return err
 		}
 		ini, err := config.RenderPHPIni(blob)
@@ -351,7 +351,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render php.ini config for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/php-fpm/php.ini", ini, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "php-fpm/php.ini", ini, 0644); err != nil {
 			return err
 		}
 		if err := h.Podman.KillContainer(context.Background(), podman.ContainerName(site.Name, "php"), "USR2"); err != nil {
@@ -365,7 +365,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render mariadb config for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/db/my.cnf", my, 0640); err != nil {
+		if err := fileutil.WriteFile(siteDir, "db/my.cnf", my, 0640); err != nil {
 			return err
 		}
 		if err := h.Podman.RestartContainer(context.Background(), podman.ContainerName(site.Name, "db")); err != nil {
@@ -384,7 +384,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render redis config for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/redis/redis.conf", redisCfg, 0640); err != nil {
+		if err := fileutil.WriteFile(siteDir, "redis/redis.conf", redisCfg, 0640); err != nil {
 			return err
 		}
 		if err := h.Podman.RestartContainer(context.Background(), podman.ContainerName(site.Name, "redis")); err != nil {
@@ -398,7 +398,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render varnish VCL for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/varnish/default.vcl", vclContent, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "varnish/default.vcl", vclContent, 0644); err != nil {
 			return err
 		}
 
@@ -418,7 +418,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render nginx main during varnish rewrite for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/nginx/nginx.conf", main, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "nginx/nginx.conf", main, 0644); err != nil {
 			return err
 		}
 		burst := h.WPUpdate.Burst(context.Background(), site, siteDir)
@@ -427,7 +427,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 			logger.Error("failed to render nginx site block during varnish rewrite for site %d: %v", site.ID, err)
 			return err
 		}
-		if err := fileutil.WriteFile(siteDir, "/nginx/conf.d/site.conf", site_, 0644); err != nil {
+		if err := fileutil.WriteFile(siteDir, "nginx/conf.d/site.conf", site_, 0644); err != nil {
 			return err
 		}
 		if vEnabled {
