@@ -45,7 +45,7 @@ document.addEventListener("keydown", (e) => {
     if (t.closest?.(".CodeMirror")) return;
     // the WP-CLI terminal owns only Up/Down, for history
     if (t.id === "wpcli-input" && (e.key === "ArrowUp" || e.key === "ArrowDown")) return;
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", " "].includes(e.key)) {
         e.stopPropagation();
     }
 }, true); // capture — runs before UIkit's handler
