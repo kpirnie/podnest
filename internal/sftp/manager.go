@@ -73,6 +73,19 @@ func (m *Manager) Ensure(ctx context.Context) error {
 		logger.Error("SFTP: users.conf reconcile failed: %v", err)
 	}
 
+	// a container created before FOWNER was granted cannot finish adduser, so
+	// it is replaced — users.conf was just reconciled and the entrypoint
+	// rebuilds every user from it on start
+	if m.capsOutdated(ctx) {
+		logger.Warn("SFTP: container lacks FOWNER, recreating it")
+		if err := m.create(ctx); err != nil {
+			return err
+		}
+		m.importAsserted.Store(true)
+		m.assertImportDirs(ctx)
+		return nil
+	}
+
 	// if already running nothing to do
 	running, err := m.client.ContainerIsRunning(ctx, GlobalContainerName)
 	if err != nil {
@@ -110,6 +123,31 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	m.importAsserted.Store(true)
 	m.assertImportDirs(ctx)
 	return nil
+}
+
+// capsOutdated reports whether the existing global SFTP container was created
+// without FOWNER, which adduser needs to chmod a home directory it just
+// chowned. A missing container or an unreadable capability list is not
+// outdated, so a failed inspect can never trigger a recreate loop.
+func (m *Manager) capsOutdated(ctx context.Context) bool {
+	var info struct {
+		HostConfig struct {
+			CapAdd []string `json:"CapAdd"`
+		} `json:"HostConfig"`
+	}
+	if err := m.client.GetJSON(ctx, "/v4.0.0/libpod/containers/"+GlobalContainerName+"/json", &info); err != nil {
+		return false
+	}
+	if len(info.HostConfig.CapAdd) == 0 {
+		return false
+	}
+
+	for _, c := range info.HostConfig.CapAdd {
+		if strings.TrimPrefix(strings.ToUpper(c), "CAP_") == "FOWNER" {
+			return false
+		}
+	}
+	return true
 }
 
 // backupsCmds returns the commands that keep a site's backups dir root-owned
