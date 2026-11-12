@@ -16,7 +16,7 @@ A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js,
 
 ---
 
-[Overview](#overview) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [Security Policy](#security-policy) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements-contributions--accolades) · [License](#license) · [Support](#support)
+[Overview](#overview) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [Development Container](#development-container) · [Security Policy](#security-policy) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements-contributions--accolades) · [License](#license) · [Support](#support)
 
 ---
 
@@ -450,6 +450,22 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 - **Security** — login rate limiting, 2FA, sessions, CSRF, headers, WebSocket security, API authorization
 - **Updating** — update notifications, updating from the panel, and how to update
 - **API Reference** — complete REST and WebSocket API
+
+---
+
+## Development Container
+
+The `.devcontainer` folder defines a self-contained development environment with Go, Node, restic, and a nested Podman, for any tool that supports the [Dev Container specification](https://containers.dev/). It does not use the host's Podman socket; all site pods run inside the dev container.
+
+Open the repository in the dev container, then start PodNest from its terminal:
+
+```bash
+go run ./main.go serve --app-path /opt/podnest --port 8080 --socket /run/podman/podman.sock
+```
+
+Open `http://localhost:8080`. On first start, the `admin` password is printed once in the terminal output (`default admin created`). After frontend changes, run `npm run build` and restart PodNest.
+
+> **For development only.** The container runs as root in privileged mode, so use it only with trusted code. Data in `/opt/podnest` and Podman storage is lost when the container is rebuilt or removed, unless you persist it with mounts.
 
 ---
 
