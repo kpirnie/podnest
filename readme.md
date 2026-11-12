@@ -337,7 +337,7 @@ Every command shares the following persistent flags:
 
 `--bypass` accepts an IP or CIDR and adds it to the security bypass list (skipping all IP/UA/country/ASN/WAF checks, including Spamhaus DROP). Restart the podnest service for it to take effect.
 
-`recreate` rebuilds every site pod in turn on the images already pulled to the host. The `--all` flag is required. Every site is attempted even when an earlier one fails, and a summary error is returned if any did.
+`recreate` rebuilds every site pod in turn on the images already pulled to the host. The `--all` flag is required. Every site is attempted even when an earlier one fails, and a summary error is returned if any did. Recreating a site whose database username contains non-alphanumeric characters migrates it to a new alphanumeric username; database, root and Redis passwords are unchanged.
 
 ```bash
 ./podnest recreate --all --app-path /opt/podnest
