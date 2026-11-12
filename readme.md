@@ -469,7 +469,7 @@ Bug reports and feature requests are welcome through [GitHub Issues](https://git
 
 Thanks to everyone who has helped make PodNest more secure, reliable, & all around a better project.
 
-- **[@BuddiesD](https://github.com/BuddiesD)** — reported a race condition that allowed a TOTP backup code to be consumed more than once under concurrent requests ([#8](https://github.com/kpirnie/podnest/issues/8))
+- **[@BuddiesD](https://github.com/BuddiesD)** — reported a race condition that allowed a TOTP backup code to be consumed more than once under concurrent requests ([#8](https://github.com/kpirnie/podnest/issues/8)), and a race condition where saving backup settings during a site's first backup could replace the repository password and break later backups and restores ([#24](https://github.com/kpirnie/podnest/issues/24))s
 
 ---
 
