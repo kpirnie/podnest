@@ -15,13 +15,15 @@ import (
 // hits are counted per IP; crossing Threshold within WindowSecs puts the IP in
 // a 429 cooldown, crossing it again during the cooldown converts it to a ban.
 type AutoBanSettings struct {
-	Threshold      int // qualifying hits within WindowSecs that trip the limit
-	WindowSecs     int // span the hits are counted over
-	CooldownSecs   int // how long the 429 cooldown lasts
-	BanSecs        int // how long a ban lasts
-	PermStrikes    int // bans within PermWindowSecs that make the ban permanent
-	PermWindowSecs int // span the strikes are counted over
-	EscalateSites  int // distinct sites an IP must be banned on before it is banned globally
+	Threshold         int // qualifying hits within WindowSecs that trip the limit
+	WindowSecs        int // span the hits are counted over
+	CooldownSecs      int // how long the 429 cooldown lasts
+	BanSecs           int // how long a ban lasts
+	PermStrikes       int // bans within PermWindowSecs that make the ban permanent
+	PermWindowSecs    int // span the strikes are counted over
+	EscalateSites     int // distinct sites an IP must be banned on before it is banned globally
+	UnknownThreshold  int // hits on unregistered domains within UnknownWindowSecs that trip the limit
+	UnknownWindowSecs int // span the unregistered-domain hits are counted over
 }
 
 // AutoBanSiteOverride holds a site's auto-ban settings. A nil value inherits
@@ -53,13 +55,15 @@ type AutoBan struct {
 // DefaultAutoBanSettings returns the settings used until the global row is saved
 func DefaultAutoBanSettings() AutoBanSettings {
 	return AutoBanSettings{
-		Threshold:      25,
-		WindowSecs:     60,
-		CooldownSecs:   1800,
-		BanSecs:        3600,
-		PermStrikes:    10,
-		PermWindowSecs: 86400,
-		EscalateSites:  2,
+		Threshold:         25,
+		WindowSecs:        60,
+		CooldownSecs:      1800,
+		BanSecs:           3600,
+		PermStrikes:       10,
+		PermWindowSecs:    86400,
+		EscalateSites:     2,
+		UnknownThreshold:  5,
+		UnknownWindowSecs: 60,
 	}
 }
 
