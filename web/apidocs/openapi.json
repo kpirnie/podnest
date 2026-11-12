@@ -557,7 +557,7 @@
         "summary": "Get global auto-ban settings",
         "operationId": "get_security_autoban_settings",
         "responses": {
-          "200": { "description": "Success — returns {\"Threshold\", \"WindowSecs\", \"CooldownSecs\", \"BanSecs\", \"PermStrikes\", \"PermWindowSecs\", \"EscalateSites\"}", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "200": { "description": "Success — returns {\"Threshold\", \"WindowSecs\", \"CooldownSecs\", \"BanSecs\", \"PermStrikes\", \"PermWindowSecs\", \"EscalateSites\", \"UnknownThreshold\", \"UnknownWindowSecs\"}", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
           "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
@@ -578,7 +578,7 @@
         "requestBody": {
           "required": true,
           "content": { "application/json": { "schema": { "type": "object", "additionalProperties": true } } },
-          "description": "All values in seconds where timed: {\"threshold\": 25, \"window_secs\": 60, \"cooldown_secs\": 1800, \"ban_secs\": 3600, \"perm_strikes\": 10, \"perm_window_secs\": 86400, \"escalate_sites\": 2}"
+          "description": "All values in seconds where timed: {\"threshold\": 25, \"window_secs\": 60, \"cooldown_secs\": 1800, \"ban_secs\": 3600, \"perm_strikes\": 10, \"perm_window_secs\": 86400, \"escalate_sites\": 2, \"unknown_threshold\": 5, \"unknown_window_secs\": 60}"
         }
       }
     },
