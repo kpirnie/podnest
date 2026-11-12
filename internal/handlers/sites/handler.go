@@ -1000,6 +1000,15 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// hold the site for the whole recreate so no backup, restore, import,
+	// rename or delete can run against it while its pod and .env are rewritten
+	claim, err := h.Backup.TryClaim(site.ID, backup.ClaimRecreate)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+	defer claim.Release()
+
 	// define a struct to capture the expected JSON payload for site recreation, including options for WordPress installation and image pruning
 	var recreateReq struct {
 		InstallWordPress *bool `json:"install_wordpress"`
