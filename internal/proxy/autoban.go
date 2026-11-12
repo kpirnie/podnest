@@ -56,10 +56,14 @@ func (b *abBan) active(now time.Time) bool {
 }
 
 // autoBanSettings resolves the effective auto-ban settings for a scope and
-// whether auto-ban is enabled there. The global scope is always enabled.
+// whether auto-ban is enabled there. The global scope is always enabled and
+// trips on the unknown-domain threshold and window; sites inherit the global
+// Threshold and WindowSecs.
 func (p *Proxy) autoBanSettings(siteID int64) (db.AutoBanSettings, bool) {
 	s := *p.abSettings.Load()
 	if siteID == 0 {
+		s.Threshold = s.UnknownThreshold
+		s.WindowSecs = s.UnknownWindowSecs
 		return s, true
 	}
 
