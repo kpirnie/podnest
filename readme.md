@@ -1,4 +1,4 @@
-# <img src="https://cdn.pnst.us/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy" width="64" valign="middle"> PodNest
+# <img src="https://cdn.pnst.us/logos/podnest.svg" alt="PodNest ~ Secure. Manage. Deploy" width="64" valign="center"> PodNest
 
 ## Secure. Manage. Deploy
 
