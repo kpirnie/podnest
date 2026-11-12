@@ -83,6 +83,7 @@ type ContainerSpec struct {
 	NetNS          NetworkNamespace   `json:"netns,omitempty"`
 	Healthcheck    *HealthcheckConfig `json:"healthconfig,omitempty"`
 	ResourceLimits *ResourceLimits    `json:"resource_limits,omitempty"`
+	Labels         map[string]string  `json:"labels,omitempty"`
 }
 
 // Mount represents a bind mount or volume mount for a container, specifying the source path on the host, the destination path in the container, the type of mount, and any additional options

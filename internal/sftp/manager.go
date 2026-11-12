@@ -23,6 +23,8 @@ const (
 	GlobalContainerName = "podnest-sftp-global"
 	GlobalPort          = 2222
 	sftpUIDBase         = 3000
+	capsLabel           = "app.podnest.sftp-caps"
+	capsRev             = "2"
 )
 
 // Manager manages the global SFTP container
@@ -125,29 +127,20 @@ func (m *Manager) Ensure(ctx context.Context) error {
 	return nil
 }
 
-// capsOutdated reports whether the existing global SFTP container was created
-// without FOWNER, which adduser needs to chmod a home directory it just
-// chowned. A missing container or an unreadable capability list is not
-// outdated, so a failed inspect can never trigger a recreate loop.
+// capsOutdated reports whether the existing global SFTP container predates the
+// current capability set, which create stamps on it as a label. Podman's
+// inspect only lists capabilities outside its defaults, so the capability list
+// itself cannot be compared. A missing container is not outdated.
 func (m *Manager) capsOutdated(ctx context.Context) bool {
 	var info struct {
-		HostConfig struct {
-			CapAdd []string `json:"CapAdd"`
-		} `json:"HostConfig"`
+		Config struct {
+			Labels map[string]string `json:"Labels"`
+		} `json:"Config"`
 	}
 	if err := m.client.GetJSON(ctx, "/v4.0.0/libpod/containers/"+GlobalContainerName+"/json", &info); err != nil {
 		return false
 	}
-	if len(info.HostConfig.CapAdd) == 0 {
-		return false
-	}
-
-	for _, c := range info.HostConfig.CapAdd {
-		if strings.TrimPrefix(strings.ToUpper(c), "CAP_") == "FOWNER" {
-			return false
-		}
-	}
-	return true
+	return info.Config.Labels[capsLabel] != capsRev
 }
 
 // backupsCmds returns the commands that keep a site's backups dir root-owned
@@ -375,6 +368,7 @@ func (m *Manager) create(ctx context.Context) error {
 		CapDrop: []string{"ALL"},
 		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER", "AUDIT_WRITE", "NET_BIND_SERVICE", "SYS_CHROOT"},
 		SecOpts: []string{"no-new-privileges:true"},
+		Labels:  map[string]string{capsLabel: capsRev},
 	})
 	if err != nil {
 		logger.Error("failed to create global SFTP container: %v", err)
