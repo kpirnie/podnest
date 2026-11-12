@@ -32,6 +32,9 @@ const (
 	PassChars             = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%^*-_+=!.~"
 	PassMin               = 32
 	PassMax               = 64
+	UserLetters           = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	UserChars             = UserLetters + "0123456789"
+	UserLen               = 32
 	sessionExtendInterval = 5 * time.Minute
 	LoginCSRFCookieName   = "podnest_lcsrf"
 	LoginCSRFDuration     = 30 * time.Minute
@@ -104,6 +107,25 @@ func GeneratePassword() (string, error) {
 			return "", err
 		}
 		b[i] = PassChars[n.Int64()]
+	}
+	return string(b), nil
+}
+
+// GenerateDBUser returns a cryptographically random alphanumeric database
+// username. Alphanumeric only because phpMyAdmin splits CURRENT_USER() on "@",
+// and the first character is always a letter so the name is never digit-led.
+func GenerateDBUser() (string, error) {
+	b := make([]byte, UserLen)
+	for i := range b {
+		set := UserChars
+		if i == 0 {
+			set = UserLetters
+		}
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(set))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = set[n.Int64()]
 	}
 	return string(b), nil
 }

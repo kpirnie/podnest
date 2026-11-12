@@ -501,7 +501,7 @@ func (h *Handler) apiCreateSite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// generate random passwords for the database user, password, and database root user
-	dbUser, err := auth.GeneratePassword()
+	dbUser, err := auth.GenerateDBUser() // alphanum only
 	if err != nil {
 		_ = db.DeleteSite(h.DB, site.ID)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -1676,7 +1676,7 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// generate random passwords for the database user, database password, root password, and Redis password for the cloned site, handling any errors during password generation and cleaning up the clone record if necessary
-	dbUser, err := auth.GeneratePassword()
+	dbUser, err := auth.GenerateDBUser() // alphanum for this
 	if err != nil {
 		_ = db.DeleteSite(h.DB, clone.ID)
 		apiutil.Error(w, http.StatusInternalServerError, err)
