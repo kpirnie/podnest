@@ -167,6 +167,9 @@ func migrateColumns(db *sql.DB) error {
 		// wordpress update dashboard + wp-admin sso
 		`CREATE TABLE IF NOT EXISTS kppn_wp_updates (site_id INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE, core_version TEXT NOT NULL DEFAULT '', core_update TEXT NOT NULL DEFAULT '', plugins TEXT NOT NULL DEFAULT '[]', themes TEXT NOT NULL DEFAULT '[]', error TEXT NOT NULL DEFAULT '', checked DATETIME)`,
 		`CREATE TABLE IF NOT EXISTS kppn_wp_sso (site_id INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE, wp_user_id INTEGER NOT NULL DEFAULT 0, updated DATETIME)`,
+		// unknown-domain auto-ban threshold
+		`ALTER TABLE kppn_autoban_settings ADD COLUMN unknown_threshold INTEGER NOT NULL DEFAULT 5`,
+		`ALTER TABLE kppn_autoban_settings ADD COLUMN unknown_window_secs INTEGER NOT NULL DEFAULT 60`,
 	}
 
 	for _, m := range migrations {
