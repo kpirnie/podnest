@@ -335,7 +335,7 @@ func (m *Manager) create(ctx context.Context) error {
 			{Type: "bind", Source: m.hostAppPath + "/sftp/logs", Destination: "/var/log", Options: []string{"rw", "z"}},
 		},
 		CapDrop: []string{"ALL"},
-		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "AUDIT_WRITE", "NET_BIND_SERVICE", "SYS_CHROOT"},
+		CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER", "AUDIT_WRITE", "NET_BIND_SERVICE", "SYS_CHROOT"},
 		SecOpts: []string{"no-new-privileges:true"},
 	})
 	if err != nil {
