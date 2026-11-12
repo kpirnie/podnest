@@ -774,6 +774,8 @@ CREATE TABLE IF NOT EXISTS kppn_autoban_settings (
     perm_strikes     INTEGER NOT NULL DEFAULT 10,
     perm_window_secs INTEGER NOT NULL DEFAULT 86400,
     escalate_sites   INTEGER NOT NULL DEFAULT 2,
+    unknown_threshold   INTEGER NOT NULL DEFAULT 5,
+    unknown_window_secs INTEGER NOT NULL DEFAULT 60,
     updated          DATETIME
 );
 
