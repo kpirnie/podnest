@@ -22,13 +22,19 @@ const AB_FIELDS = [
 // AB_ESCALATE is the global-only escalation field
 const AB_ESCALATE = { id: "ab-escalate", key: "escalate_sites", api: "EscalateSites", mult: 1, label: "Sites Before Global Ban", help: "An IP banned on this many sites is banned on all of them." };
 
+// AB_UNKNOWN are the global-only unregistered-domain trip point fields
+const AB_UNKNOWN = [
+    { id: "ab-unknown-threshold", key: "unknown_threshold",   api: "UnknownThreshold",  mult: 1, label: "Unknown-Domain Hits",             help: "Requests for unregistered domains within the window that trigger the 429." },
+    { id: "ab-unknown-window",    key: "unknown_window_secs", api: "UnknownWindowSecs", mult: 1, label: "Unknown-Domain Window (seconds)", help: "Span the unregistered-domain requests are counted over." },
+];
+
 // abBase returns the API base for the global or a site's auto-ban routes
 const abBase = (siteId) => siteId ? `/sites/${siteId}/security/autoban` : `/security/autoban`;
 
 // renderAutoBanPanel returns the static HTML shell for the auto-ban settings
 // and ban list. siteId is null on the global WAF page.
 export function renderAutoBanPanel(siteId = null) {
-    const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE];
+    const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE, ...AB_UNKNOWN];
     return `
         <div id="autoban-panel">
 
@@ -41,7 +47,7 @@ export function renderAutoBanPanel(siteId = null) {
                                 <p class="kp-muted uk-text-small uk-margin-remove">
                                     ${siteId
                                         ? `Counts this site's 4xx/5xx responses per IP. Leave a field blank to inherit the global value shown.`
-                                        : `The global scope counts hits on unregistered domains; per-site counters use these values unless a site overrides them.`}
+                                        : `The global scope counts hits on unregistered domains using the Unknown-Domain fields; the remaining fields are the per-site defaults unless a site overrides them, and the cooldown and ban values apply to both.`}
                                     Bypassed and whitelisted IPs are never counted.
                                 </p>
                                 <button class="uk-button kp-btn-primary kp-btn-sm" id="ab-save" uk-tooltip="Save Auto-Ban Settings">
@@ -150,7 +156,7 @@ async function loadSettings(panel, siteId) {
         const data = await api.get(`${abBase(siteId)}/settings`);
         const global = siteId ? data.global : data;
         const own    = siteId ? data.override : data;
-        const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE];
+        const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE, ...AB_UNKNOWN];
 
         fields.forEach(f => {
             const input = panel.querySelector(`#${f.id}`);
@@ -169,7 +175,7 @@ async function loadSettings(panel, siteId) {
 // saveSettings validates and saves the form. Global fields are required;
 // a blank per-site field is sent as null so it inherits.
 async function saveSettings(panel, siteId) {
-    const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE];
+    const fields = siteId ? AB_FIELDS : [...AB_FIELDS, AB_ESCALATE, ...AB_UNKNOWN];
     const body = {};
 
     for (const f of fields) {
