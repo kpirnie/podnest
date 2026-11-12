@@ -32,6 +32,13 @@ var siteNameStrip = regexp.MustCompile(`[^a-z0-9_\-]`)
 // siteNameValid matches a fully normalized, acceptable site name.
 var siteNameValid = regexp.MustCompile(`^[a-z0-9][a-z0-9_\-]{0,62}$`)
 
+// wpDBUserPattern matches the DB_USER define in a wp-config.php, including the
+// defined('DB_USER') || define(...) form the scaffold emits.
+var wpDBUserPattern = regexp.MustCompile(`(define\(\s*['"]DB_USER['"]\s*,\s*)(['"])(?:[^'"]*)(['"])`)
+
+// wpDBNamePattern matches the DB_NAME define in a wp-config.php.
+var wpDBNamePattern = regexp.MustCompile(`(define\(\s*['"]DB_NAME['"]\s*,\s*)(['"])(?:[^'"]*)(['"])`)
+
 // uidRange is one line of a user namespace uid_map.
 type uidRange struct {
 	inside, outside, count uint64
@@ -359,9 +366,6 @@ func setEnvValue(path, key, value string) error {
 	return nil
 }
 
-// wpDBNamePattern matches the DB_NAME define in a wp-config.php.
-var wpDBNamePattern = regexp.MustCompile(`(define\(\s*['"]DB_NAME['"]\s*,\s*)(['"])(?:[^'"]*)(['"])`)
-
 // setWPConfigDBName repoints an existing wp-config.php at the renamed schema.
 // A site without one — every non-WordPress type — is not an error. The file is
 // read and written inside siteDir so a planted symlink cannot redirect either.
@@ -380,6 +384,45 @@ func setWPConfigDBName(siteDir, dbName string) error {
 		return fmt.Errorf("setWPConfigDBName: write: %w", err)
 	}
 	return nil
+}
+
+// isAlnum reports whether s holds only ASCII letters and digits.
+func isAlnum(s string) bool {
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// setWPConfigDBUser repoints an existing wp-config.php at a new DB username.
+// A site without one — every non-WordPress type — is not an error. The file is
+// read and written inside siteDir so a planted symlink cannot redirect either.
+func setWPConfigDBUser(siteDir, dbUser string) error {
+	raw, err := fileutil.ReadFile(siteDir, "html/wp-config.php")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("setWPConfigDBUser: read: %w", err)
+	}
+
+	// an existing regular file is truncated in place, keeping its mode and ownership
+	src := wpDBUserPattern.ReplaceAllString(string(raw), "${1}${2}"+dbUser+"${3}")
+	if err := fileutil.WriteFile(siteDir, "html/wp-config.php", src, 0640); err != nil {
+		return fmt.Errorf("setWPConfigDBUser: write: %w", err)
+	}
+	return nil
+}
+
+// setSiteDBUser writes a DB username to the site's .env and, when the site has
+// one, its wp-config.php.
+func setSiteDBUser(siteDir, dbUser string) error {
+	if err := setEnvValue(siteDir+"/.env", "DB_USER", dbUser); err != nil {
+		return err
+	}
+	return setWPConfigDBUser(siteDir, dbUser)
 }
 
 // confirmPodRunning checks if the pod is running within the timeout period for the site type.
