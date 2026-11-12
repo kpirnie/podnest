@@ -18,6 +18,7 @@ import (
 
 	"podnest/internal/apiutil"
 	"podnest/internal/auth"
+	"podnest/internal/backup"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
@@ -51,6 +52,16 @@ func (m Module) apiUpdateBackupRepo(w http.ResponseWriter, r *http.Request, site
 		apiutil.Error(w, http.StatusBadRequest, err)
 		return
 	}
+	// hold the site so the destination save can't overlap a backup, restore,
+	// import or push
+	claim, err := m.Manager.TryClaim(site.ID, backup.ClaimRepoSettings)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusConflict, err.Error())
+		return
+	}
+	defer claim.Release()
+
+	// ensure the backup repo actually exists
 	repo, err := m.Manager.EnsureRepo(r.Context(), site)
 	if err != nil {
 		logger.Error("apiUpdateBackupRepo: ensureRepo site %d: %v", site.ID, err)

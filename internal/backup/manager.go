@@ -159,6 +159,7 @@ const (
 	ClaimPushTarget
 	ClaimRename
 	ClaimDelete
+	ClaimRepoSettings
 )
 
 // SiteClaim is one operation's hold on a site. Release frees the site only
