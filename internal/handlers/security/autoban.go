@@ -19,13 +19,15 @@ import (
 
 // autoBanSettingsRequest is the body for saving the global auto-ban settings
 type autoBanSettingsRequest struct {
-	Threshold      int `json:"threshold"`
-	WindowSecs     int `json:"window_secs"`
-	CooldownSecs   int `json:"cooldown_secs"`
-	BanSecs        int `json:"ban_secs"`
-	PermStrikes    int `json:"perm_strikes"`
-	PermWindowSecs int `json:"perm_window_secs"`
-	EscalateSites  int `json:"escalate_sites"`
+	Threshold         int `json:"threshold"`
+	WindowSecs        int `json:"window_secs"`
+	CooldownSecs      int `json:"cooldown_secs"`
+	BanSecs           int `json:"ban_secs"`
+	PermStrikes       int `json:"perm_strikes"`
+	PermWindowSecs    int `json:"perm_window_secs"`
+	EscalateSites     int `json:"escalate_sites"`
+	UnknownThreshold  int `json:"unknown_threshold"`
+	UnknownWindowSecs int `json:"unknown_window_secs"`
 }
 
 // autoBanSiteRequest is the body for saving a site's auto-ban override; a
@@ -102,6 +104,8 @@ func (h *Handler) apiSaveGlobalAutoBanSettings(w http.ResponseWriter, r *http.Re
 
 	fields := autoBanSiteFields(&req.Threshold, &req.WindowSecs, &req.CooldownSecs, &req.BanSecs, &req.PermStrikes, &req.PermWindowSecs)
 	fields = append(fields, autoBanField{"escalate_sites", &req.EscalateSites, 2, 1000})
+	fields = append(fields, autoBanField{"unknown_threshold", &req.UnknownThreshold, 1, 10000})
+	fields = append(fields, autoBanField{"unknown_window_secs", &req.UnknownWindowSecs, 1, 86400})
 	if err := validateAutoBanFields(fields); err != nil {
 		apiutil.Error(w, http.StatusBadRequest, err)
 		return
