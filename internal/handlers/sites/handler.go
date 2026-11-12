@@ -1188,6 +1188,23 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		return "", errPodNotRunning
 	}
 
+	// reassign the legacy user's definers and drop it now the pod is up, before
+	// returning so a caller that exits cannot cut it short — a failure keeps the
+	// old user so existing routines and views still resolve
+	if oldDBUser != "" {
+		migrateCtx, migrateCancel := context.WithTimeout(bgCtx, 10*time.Minute)
+		err := h.migrateDBUser(migrateCtx, site, oldDBUser, dbUser, dbRootPass)
+		migrateCancel()
+		switch {
+		case err != nil:
+			logger.Warn("recreate: DB user cleanup incomplete for site %s, legacy user kept: %v", site.Name, err)
+		case site.SiteType == models.SiteTypeWordPress:
+			logger.Info("recreate: DB user migrated for site %s", site.Name)
+		default:
+			logger.Warn("recreate: DB user changed for site %s — an app with hardcoded credentials will need updating", site.Name)
+		}
+	}
+
 	// run mariadb-upgrade if the DB version has changed — a caller that exits
 	// once this returns must wait on it, or the upgrade dies with the process
 	if waitUpgrade {

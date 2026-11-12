@@ -292,6 +292,192 @@ func (h *Handler) renameDatabase(ctx context.Context, site *models.Site, oldDB, 
 	return nil
 }
 
+// migrateDBUser moves every view, routine, trigger and event the old DB user
+// defines onto the new user, then drops the old user. The drop happens only
+// once nothing is left under the old user, so on any failure the old user stays
+// and existing objects keep resolving.
+func (h *Handler) migrateDBUser(ctx context.Context, site *models.Site, oldUser, newUser, rootPass string) error {
+
+	// the pod is up, and CreateMariaDB has already ensured the new user
+	dbContainer := podman.ContainerName(site.Name, "db")
+	podEnv := append(os.Environ(), "CONTAINER_HOST=unix://"+h.PodmanSock, "TMPDIR=/var/tmp")
+
+	// quote an identifier for use in a statement
+	ident := func(s string) string {
+		return "`" + strings.ReplaceAll(s, "`", "``") + "`"
+	}
+
+	// quote a string literal — backslash is an escape character in MariaDB's
+	// default mode, so doubling quotes alone would not survive one in a name
+	lit := func(s string) string {
+		return "'" + strings.NewReplacer(`\`, `\\`, "'", "''").Replace(s) + "'"
+	}
+
+	// mariadb echoes statement text in its errors, so no credential may reach a log
+	scrub := strings.NewReplacer(oldUser, "<old>", newUser, "<new>", rootPass, "<root>").Replace
+
+	// run a statement batch as root in the DB container and return what it prints
+	query := func(sql string) (string, error) {
+		var stderr bytes.Buffer
+		cmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", dbContainer,
+			"mariadb", "-uroot", "--default-character-set=utf8mb4", "-N", "-B", "--raw", "-e", sql,
+		)
+		cmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("migrateDBUser: mariadb: %w — %s", err, scrub(stderr.String()))
+		}
+		return string(out), nil
+	}
+
+	// replay a script against the site schema as root, so another user can be set as DEFINER
+	feed := func(script string) error {
+		var stderr bytes.Buffer
+		cmd := exec.CommandContext(ctx, "podman", "exec", "-i", "-e", "MYSQL_PWD", dbContainer,
+			"mariadb", "-uroot", "--default-character-set=utf8mb4", site.Name,
+		)
+		cmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+		cmd.Stdin = strings.NewReader(script)
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("migrateDBUser: replay: %w — %s", err, scrub(stderr.String()))
+		}
+		return nil
+	}
+
+	// run a query whose rows are ready-made statements, and replay them
+	reassign := func(sql string) error {
+		script, err := query(sql)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(script) == "" {
+			return nil
+		}
+		return feed(script)
+	}
+
+	// information_schema reports a definer as user@host
+	oldDef := lit(oldUser + "@%")
+	schema := lit(site.Name)
+
+	// routines and triggers cannot be altered in place, so they are dumped,
+	// dropped and replayed with the new definer — list them first, flagging
+	// which ones the old user owns
+	listing, err := query(
+		"SELECT ROUTINE_TYPE, ROUTINE_NAME, DEFINER=" + oldDef + " FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=" + schema +
+			" UNION ALL SELECT 'TRIGGER', TRIGGER_NAME, DEFINER=" + oldDef + " FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=" + schema,
+	)
+	if err != nil {
+		return err
+	}
+	var objects []string
+	var drops strings.Builder
+	owned := false
+	for _, line := range strings.Split(strings.TrimSpace(listing), "\n") {
+		if line == "" {
+			continue
+		}
+		f := strings.SplitN(line, "\t", 3)
+		if len(f) != 3 {
+			return fmt.Errorf("migrateDBUser: unexpected routine listing")
+		}
+		objects = append(objects, f[0]+" "+ident(f[1]))
+		fmt.Fprintf(&drops, "DROP %s IF EXISTS %s.%s;\n", f[0], ident(site.Name), ident(f[1]))
+		if f[2] == "1" {
+			owned = true
+		}
+	}
+
+	if owned {
+
+		// dump only routines and triggers — never table structure, which a
+		// replay would drop and recreate empty
+		var dumpStderr bytes.Buffer
+		dumpCmd := exec.CommandContext(ctx, "podman", "exec", "-e", "MYSQL_PWD", dbContainer,
+			"sh", "-c",
+			// the schema name is a positional arg, never interpolated into the script
+			`mysqldump -uroot --skip-opt --no-data --no-create-info --no-create-db --routines --triggers --skip-lock-tables "$1" 2>/dev/null || `+
+				`mariadb-dump -uroot --skip-opt --no-data --no-create-info --no-create-db --routines --triggers --skip-lock-tables "$1"`,
+			"sh",
+			site.Name,
+		)
+		dumpCmd.Env = append(podEnv[:len(podEnv):len(podEnv)], "MYSQL_PWD="+rootPass)
+		dumpCmd.Stderr = &dumpStderr
+		out, err := dumpCmd.Output()
+		if err != nil {
+			return fmt.Errorf("migrateDBUser: dump routines: %w — %s", err, scrub(dumpStderr.String()))
+		}
+		dump := string(out)
+
+		// nothing is dropped unless every listed object is in the dump, or a
+		// dump that skipped triggers would silently delete them
+		for _, o := range objects {
+			if !strings.Contains(dump, o) {
+				return fmt.Errorf("migrateDBUser: dump is missing a routine or trigger, nothing was changed")
+			}
+		}
+
+		// the definer appears backtick-quoted in a dump, so swap the whole
+		// quoted token rather than pattern-matching a raw name
+		replay := drops.String() + strings.ReplaceAll(dump, ident(oldUser)+"@"+ident("%"), ident(newUser)+"@"+ident("%"))
+		if err := feed(replay); err != nil {
+
+			// put the routines and triggers back exactly as they were
+			if rerr := feed(drops.String() + dump); rerr != nil {
+				logger.Error("migrateDBUser: failed to restore routines and triggers for site %s: %v", site.Name, rerr)
+			}
+			return err
+		}
+	}
+
+	// views carry their full definition in information_schema, so rebuild each
+	// one under the new definer from it
+	viewPrefix := "ALTER DEFINER=" + lit(newUser) + "@'%' SQL SECURITY "
+	if err := reassign(
+		"SELECT CONCAT(" + lit(viewPrefix) + ", SECURITY_TYPE, ' VIEW `', REPLACE(TABLE_SCHEMA, '`', '``'), '`.`', REPLACE(TABLE_NAME, '`', '``'), '` AS ', VIEW_DEFINITION, " +
+			"CASE CHECK_OPTION WHEN 'CASCADED' THEN ' WITH CASCADED CHECK OPTION' WHEN 'LOCAL' THEN ' WITH LOCAL CHECK OPTION' ELSE '' END, ';') " +
+			"FROM information_schema.VIEWS WHERE DEFINER=" + oldDef + " AND TABLE_SCHEMA=" + schema,
+	); err != nil {
+		return err
+	}
+
+	// events take a new definer directly
+	eventPrefix := "ALTER DEFINER=" + lit(newUser) + "@'%' EVENT "
+	if err := reassign(
+		"SELECT CONCAT(" + lit(eventPrefix) + ", '`', REPLACE(EVENT_SCHEMA, '`', '``'), '`.`', REPLACE(EVENT_NAME, '`', '``'), '`;') " +
+			"FROM information_schema.EVENTS WHERE DEFINER=" + oldDef + " AND EVENT_SCHEMA=" + schema,
+	); err != nil {
+		return err
+	}
+
+	// only drop the old user once nothing anywhere still names it as definer
+	left, err := query(
+		"SELECT (SELECT COUNT(ROUTINE_NAME) FROM information_schema.ROUTINES WHERE DEFINER=" + oldDef + ")" +
+			" + (SELECT COUNT(TRIGGER_NAME) FROM information_schema.TRIGGERS WHERE DEFINER=" + oldDef + ")" +
+			" + (SELECT COUNT(TABLE_NAME) FROM information_schema.VIEWS WHERE DEFINER=" + oldDef + ")" +
+			" + (SELECT COUNT(EVENT_NAME) FROM information_schema.EVENTS WHERE DEFINER=" + oldDef + ")",
+	)
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(left))
+	if err != nil {
+		return fmt.Errorf("migrateDBUser: unexpected definer count: %w", err)
+	}
+	if n != 0 {
+		return fmt.Errorf("migrateDBUser: %d object(s) still defined by the old user", n)
+	}
+	if _, err := query("DROP USER IF EXISTS " + lit(oldUser) + "@'%'; FLUSH PRIVILEGES;"); err != nil {
+		return err
+	}
+
+	// log success and return
+	logger.Debug("migrateDBUser: definers reassigned and old user dropped for site %s", site.Name)
+	return nil
+}
+
 // normalizeRequestDomains validates requested domains the same way a domain
 // added to an existing site is, dropping blanks and duplicates. On failure it
 // returns the HTTP status to answer with and a message fit for the client.
