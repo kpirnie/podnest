@@ -1,0 +1,20 @@
+{
+	"name": "PodNest Dev",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "."
+	},
+	"privileged": true,
+	"runArgs": ["--cgroupns=private"],
+	"containerEnv": {
+		"CHOKIDAR_USEPOLLING": "true"
+	},
+	"remoteUser": "root",
+	"forwardPorts": [8080],
+	"portsAttributes": {
+		"8080": { "label": "PodNest UI", "onAutoForward": "notify" }
+	},
+	"postCreateCommand": ["sh", ".devcontainer/post-create.sh"],
+	"postStartCommand": ["sh", ".devcontainer/start-podman.sh"],
+	"waitFor": "postStartCommand"
+}
