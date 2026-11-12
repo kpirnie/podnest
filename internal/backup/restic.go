@@ -89,8 +89,17 @@ func (m *Manager) ensureRepo(ctx context.Context, site *models.Site) (*models.Ba
 			LocalPath:    m.localRepoPath(site.Name),
 			LocalEnabled: true,
 		}
-		if err := db.UpsertBackupRepo(m.db, repo); err != nil {
+		if err := db.InsertBackupRepo(m.db, repo); err != nil {
 			return nil, err
+		}
+
+		// re-read so a record a concurrent caller stored first wins
+		repo, err = db.GetBackupRepo(m.db, site.ID)
+		if err != nil {
+			return nil, err
+		}
+		if repo == nil {
+			return nil, fmt.Errorf("ensureRepo: repo record for site %d missing after insert", site.ID)
 		}
 		logger.Debug("ensureRepo: created repo record for site %d", site.ID)
 	}

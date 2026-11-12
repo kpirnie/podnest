@@ -47,13 +47,13 @@ func GetBackupRepo(db *sql.DB, siteID int64) (*models.BackupRepo, error) {
 // UpsertBackupRepo inserts or updates the backup repo record for a site
 func UpsertBackupRepo(db *sql.DB, r *models.BackupRepo) error {
 
-	// upsert on site_id; always refresh updated timestamp
+	// upsert on site_id; always refresh updated timestamp. the password is set
+	// only on insert and never replaced, so a save can't strand an existing repo
 	_, err := db.Exec(`
 		INSERT INTO kppn_backup_repos
 			(site_id, repo_password, local_path, local_enabled, s3_enabled, updated)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT (site_id) DO UPDATE SET
-			repo_password = excluded.repo_password,
 			local_path    = excluded.local_path,
 			local_enabled = excluded.local_enabled,
 			s3_enabled    = excluded.s3_enabled,
@@ -66,6 +66,27 @@ func UpsertBackupRepo(db *sql.DB, r *models.BackupRepo) error {
 	}
 
 	logger.Debug("UpsertBackupRepo: upserted repo for site %d", r.SiteID)
+	return nil
+}
+
+// InsertBackupRepo inserts the backup repo record for a site, leaving an
+// existing record untouched so a concurrent insert can never replace its password
+func InsertBackupRepo(db *sql.DB, r *models.BackupRepo) error {
+
+	// insert only; a record that already exists for the site wins
+	_, err := db.Exec(`
+		INSERT INTO kppn_backup_repos
+			(site_id, repo_password, local_path, local_enabled, s3_enabled, updated)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (site_id) DO NOTHING`,
+		r.SiteID, r.RepoPassword, r.LocalPath, r.LocalEnabled, r.S3Enabled, time.Now().UTC(),
+	)
+	if err != nil {
+		logger.Error("InsertBackupRepo: site %d: %v", r.SiteID, err)
+		return err
+	}
+
+	logger.Debug("InsertBackupRepo: inserted repo for site %d", r.SiteID)
 	return nil
 }
 
