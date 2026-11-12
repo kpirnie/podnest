@@ -72,9 +72,9 @@ func GetAutoBanSettings(db *sql.DB) (AutoBanSettings, error) {
 	var s AutoBanSettings
 
 	err := db.QueryRow(`
-		SELECT threshold, window_secs, cooldown_secs, ban_secs, perm_strikes, perm_window_secs, escalate_sites
+		SELECT threshold, window_secs, cooldown_secs, ban_secs, perm_strikes, perm_window_secs, escalate_sites, unknown_threshold, unknown_window_secs
 		FROM kppn_autoban_settings WHERE id = 1`,
-	).Scan(&s.Threshold, &s.WindowSecs, &s.CooldownSecs, &s.BanSecs, &s.PermStrikes, &s.PermWindowSecs, &s.EscalateSites)
+	).Scan(&s.Threshold, &s.WindowSecs, &s.CooldownSecs, &s.BanSecs, &s.PermStrikes, &s.PermWindowSecs, &s.EscalateSites, &s.UnknownThreshold, &s.UnknownWindowSecs)
 	if err == sql.ErrNoRows {
 		return DefaultAutoBanSettings(), nil
 	}
@@ -90,18 +90,20 @@ func GetAutoBanSettings(db *sql.DB) (AutoBanSettings, error) {
 // SaveAutoBanSettings upserts the global auto-ban configuration
 func SaveAutoBanSettings(db *sql.DB, s AutoBanSettings) error {
 	_, err := db.Exec(`
-		INSERT INTO kppn_autoban_settings (id, threshold, window_secs, cooldown_secs, ban_secs, perm_strikes, perm_window_secs, escalate_sites, updated)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO kppn_autoban_settings (id, threshold, window_secs, cooldown_secs, ban_secs, perm_strikes, perm_window_secs, escalate_sites, unknown_threshold, unknown_window_secs, updated)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
-			threshold        = excluded.threshold,
-			window_secs      = excluded.window_secs,
-			cooldown_secs    = excluded.cooldown_secs,
-			ban_secs         = excluded.ban_secs,
-			perm_strikes     = excluded.perm_strikes,
-			perm_window_secs = excluded.perm_window_secs,
-			escalate_sites   = excluded.escalate_sites,
-			updated          = excluded.updated`,
-		s.Threshold, s.WindowSecs, s.CooldownSecs, s.BanSecs, s.PermStrikes, s.PermWindowSecs, s.EscalateSites, time.Now().UTC(),
+			threshold           = excluded.threshold,
+			window_secs         = excluded.window_secs,
+			cooldown_secs       = excluded.cooldown_secs,
+			ban_secs            = excluded.ban_secs,
+			perm_strikes        = excluded.perm_strikes,
+			perm_window_secs    = excluded.perm_window_secs,
+			escalate_sites      = excluded.escalate_sites,
+			unknown_threshold   = excluded.unknown_threshold,
+			unknown_window_secs = excluded.unknown_window_secs,
+			updated             = excluded.updated`,
+		s.Threshold, s.WindowSecs, s.CooldownSecs, s.BanSecs, s.PermStrikes, s.PermWindowSecs, s.EscalateSites, s.UnknownThreshold, s.UnknownWindowSecs, time.Now().UTC(),
 	)
 	if err != nil {
 		logger.Error("SaveAutoBanSettings: %v", err)
