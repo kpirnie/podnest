@@ -1084,6 +1084,41 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	dbRootPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "DB_ROOT_PASS")
 	redisPass, _ := fileutil.ReadEnvValue(h.sitesBase(), site.Name, "REDIS_PASS")
 
+	// a legacy DB username with non-alphanumeric characters breaks phpMyAdmin's
+	// definer check, so swap in an alphanumeric one before the pod is rebuilt —
+	// CreateMariaDB then ensures it with the existing password and grants
+	var oldDBUser string
+	if dbUser != "" && !isAlnum(dbUser) {
+		newDBUser, err := auth.GenerateDBUser()
+		if err != nil {
+			logger.Error("recreate: failed to generate DB user for site %s: %v", site.Name, err)
+			return "", fmt.Errorf("RecreateSite: generate db user: %w", err)
+		}
+
+		// a half-migrated site is worse than an unmigrated one, so any write
+		// failure puts the old name back and the recreate carries on with it
+		if err := setSiteDBUser(siteDir, newDBUser); err != nil {
+			logger.Warn("recreate: DB user migration aborted for site %s: %v", site.Name, err)
+			if err := setSiteDBUser(siteDir, dbUser); err != nil {
+				logger.Warn("recreate: failed to restore DB user for site %s: %v", site.Name, err)
+			}
+		} else {
+			oldDBUser = dbUser
+			dbUser = newDBUser
+		}
+	}
+
+	// until the old user's objects are reassigned, a failed rebuild must leave
+	// the site on its old username so the next recreate migrates it again
+	revertDBUser := func() {
+		if oldDBUser == "" {
+			return
+		}
+		if err := setSiteDBUser(siteDir, oldDBUser); err != nil {
+			logger.Warn("recreate: failed to restore DB user for site %s: %v", site.Name, err)
+		}
+	}
+
 	// fetch the Varnish configuration for the site from the database, and if not present, seed default values and write the VCL file
 	varnishKV, _ := db.GetConfigsBySiteAndType(h.DB, site.ID, models.ConfigVarnish)
 	var varnishCfgJSON string
@@ -1140,6 +1175,7 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		RedisPass:  redisPass,
 	}); err != nil {
 		logger.Error("recreating pod for site %s — pod left in place for inspection: %v", site.Name, err)
+		revertDBUser()
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
 		return "", err
 	}
@@ -1147,6 +1183,7 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	// confirm the pod is running after recreation, logging an error and returning an internal server error response if the pod does not reach a running state
 	if !h.confirmPodRunning(bgCtx, podman.PodName(site.Name), site.SiteType) {
 		logger.Error("pod for site %d did not reach running state after recreate", site.ID)
+		revertDBUser()
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusError)
 		return "", errPodNotRunning
 	}
