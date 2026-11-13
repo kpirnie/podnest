@@ -11,7 +11,7 @@ import { router } from '../router.js';
 import { toast } from '../toast.js';
 import { loadBackupsPanel, renderBackupsTab, wireBackupsPanel } from './site-backups.js';
 import { loadBasicAuthTab, renderBasicAuthTab, wireBasicAuthTab } from './site-basicauth.js';
-import { renderConfigTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
+import { renderConfigTab, renderProxyCacheTab, renderVarnishTab, wireConfigTabs } from './site-configs.js';
 import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js';
 import { initDBToolsPills, renderDBToolsTab, wireDBToolsTab } from './site-dbtools.js';
 import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
