@@ -753,27 +753,25 @@ func (c *Client) FlushVarnishCache(ctx context.Context, containerName string) er
 	return nil
 }
 
-// FlushRedisCache runs FLUSHALL inside the Redis container to clear all cached data
+// FlushRedisCache runs FLUSHALL inside the Redis container to clear all cached data;
+// valkey-cli is tried first, falling back to redis-cli for pods still on the old Redis image
 func (c *Client) FlushRedisCache(ctx context.Context, containerName, password string) error {
-	spec := map[string]any{
-		"AttachStdout": false,
-		"AttachStderr": false,
-		"Detach":       true,
-		"Cmd":          []string{"redis-cli", "-a", password, "--no-auth-warning", "FLUSHALL"},
+	var lastErr error
+	for _, bin := range []string{"valkey-cli", "redis-cli"} {
+		res, err := c.ExecCapture(ctx, containerName, "", []string{bin, "-a", password, "--no-auth-warning", "FLUSHALL"})
+		if err == nil && res.ExitCode == 0 {
+			logger.Debug("FlushRedisCache: FLUSHALL issued in %s via %s", containerName, bin)
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("%s exited %d", bin, res.ExitCode)
+		}
+		logger.Debug("FlushRedisCache: %s failed in %s: %v", bin, containerName, lastErr)
 	}
-	var execResp struct {
-		ID string `json:"Id"`
-	}
-	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+containerName+"/exec", spec, &execResp); err != nil {
-		logger.Error("FlushRedisCache: failed to create exec in %s: %v", containerName, err)
-		return err
-	}
-	if err := c.post(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": true}, nil); err != nil {
-		logger.Error("FlushRedisCache: failed to start exec in %s: %v", containerName, err)
-		return err
-	}
-	logger.Debug("FlushRedisCache: FLUSHALL issued in %s", containerName)
-	return nil
+	logger.Error("FlushRedisCache: failed to flush %s: %v", containerName, lastErr)
+	return lastErr
 }
 
 // KillContainer sends a signal to a running container; used to trigger
