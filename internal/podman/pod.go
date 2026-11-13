@@ -696,14 +696,14 @@ func (c *Client) PruneImages(ctx context.Context) (int, error) {
 	return len(pruned), nil
 }
 
-// FlushPHPCache clears the OPcache by executing opcache_reset() inside the PHP container
+// FlushPHPCache clears the OPcache by sending SIGUSR2 to PHP-FPM (PID 1) inside the PHP container
 func (c *Client) FlushPHPCache(ctx context.Context, containerName string) error {
 
-	// run php -r 'opcache_reset();' inside the php-fpm container to clear the opcode cache
+	// signal the php-fpm master (PID 1) for a graceful reload, which clears the opcode cache
 	spec := map[string]any{
 		"AttachStdout": true,
 		"AttachStderr": true,
-		"Cmd":          []string{"php", "-r", "opcache_reset();"},
+		"Cmd":          []string{"kill", "-USR2", "1"},
 	}
 	var execResp struct {
 		ID string `json:"Id"`
