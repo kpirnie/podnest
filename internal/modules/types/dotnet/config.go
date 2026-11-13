@@ -17,5 +17,6 @@ func seedConfigs() map[int]map[string]string {
 		models.ConfigMariaDB: config.DefaultMariaDB,
 		models.ConfigRedis:   config.DefaultRedis,
 		models.ConfigVarnish: config.DefaultVarnish,
+		models.ConfigProxyCache: config.DefaultProxyCache,
 	}
 }
