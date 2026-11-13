@@ -58,6 +58,7 @@ type SitesProxy interface {
 	ObtainCert(domain string)
 	RemoveDomains(domains []string)
 	ForgetSite(siteID int64, port int)
+	PurgeRespCache(siteID int64)
 	WarmCaches(justTrustedProxies bool) error
 }
 
@@ -925,6 +926,9 @@ func (h *Handler) apiSiteFlush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// purge the proxy response cache first so it is cleared even if a later flush fails
+	h.Proxy.PurgeRespCache(site.ID)
+
 	// flush PHP opcache if the site type supports PHP-FPM, logging an error and returning an internal server error response if flushing fails
 	if modules.TypeModule(site.SiteType).HasPHPFPM() {
 		if err := h.Podman.FlushPHPCache(r.Context(), podman.ContainerName(site.Name, "php")); err != nil {
@@ -1030,6 +1034,7 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
+	h.Proxy.PurgeRespCache(site.ID)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": status})
 }
 
@@ -1468,6 +1473,7 @@ func (h *Handler) apiRenameSite(w http.ResponseWriter, r *http.Request) {
 	// repoint the proxy at the new name and leave the site as it was found
 	h.refreshSiteDomains(site)
 	go h.Proxy.WarmCaches(false)
+	h.Proxy.PurgeRespCache(site.ID)
 	if wasRunning {
 		_ = db.UpdateSiteStatus(h.DB, site.ID, models.StatusRunning)
 		site.SiteStatus = models.StatusRunning

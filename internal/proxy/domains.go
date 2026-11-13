@@ -67,6 +67,7 @@ func (p *Proxy) ForgetSite(siteID int64, port int) {
 	p.rpCache.Delete(port)
 	p.basicAuthCache.Delete(siteID)
 	p.redirectCache.Delete(siteID)
+	p.respCache.Purge(siteID)
 	p.forgetAutoBans(siteID)
 	p.ReopenLogs(siteID)
 	p.pruneUpstreamCaches()
