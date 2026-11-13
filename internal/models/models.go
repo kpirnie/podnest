@@ -20,10 +20,10 @@ const (
 	ImgPHPBase  = "ghcr.io/kpirnie/php:"
 	ImgFail2Ban = "ghcr.io/kpirnie/fail2ban:latest"
 	ImgMalscan  = "ghcr.io/kpirnie/malscan:latest"
+	ImgRedis    = "ghcr.io/kpirnie/valkey:latest"
 
 	// from Docker Hub library
 	ImgDB      = "docker.io/library/mariadb:latest"
-	ImgRedis   = "docker.io/library/redis:alpine"
 	ImgPMA     = "docker.io/phpmyadmin/phpmyadmin:latest"
 	ImgNode    = "docker.io/library/node:"
 	ImgPython  = "docker.io/library/python:"
