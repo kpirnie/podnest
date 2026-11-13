@@ -49,12 +49,12 @@ export function renderVarnishTab(siteId, cfg) {
     const entries = cfg ? Object.entries(cfg).filter(([k]) => k !== "enabled") : [];
     return `
         <div>
-            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom" uk-tooltip="Add a Key">
+            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
                 <div class="uk-flex uk-flex-middle" style="gap:10px">
                     <h4 class="kp-view-title uk-margin-remove">Varnish</h4>
                 </div>
                 <div class="uk-flex" style="gap:8px">
-                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="5">
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="5" uk-tooltip="Add a Key">
                         <span uk-icon="plus"></span>
                     </button>
                     <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="5" data-site="${siteId}" uk-tooltip="Save the Configuration">
@@ -133,11 +133,13 @@ export function renderProxyCacheTab(siteId, cfg) {
         </div>`;
 }
 
-// keeps the dedicated enabled toggle in step with a reset or import, and drops
-// the enabled row the returned config would otherwise add to the KV grid
-function syncProxyCacheEnabled(root, cfg) {
-    root.querySelector(".proxycache-enabled-toggle").checked = cfg.enabled === "true";
-    root.querySelectorAll('.cfg-rows[data-type="6"] .cfg-key').forEach((input) => {
+const enabledToggles = { 5: ".varnish-enabled-toggle", 6: ".proxycache-enabled-toggle" };
+
+// keeps a dedicated enabled toggle in step with a reset or import, and drops the
+// enabled row the returned config would otherwise add to the KV grid
+function syncEnabledToggle(root, type, cfg) {
+    root.querySelector(enabledToggles[type]).checked = cfg.enabled === "true";
+    root.querySelectorAll(`.cfg-rows[data-type="${type}"] .cfg-key`).forEach((input) => {
         if (input.value === "enabled") input.closest(".kp-config-row").remove();
     });
 }
@@ -208,7 +210,7 @@ export function wireConfigTabs(root, siteId, signal) {
             const defaults = await api.post(`/sites/${site}/configs/${type}/reset`);
             const grid = root.querySelector(`.cfg-rows[data-type="${type}"]`);
             grid.innerHTML = Object.entries(defaults).map(([k, v]) => configRow(k, v)).join("");
-            if (type === "6") syncProxyCacheEnabled(root, defaults);
+            if (enabledToggles[type]) syncEnabledToggle(root, type, defaults);
             toast.success(`${configLabels[type]} reset to defaults`);
         } catch (e) { toast.error(e.message); }
     }, { signal });
@@ -232,7 +234,7 @@ export function wireConfigTabs(root, siteId, signal) {
             // refresh the grid rows with the returned merged config
             const grid = root.querySelector(`.cfg-rows[data-type="${type}"]`);
             grid.innerHTML = Object.entries(data).map(([k, v]) => configRow(k, v)).join("");
-            if (type === "6") syncProxyCacheEnabled(root, data);
+            if (enabledToggles[type]) syncEnabledToggle(root, type, data);
             toast.success(`${configLabels[type]} config imported`);
         } catch (err) {
             toast.error(err.message);
