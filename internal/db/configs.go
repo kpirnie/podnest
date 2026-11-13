@@ -40,6 +40,39 @@ func GetConfigsBySiteAndType(db *sql.DB, siteID int64, configType int) (map[stri
 	return kv, rows.Err()
 }
 
+// GetAllConfigsByType returns the KV pairs of one config type for every site as a map of site ID → KV map
+func GetAllConfigsByType(db *sql.DB, configType int) (map[int64]map[string]string, error) {
+
+	// query all KV rows of this type ordered by site then key
+	rows, err := db.Query(`
+		SELECT site_id, key, value FROM kppn_configs
+		WHERE type = ? ORDER BY site_id ASC, key ASC`, configType,
+	)
+	if err != nil {
+		logger.Error("GetAllConfigsByType: failed to query type %d: %v", configType, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	// populate the nested map from the result set
+	out := make(map[int64]map[string]string)
+	for rows.Next() {
+		var siteID int64
+		var k, v string
+		if err := rows.Scan(&siteID, &k, &v); err != nil {
+			logger.Error("GetAllConfigsByType: failed to scan row for type %d: %v", configType, err)
+			return nil, err
+		}
+		if out[siteID] == nil {
+			out[siteID] = make(map[string]string)
+		}
+		out[siteID][k] = v
+	}
+
+	logger.Debug("GetAllConfigsByType: found %d sites for type %d", len(out), configType)
+	return out, rows.Err()
+}
+
 // GetAllConfigsBySite returns all config types for a site as a map of type → KV map
 func GetAllConfigsBySite(db *sql.DB, siteID int64) (map[int]map[string]string, error) {
 
