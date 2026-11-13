@@ -357,10 +357,13 @@ export async function viewSiteDetail(root, { id, tab }) {
                     Manage <span uk-icon="icon: chevron-down; ratio: 0.8"></span>
                 </a>
                 <div class="kp-pill-dropdown" id="kp-manage-dropdown" hidden>
+                    <div class="kp-pill-dropdown-section">Config</div>
+                    <a href="#" data-switcher="3"><span uk-icon="icon: bolt; ratio: 0.85"></span> Proxy Cache</a>
+                    <hr>
                     <div class="kp-pill-dropdown-section">Security</div>
-                    <a href="#" data-switcher="3"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
-                    <a href="#" data-switcher="4"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
-                    <a href="#" data-switcher="5"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
+                    <a href="#" data-switcher="4"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
+                    <a href="#" data-switcher="5"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                    <a href="#" data-switcher="6"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -372,6 +375,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             <li>${renderRoutesTab()}</li>
             <li>${renderStatsTab(id, site.SiteType)}</li>
             <li>${renderLogsTab(id, site.SiteType)}</li>
+            <li>${renderProxyCacheTab(id, configs["6"])}</li>
             <li>${renderSecurityPanel(id)}</li>
             <li id="waf-tab-panel"></li>
             <li>${renderBasicAuthTab()}</li>
@@ -389,26 +393,27 @@ export async function viewSiteDetail(root, { id, tab }) {
                     <a href="#" data-switcher="2"><span uk-icon="icon: settings; ratio: 0.85"></span> Nginx</a>
                     ${showPHP ? `<a href="#" data-switcher="3"><span uk-icon="icon: code; ratio: 0.85"></span> PHP</a>` : ""}
                     <a href="#" data-switcher="${showPHP ? 4 : 3}"><span uk-icon="icon: database; ratio: 0.85"></span> MariaDB</a>
-                    <a href="#" data-switcher="${showPHP ? 5 : 4}"><span uk-icon="icon: server; ratio: 0.85"></span> Redis</a>
-                    <a href="#" data-switcher="${showPHP ? 6 : 5}"><span uk-icon="icon: world; ratio: 0.85"></span> Varnish</a>
+                    <a href="#" data-switcher="${showPHP ? 5 : 4}"><span uk-icon="icon: bolt; ratio: 0.85"></span> Proxy Cache</a>
+                    <a href="#" data-switcher="${showPHP ? 6 : 5}"><span uk-icon="icon: server; ratio: 0.85"></span> Redis</a>
+                    <a href="#" data-switcher="${showPHP ? 7 : 6}"><span uk-icon="icon: world; ratio: 0.85"></span> Varnish</a>
                     <hr>
                     <div class="kp-pill-dropdown-section">Security</div>
-                    <a href="#" data-switcher="${showPHP ? 8 : 7}"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
-                    <a href="#" data-switcher="${showPHP ? 9 : 8}"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
-                    <a href="#" data-switcher="${showPHP ? 10 : 9}"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
+                    <a href="#" data-switcher="${showPHP ? 9 : 8}"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
+                    <a href="#" data-switcher="${showPHP ? 10 : 9}"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
+                    <a href="#" data-switcher="${showPHP ? 11 : 10}"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
                     <hr>
                     <div class="kp-pill-dropdown-section">Tools</div>
-                    ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 11 : 10}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
+                    ${site.SiteType === 1 ? `<a href="#" data-switcher="${showPHP ? 12 : 11}"><span uk-icon="icon: file-text; ratio: 0.85"></span> WP-CLI</a>` : ""}
                     ${site.SiteType === 1 ? `<a href="#" data-switcher="wordpress"><span uk-icon="icon: wordpress; ratio: 0.85"></span> WordPress</a>` : ""}
-                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 12 : 11) : (showPHP ? 11 : 10)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
+                    <a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: history; ratio: 0.85"></span> Backups</a>
                     ${hasDB ? `<a href="#" data-switcher="database"><span uk-icon="icon: table; ratio: 0.85"></span> Database</a>` : ""}
-                    ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 13 : 12) : (showPHP ? 12 : 11)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
-                    <a href="#" data-switcher="${(site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)) - (showCrons ? 0 : 1)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
+                    ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
+                    <a href="#" data-switcher="${(site.SiteType === 1 ? (showPHP ? 15 : 14) : (showPHP ? 14 : 13)) - (showCrons ? 0 : 1)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
                     <a href="#" data-switcher="files"><span uk-icon="icon: folder; ratio: 0.85"></span> Files</a>
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
-            <li data-pill="${showPHP ? 7 : 6}"><a href="#">Logs</a></li>
+            <li data-pill="${showPHP ? 8 : 7}"><a href="#">Logs</a></li>
         </ul>
 
         <!-- switcher panels (driven by pills above) -->
@@ -418,6 +423,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             <li>${renderConfigTab(id, 1, configs["1"])}</li>
             ${showPHP ? `<li>${renderConfigTab(id, 2, configs["2"])}</li>` : ""}
             <li>${renderConfigTab(id, 3, configs["3"])}</li>
+            <li>${renderProxyCacheTab(id, configs["6"])}</li>
             <li>${renderConfigTab(id, 4, configs["4"])}</li>
             <li>${renderVarnishTab(id, configs["5"])}</li>
             <li>${renderLogsTab(id, site.SiteType)}</li>
@@ -467,6 +473,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     // but stats (from the per-site access.log) and basic auth still apply
     if (isRP) {
         wireRoutesTab(root, id);
+        wireConfigTabs(root, id, _rpWireAbort.signal);
         loadRoutesTab(id); // populate existing routes on load
         wireStatsTab(root, id, site.SiteType);
         loadStatsTab(id, site.SiteType);
