@@ -141,6 +141,7 @@ const FastCGICachePath = "/var/cache/nginx/fastcgi"
 const (
 	ProxyCacheChunkSize = 4096
 	ProxyCacheMaxObject = 1 << 20
+	ProxyCacheMaxMemory = 256 << 20
 )
 
 // backup destination types
