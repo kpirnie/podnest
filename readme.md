@@ -22,7 +22,7 @@ A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js,
 
 ## Overview
 
-Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Valkey (Redis-compatible object cache), plus a short-lived (60s by default) nginx FastCGI page cache that bypasses wp-admin, logged-in WordPress users, and PHP session holders. Node.js, .NET, and Python sites include MariaDB and Valkey (Redis-compatible object cache). Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own.
+Each site pod is provisioned with nginx as the reverse proxy and optionally Varnish as an in-memory HTTP cache layer in front of nginx. WordPress and PHP sites also include PHP-FPM, MariaDB, and Valkey (Redis-compatible object cache), plus a short-lived (60s by default) nginx FastCGI page cache that bypasses wp-admin, logged-in WordPress users, and PHP session holders. Node.js, .NET, and Python sites include MariaDB and Valkey (Redis-compatible object cache). Static HTML sites get nginx and optionally Varnish only. Reverse Proxy sites route traffic to an upstream URL with no containers of their own. The built-in proxy also keeps a per-site in-memory response cache (Proxy Cache, on by default, every site type): `GET` and `HEAD` responses up to 1 MiB are stored in 4 KiB chunks and served straight from memory, 60s by default, with the TTL either fixed or taken from the upstream `Cache-Control` (capped at the configured TTL). Each site is limited to 128M by default (256M maximum) and evicts its least recently used entries first. Requests with an `Authorization` header, WordPress logged-in or PHP session cookies, and responses that set cookies or forbid caching are never cached.
 
 **Supported site types:**
 
@@ -430,7 +430,7 @@ Day-to-day usage, configuration, and the full API reference are documented in th
 - **Built-in Reverse Proxy** — how it works, SSL / Let's Encrypt, admin domain, Reverse Proxy site type
 - **Redirects** — per-site redirect rules
 - **Basic Auth** — per-site HTTP basic authentication
-- **Site Configurations** — nginx, PHP, MariaDB, Redis, Varnish, resetting a config
+- **Site Configurations** — nginx, PHP, MariaDB, Redis, Varnish, Proxy Cache, resetting a config
 - **Security Rules** — IP rules, User-Agent rules, country blocking, ASN blocking, ASN lookup, Spamhaus DROP, global vs per-site, import/export
 - **WAF** — CRS rule management, global settings, per-site overrides, exclusions, auto-ban (429 cooldowns, bans, permanent bans, global escalation), WAF log
 - **Malware Scanning** — nightly ClamAV and Linux Malware Detect scans, manual scans, findings, quarantine, retention and resource settings
