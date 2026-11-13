@@ -108,7 +108,12 @@ func Migrate(db *sql.DB) error {
 	}
 
 	// backfill fastcgi cache keys into existing PHP and WordPress sites
-	return migrateFastCGICacheKeys(db)
+	if err := migrateFastCGICacheKeys(db); err != nil {
+		return err
+	}
+
+	// backfill proxy cache keys into every existing site
+	return migrateProxyCacheKeys(db)
 }
 
 // migrateColumns adds new columns and removes obsolete ones without breaking existing data
@@ -253,6 +258,39 @@ func migrateFastCGICacheKeys(db *sql.DB) error {
 	}
 
 	logger.Debug("backfilled fastcgi cache keys")
+	return nil
+}
+
+// migrateProxyCacheKeys adds the proxy response cache defaults to every
+// existing site. Guarded by a settings flag so keys an operator deliberately
+// removed are not re-added on every boot.
+func migrateProxyCacheKeys(db *sql.DB) error {
+
+	// skip when the one-time backfill has already run
+	if done, err := GetSetting(db, "schema_proxy_cache"); err == nil && done == "1" {
+		return nil
+	}
+
+	// insert each default key per site, leaving any existing value untouched
+	now := time.Now().UTC()
+	for k, v := range config.DefaultProxyCache {
+		if _, err := db.Exec(`
+			INSERT OR IGNORE INTO kppn_configs (site_id, type, key, value, created, updated)
+			SELECT id, ?, ?, ?, ?, ? FROM kppn_sites`,
+			models.ConfigProxyCache, k, v, now, now,
+		); err != nil {
+			logger.Error("proxy cache key backfill failed: %v", err)
+			return err
+		}
+	}
+
+	// record completion so this never runs again
+	if err := SetSetting(db, "schema_proxy_cache", "1"); err != nil {
+		logger.Error("failed to record proxy cache key backfill: %v", err)
+		return err
+	}
+
+	logger.Debug("backfilled proxy cache keys")
 	return nil
 }
 
