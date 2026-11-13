@@ -17,6 +17,7 @@ import (
 
 	"podnest/internal/apiutil"
 	"podnest/internal/audit"
+	"podnest/internal/cache"
 	"podnest/internal/config"
 	"podnest/internal/db"
 	"podnest/internal/fileutil"
@@ -98,6 +99,14 @@ func (h *Handler) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		logger.Error("failed to decode request body for config update: %v", err)
 		apiutil.Error(w, http.StatusBadRequest, err)
 		return
+	}
+
+	if configType == models.ConfigProxyCache {
+		if _, err := cache.ParseSettings(incoming); err != nil {
+			logger.Error("invalid proxy cache config for site %d: %v", site.ID, err)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	// capture prior state before mutating
@@ -277,6 +286,14 @@ func (h *Handler) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if configType == models.ConfigProxyCache {
+		if _, err := cache.ParseSettings(base); err != nil {
+			logger.Error("apiImportConfig: invalid proxy cache config for site %d: %v", site.ID, err)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
 	if err := db.SetConfigs(h.DB, site.ID, configType, base); err != nil {
 		logger.Error("apiImportConfig: failed to set config for site %d type %d: %v", site.ID, configType, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -392,6 +409,9 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		}
 		return nil
 
+	case models.ConfigProxyCache:
+		return nil
+
 	case models.ConfigVarnish:
 		vclContent, err := config.RenderVarnish(blob)
 		if err != nil {
@@ -457,9 +477,9 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 func resolveConfigType(w http.ResponseWriter, r *http.Request) (int, error) {
 	typeStr := r.PathValue("type")
 	t, err := strconv.Atoi(typeStr)
-	if err != nil || t < 1 || t > 5 {
+	if err != nil || t < 1 || t > 6 {
 		logger.Error("invalid config type in path: %s", typeStr)
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid config type — must be 1 (nginx), 2 (php), 3 (mariadb), 4 (redis), or 5 (varnish)")
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid config type — must be 1 (nginx), 2 (php), 3 (mariadb), 4 (redis), 5 (varnish), or 6 (proxy cache)")
 		return 0, fmt.Errorf("invalid config type: %s", typeStr)
 	}
 	logger.Debug("resolved config type from path: %d", t)
