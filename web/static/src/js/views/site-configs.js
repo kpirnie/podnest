@@ -8,7 +8,7 @@ import { api } from '../api.js';
 import { confirm } from '../helpers.js';
 import { toast } from '../toast.js';
 
-const configLabels = { 1: "Nginx", 2: "PHP", 3: "MariaDB", 4: "Redis", 5: "Varnish" };
+const configLabels = { 1: "Nginx", 2: "PHP", 3: "MariaDB", 4: "Redis", 5: "Varnish", 6: "Proxy Cache" };
 
 export function renderConfigTab(siteId, type, cfg) {
     const entries = cfg ? Object.entries(cfg) : [];
@@ -88,6 +88,60 @@ export function renderVarnishTab(siteId, cfg) {
         </div>`;
 }
 
+export function renderProxyCacheTab(siteId, cfg) {
+    const enabled = cfg?.enabled === "true";
+    // exclude 'enabled' from the KV grid — rendered as a dedicated toggle instead
+    const entries = cfg ? Object.entries(cfg).filter(([k]) => k !== "enabled") : [];
+    return `
+        <div>
+            <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">
+                <div class="uk-flex uk-flex-middle" style="gap:10px">
+                    <h4 class="kp-view-title uk-margin-remove">Proxy Cache</h4>
+                </div>
+                <div class="uk-flex" style="gap:8px">
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-add-row" data-type="6" uk-tooltip="Add a Key">
+                        <span uk-icon="plus"></span>
+                    </button>
+                    <button class="uk-button kp-btn-secondary kp-btn-sm cfg-save" data-type="6" data-site="${siteId}" uk-tooltip="Save the Configuration">
+                        <span uk-icon="check"></span>
+                    </button>
+                    <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="6" data-site="${siteId}" uk-tooltip="Reset to Defaults">
+                        <span uk-icon="refresh"></span>
+                    </button>
+                    <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${siteId}/configs/6/export" download="${siteId}-config-6.csv" uk-tooltip="Export config as CSV">
+                        <span uk-icon="download"></span>
+                    </a>
+                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="6" data-site="${siteId}" uk-tooltip="Import config from CSV" style="cursor:pointer">
+                        <span uk-icon="upload"></span>
+                        <input type="file" class="cfg-import-input" accept=".csv" style="display:none" data-type="6" data-site="${siteId}">
+                    </label>
+                </div>
+            </div>
+
+            <!-- enable/disable toggle — applies immediately, no pod recreate -->
+            <div class="uk-margin-small-bottom" style="background:var(--kp-surface-2);padding:10px 12px;border-radius:6px">
+                <label class="uk-flex uk-flex-middle" style="gap:10px;cursor:pointer">
+                    <input type="checkbox" class="uk-checkbox proxycache-enabled-toggle" ${enabled ? "checked" : ""}>
+                    <span>Enable Proxy Cache</span>
+                    <span class="kp-muted uk-text-small">— ttl_mode is fixed or upstream; memory is capped at 256M</span>
+                </label>
+            </div>
+
+            <div class="kp-config-grid cfg-rows" data-type="6">
+                ${entries.map(([k, v]) => configRow(k, v)).join("")}
+            </div>
+        </div>`;
+}
+
+// keeps the dedicated enabled toggle in step with a reset or import, and drops
+// the enabled row the returned config would otherwise add to the KV grid
+function syncProxyCacheEnabled(root, cfg) {
+    root.querySelector(".proxycache-enabled-toggle").checked = cfg.enabled === "true";
+    root.querySelectorAll('.cfg-rows[data-type="6"] .cfg-key').forEach((input) => {
+        if (input.value === "enabled") input.closest(".kp-config-row").remove();
+    });
+}
+
 function configRow(k = "", v = "") {
     return `<div class="kp-config-row">
         <div class="kp-config-key">
@@ -133,6 +187,11 @@ export function wireConfigTabs(root, siteId, signal) {
             const toggle = root.querySelector(".varnish-enabled-toggle");
             body["enabled"] = toggle?.checked ? "true" : "false";
         }
+        // include the enabled toggle value for the proxy cache config
+        if (type === "6") {
+            const toggle = root.querySelector(".proxycache-enabled-toggle");
+            body["enabled"] = toggle?.checked ? "true" : "false";
+        }
         try {
             await api.put(`/sites/${site}/configs/${type}`, body);
             toast.success(`${configLabels[type]} config saved`);
@@ -149,6 +208,7 @@ export function wireConfigTabs(root, siteId, signal) {
             const defaults = await api.post(`/sites/${site}/configs/${type}/reset`);
             const grid = root.querySelector(`.cfg-rows[data-type="${type}"]`);
             grid.innerHTML = Object.entries(defaults).map(([k, v]) => configRow(k, v)).join("");
+            if (type === "6") syncProxyCacheEnabled(root, defaults);
             toast.success(`${configLabels[type]} reset to defaults`);
         } catch (e) { toast.error(e.message); }
     }, { signal });
@@ -172,6 +232,7 @@ export function wireConfigTabs(root, siteId, signal) {
             // refresh the grid rows with the returned merged config
             const grid = root.querySelector(`.cfg-rows[data-type="${type}"]`);
             grid.innerHTML = Object.entries(data).map(([k, v]) => configRow(k, v)).join("");
+            if (type === "6") syncProxyCacheEnabled(root, data);
             toast.success(`${configLabels[type]} config imported`);
         } catch (err) {
             toast.error(err.message);
