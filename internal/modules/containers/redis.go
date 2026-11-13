@@ -11,25 +11,23 @@ import (
 	"podnest/internal/modules"
 )
 
-// CreateRedis creates and starts the nginx container for a site pod.
+// CreateRedis creates and starts the Valkey container for a site pod.
 func CreateRedis(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, podName string) error {
 	if err := client.CreateContainer(ctx, modules.ContainerConfig{
 		Name:    modules.ContainerName(cfg.Site.Name, "redis"),
 		Image:   models.ImgRedis,
 		PodName: podName,
-		Command: []string{"redis-server", "/usr/local/etc/redis/redis.conf"},
-		Env:     map[string]string{"SKIP_FIX_PERMS": "1"},
+		Command: []string{"valkey-server", "/usr/local/etc/valkey/valkey.conf"},
 		Mounts: []modules.Mount{
-			{Type: "bind", Source: cfg.SiteDir + "/redis/redis.conf", Destination: "/usr/local/etc/redis/redis.conf", Options: []string{"z"}},
+			{Type: "bind", Source: cfg.SiteDir + "/redis/redis.conf", Destination: "/usr/local/etc/valkey/valkey.conf", Options: []string{"z"}},
 			{Type: "tmpfs", Destination: "/tmp", Options: []string{"rw", "nosuid", "nodev", "mode=1777", "size=64m"}},
 			// persistence dir backed by tmpfs so the rootfs can be read-only; it was
 			// already ephemeral (no host bind) so behaviour is unchanged. mode=0777
-			// because CHOWN is dropped and SKIP_FIX_PERMS skips the entrypoint chown
+			// because CHOWN is dropped and the image runs as a fixed non-root user
 			{Type: "tmpfs", Destination: "/data", Options: []string{"rw", "nosuid", "nodev", "mode=0777", "size=256m"}},
 		},
 		ReadOnly: true,
 		CapDrop:  []string{"ALL"},
-		CapAdd:   []string{"SETUID", "SETGID"},
 		SecOpts:  []string{"no-new-privileges:true"},
 	}); err != nil {
 		return fmt.Errorf("create redis: %w", err)
