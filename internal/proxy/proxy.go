@@ -451,6 +451,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// responses (404 domain-not-found, 403 IP/UA/WAF blocks already returned above)
 	sw.Header().Set(`Alt-Svc`, `h3=":443"; ma=86400`)
 
+	// answer from the response cache when possible; otherwise proxy through a
+	// writer that captures a cacheable response for storage
+	served, cw, cacheDone := p.respCacheBegin(sw, r, siteID)
+	if served {
+		p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
+		return
+	}
+
 	// reverse proxy sites — cascade through the pool, first response that isn't
 	// a transport error or >= 400 streams through unbuffered
 	if rpPool != nil {
@@ -469,7 +477,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// first attempt
 		first := rpPool.At(startIdx)
 		firstTransport := p.rpTransportForTarget(first)
-		if p.literalUpstreamAllowed(r.Context(), siteID, first) && tryUpstream(sw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, firstTransport)) {
+		if p.literalUpstreamAllowed(r.Context(), siteID, first) && tryUpstream(cw, r, first, p.getOrCreateRPProxy(first.URL, first.PassHost, firstTransport)) {
+			cacheDone()
 			p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 			return
 		}
@@ -484,7 +493,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i := 1; i < rpPool.Len(); i++ {
 			target := rpPool.At(startIdx + i)
 			resetReplayBody(r, body)
-			if p.literalUpstreamAllowed(r.Context(), siteID, target) && tryUpstream(sw, r, target, p.getOrCreateRPProxy(target.URL, target.PassHost, p.rpTransportForTarget(target))) {
+			if p.literalUpstreamAllowed(r.Context(), siteID, target) && tryUpstream(cw, r, target, p.getOrCreateRPProxy(target.URL, target.PassHost, p.rpTransportForTarget(target))) {
+				cacheDone()
 				p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 				return
 			}
@@ -497,7 +507,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// container-based sites — route to the container's port via cached reverse proxy
-	p.siteProxy(sw, r, port)
+	p.siteProxy(cw, r, port)
+	cacheDone()
 	p.writeAccessLog(r, sw.status, sw.bytes, start, time.Since(start), clientIPStr, siteID, siteName)
 }
 

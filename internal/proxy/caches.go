@@ -75,6 +75,7 @@ func (p *Proxy) WarmCaches(justTrustedProxies bool) error {
 	p.warmSecurityCache(ipRules, uaRules, countryRules, asnRules)
 	p.warmBypassCache(bypassRules)
 	p.warmBasicAuthCache()
+	p.warmRespCache()
 	p.warmTrustedProxies(cidrs)
 	p.warmTLSCache()
 
