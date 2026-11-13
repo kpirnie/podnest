@@ -151,6 +151,14 @@ var DefaultVarnish = map[string]string{
 	"bypass_extensions":     "",
 }
 
+// setup and hold the default proxy response cache config for new sites
+var DefaultProxyCache = map[string]string{
+	"enabled":  "true",
+	"ttl":      "60s",
+	"ttl_mode": "fixed",
+	"memory":   "128M",
+}
+
 // DefaultsForType returns the default config map for a given config type constant
 func DefaultsForType(configType int) (map[string]string, error) {
 	switch configType {
@@ -169,6 +177,9 @@ func DefaultsForType(configType int) (map[string]string, error) {
 	case models.ConfigVarnish:
 		logger.Debug("returning default varnish config")
 		return DefaultVarnish, nil
+	case models.ConfigProxyCache:
+		logger.Debug("returning default proxy cache config")
+		return DefaultProxyCache, nil
 	default:
 		logger.Error("unknown config type: %d", configType)
 		return nil, fmt.Errorf("unknown config type: %d", configType)

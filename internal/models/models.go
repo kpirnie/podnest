@@ -91,11 +91,12 @@ var SiteTypeMap = map[int]string{
 
 // config types
 const (
-	ConfigNginx   = 1
-	ConfigPHP     = 2
-	ConfigMariaDB = 3
-	ConfigRedis   = 4
-	ConfigVarnish = 5
+	ConfigNginx      = 1
+	ConfigPHP        = 2
+	ConfigMariaDB    = 3
+	ConfigRedis      = 4
+	ConfigVarnish    = 5
+	ConfigProxyCache = 6
 )
 
 // node versions
@@ -135,6 +136,12 @@ const VarnishNginxPort = 8080
 
 // FastCGICachePath is the nginx fastcgi cache directory inside the nginx container's /var/cache/nginx tmpfs
 const FastCGICachePath = "/var/cache/nginx/fastcgi"
+
+// proxy response cache chunk size and largest cacheable object, in bytes
+const (
+	ProxyCacheChunkSize = 4096
+	ProxyCacheMaxObject = 1 << 20
+)
 
 // backup destination types
 const (
