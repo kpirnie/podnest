@@ -161,7 +161,7 @@ func (s *Server) routes() http.Handler {
 	redirectsHandler.RegisterRoutes(api)
 
 	// configs
-	configsHandler := &configs.Handler{DB: s.cfg.DB, AppPath: s.cfg.AppPath, Podman: s.podman, Resolve: sitesHandler.ResolveSite, WPUpdate: s.wpupdate}
+	configsHandler := &configs.Handler{DB: s.cfg.DB, AppPath: s.cfg.AppPath, Podman: s.podman, Proxy: s.proxy, Resolve: sitesHandler.ResolveSite, WPUpdate: s.wpupdate}
 	configsHandler.RegisterRoutes(api)
 
 	// logs

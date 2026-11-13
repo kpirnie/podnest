@@ -38,11 +38,17 @@ type ConfigPodman interface {
 	RemoveContainer(ctx context.Context, name string) error
 }
 
+// ConfigProxy is the subset of proxy.Proxy consumed by this handler.
+type ConfigProxy interface {
+	UpdateRespCache(siteID int64, kv map[string]string) error
+}
+
 // Handler handles site configuration management API routes.
 type Handler struct {
 	DB       *sql.DB
 	AppPath  string
 	Podman   ConfigPodman
+	Proxy    ConfigProxy
 	Resolve  modules.SiteResolver
 	WPUpdate *wpupdate.Manager
 }
@@ -410,6 +416,15 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		return nil
 
 	case models.ConfigProxyCache:
+		var kv map[string]string
+		if err := json.Unmarshal([]byte(blob), &kv); err != nil {
+			logger.Error("failed to unmarshal proxy cache config for site %d: %v", site.ID, err)
+			return err
+		}
+		if err := h.Proxy.UpdateRespCache(site.ID, kv); err != nil {
+			logger.Error("failed to apply proxy cache config for site %d: %v", site.ID, err)
+			return err
+		}
 		return nil
 
 	case models.ConfigVarnish:
