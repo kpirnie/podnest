@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"podnest/internal/auth"
+	"podnest/internal/cache"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/podman"
@@ -108,6 +109,7 @@ type Proxy struct {
 	rpProxyCache      sync.Map                                         // string(url) → *httputil.ReverseProxy for RP upstream sites
 	redirectCache     sync.Map                                         // int64(siteID) → []compiledRedirect; precompiled on store
 	basicAuthCache    sync.Map                                         // int64(siteID) → *basicAuthEntry; nil entry means disabled
+	respCache         *cache.Manager                                   // per-site response cache stores and settings
 	transport         *http.Transport                                  // shared connection pool across all reverse proxies
 	adminTransport    *http.Transport                                  // admin-panel pool — no ResponseHeaderTimeout for long ops (site provisioning)
 	rpTransport       *http.Transport                                  // shared connection pool for reverse-proxy-type upstreams whose route disables TLS verification
@@ -155,6 +157,7 @@ func New(cfg Config) *Proxy {
 		adminDomain: cfg.AdminDomain,
 		adminPort:   cfg.AdminPort,
 		appPath:     cfg.AppPath,
+		respCache:   cache.NewManager(),
 		transport: &http.Transport{
 			// dial timeout prevents stalls on first connection to a container that is
 			// slow to accept — without this the OS default applies (~130s on Linux),
