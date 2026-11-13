@@ -35,6 +35,14 @@ type respCapture struct {
 	active  bool
 }
 
+// respCacheBypassCookies are lowercase substrings of a Cookie header that mark a
+// request as personalised; the list matches the Varnish bypass_cookies default
+var respCacheBypassCookies = []string{
+	"wordpress_logged_in", "wordpress_sec", "woocommerce_", "wp_woocommerce",
+	"phpsessid", "laravel_session", "ci_session", "symfony", "sess",
+	"sessionid", "connect.sid",
+}
+
 // WriteHeader decides whether the response is cacheable before passing it on;
 // informational 1xx responses are passed through untouched
 func (c *respCapture) WriteHeader(code int) {
@@ -162,8 +170,8 @@ func (p *Proxy) respCacheBegin(w http.ResponseWriter, r *http.Request, siteID in
 	return false, c, c.finish
 }
 
-// respCacheableRequest applies the request-side cacheability rules; the cookie
-// and path bypasses mirror the nginx FastCGI cache's $pn_skip_cache
+// respCacheableRequest applies the request-side cacheability rules; the path
+// bypass mirrors the nginx FastCGI cache's $pn_skip_cache
 func respCacheableRequest(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -178,8 +186,10 @@ func respCacheableRequest(r *http.Request) bool {
 		return false
 	}
 	ck := strings.ToLower(strings.Join(r.Header.Values("Cookie"), "; "))
-	if strings.Contains(ck, "wordpress_logged_in_") || strings.Contains(ck, "phpsessid") {
-		return false
+	for _, name := range respCacheBypassCookies {
+		if strings.Contains(ck, name) {
+			return false
+		}
 	}
 	return true
 }
