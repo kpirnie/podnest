@@ -447,7 +447,6 @@ lazyfree-lazy-eviction   %s
 lazyfree-lazy-expire     %s
 
 io-threads          %s
-io-threads-do-reads %s
 `,
 		redisPassword,
 		v("maxmemory"),
@@ -460,7 +459,6 @@ io-threads-do-reads %s
 		v("lazyfree_lazy_eviction"),
 		v("lazyfree_lazy_expire"),
 		v("io_threads"),
-		v("io_threads_do_reads"),
 	), nil
 }
 

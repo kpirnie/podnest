@@ -124,13 +124,12 @@ var DefaultMariaDB = map[string]string{
 
 // setup and hold the default redis config for new sites
 var DefaultRedis = map[string]string{
-	"maxmemory":              "512mb",
+	"maxmemory":              "256mb",
 	"maxmemory_policy":       "allkeys-lru",
 	"tcp_keepalive":          "300",
 	"hz":                     "10",
 	"dynamic_hz":             "yes",
 	"io_threads":             "2",
-	"io_threads_do_reads":    "no",
 	"lazyfree_lazy_eviction": "yes",
 	"lazyfree_lazy_expire":   "yes",
 	"save":                   "",
