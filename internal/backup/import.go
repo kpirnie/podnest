@@ -153,7 +153,7 @@ func (m *Manager) ImportRestore(ctx context.Context, targetSite *models.Site, ar
 	} else {
 		logger.Debug("ImportRestore: archive %s is outside %s, leaving it in place", archivePath, targetSite.Name)
 	}
-
+	m.notifySiteChanged(targetSite.ID)
 	logger.Debug("ImportRestore: completed for site %s from %s", targetSite.Name, filepath.Base(archivePath))
 	return nil
 }

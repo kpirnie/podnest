@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"podnest/internal/db"
@@ -52,6 +53,7 @@ type Manager struct {
 	jobs        sync.WaitGroup
 	jobCtx      context.Context
 	jobCancel   context.CancelFunc
+	siteChanged atomic.Pointer[func(int64)]
 }
 
 // New returns a backup Manager
@@ -70,6 +72,19 @@ func New(database *sql.DB, pc *podman.Client, podmanSock, appPath string) *Manag
 		schedulerCh: make(chan string, 1),
 		jobCtx:      jobCtx,
 		jobCancel:   jobCancel,
+	}
+}
+
+// SetSiteChangedHook registers a callback run with a site's ID whenever a
+// restore, import or push has changed its content
+func (m *Manager) SetSiteChangedHook(fn func(siteID int64)) {
+	m.siteChanged.Store(&fn)
+}
+
+// notifySiteChanged runs the registered site-changed hook, if any
+func (m *Manager) notifySiteChanged(siteID int64) {
+	if fn := m.siteChanged.Load(); fn != nil {
+		(*fn)(siteID)
 	}
 }
 

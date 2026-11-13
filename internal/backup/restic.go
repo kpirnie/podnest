@@ -428,6 +428,7 @@ func (m *Manager) Restore(ctx context.Context, site *models.Site, backup *models
 		return fmt.Errorf("restore db: %w", err)
 	}
 
+	m.notifySiteChanged(site.ID)
 	logger.Debug("Restore: completed for site %s from tag %s", site.Name, backup.SnapshotID)
 	return nil
 }

@@ -205,7 +205,7 @@ func (m *Manager) Push(ctx context.Context, src, dst *models.Site, opts PushOpti
 			logger.Warn("Push: flush varnish for site %s: %v", dst.Name, err)
 		}
 	}
-
+	m.notifySiteChanged(dst.ID)
 	logger.Debug("Push: completed %s → %s (files=%v db=%v)", src.Name, dst.Name, opts.Files, pushDB)
 	return nil
 }

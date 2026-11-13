@@ -192,7 +192,7 @@ func (m *Manager) ImportSQL(ctx context.Context, site *models.Site, dumpPath str
 			logger.Warn("ImportSQL: remove dump %s: %v", dumpPath, err)
 		}
 	}
-
+	m.notifySiteChanged(site.ID)
 	logger.Debug("ImportSQL: imported %s into site %s (wipe=%v)", filepath.Base(dumpPath), site.Name, wipe)
 	return nil
 }

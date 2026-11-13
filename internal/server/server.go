@@ -227,6 +227,7 @@ func (s *Server) Start() error {
 		AppPath:     s.cfg.AppPath,
 	})
 	s.proxy = px
+	s.backup.SetSiteChangedHook(px.PurgeRespCache)
 
 	// let the auth and pma cookie paths gate X-Forwarded-Proto on the proxy's
 	// own trusted-peer check
