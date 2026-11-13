@@ -11,7 +11,7 @@ import (
 	"podnest/internal/modules"
 )
 
-// CreateRedis creates and starts the nginx container for a site pod.
+// CreateMariaDB creates and starts the MariaDB container for a site pod.
 func CreateMariaDB(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, podName string) error {
 	if err := client.CreateContainer(ctx, modules.ContainerConfig{
 		Name:    modules.ContainerName(cfg.Site.Name, "db"),
