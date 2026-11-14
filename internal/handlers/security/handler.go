@@ -903,6 +903,12 @@ func (h *Handler) apiASNLookup(w http.ResponseWriter, r *http.Request) {
 		ipStr = addrs[0].IP.String()
 	}
 
+	// only public addresses are looked up — resolving a name must not reveal or probe internal hosts
+	if ip := net.ParseIP(ipStr); ip == nil || !ip.IsGlobalUnicast() || ip.IsPrivate() {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "only public addresses can be looked up")
+		return
+	}
+
 	asn, org := h.Proxy.LookupASN(ipStr)
 	country := h.Proxy.LookupCountry(ipStr)
 
