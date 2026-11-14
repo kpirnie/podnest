@@ -11348,6 +11348,62 @@
         ]
       }
     },
+    "/sites/{id}/managers": {
+      "get": {
+        "tags": ["Sites"],
+        "summary": "Get site managers",
+        "description": "Admin only. Returns owner_id (the site's owner) and uids (the IDs of the managers assigned to the site, excluding the owner).",
+        "operationId": "get_sites_id_managers",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "owner_id": { "type": "integer" }, "uids": { "type": "array", "items": { "type": "integer" } } } } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Site not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      },
+      "put": {
+        "tags": ["Sites"],
+        "summary": "Set site managers",
+        "description": "Admin only. Replaces the full set of managers assigned to the site. An assigned manager has the same rights as the site's owner on that site. The site's owner and duplicate IDs are dropped. Every ID must belong to an existing, unblocked user with the manager role.",
+        "operationId": "put_sites_id_managers",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["uids"], "properties": { "uids": { "type": "array", "items": { "type": "integer" }, "example": [2, 5] } } } } }
+        },
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object", "properties": { "owner_id": { "type": "integer" }, "uids": { "type": "array", "items": { "type": "integer" } } } } } } },
+          "400": { "description": "Invalid payload, or an ID is unknown, blocked, or not a manager", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Site not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
+    "/users/{id}/sites": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get sites assigned to a user",
+        "description": "Admin only. Returns the sites the user is assigned to as a manager (id, name). Sites the user owns are not included.",
+        "operationId": "get_users_id_sites",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "integer" }, "name": { "type": "string" } } } } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "User not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "User ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
     "/nodes/pair-code": {
       "post": {
         "tags": ["Nodes"],
