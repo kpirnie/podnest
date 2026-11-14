@@ -146,11 +146,19 @@ func (h *Handler) ResolveSite(w http.ResponseWriter, r *http.Request) (*models.S
 		return nil, false
 	}
 
-	// enforce ownership: only admins or the site owner can access this site
-	if user.Role != models.RoleAdmin && site.UID != user.ID {
-		logger.Error("user %d does not own site %d", user.ID, site.ID)
-		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
-		return nil, false
+	// enforce access: only admins, the site owner, or an assigned manager can access this site
+	if user.Role != models.RoleAdmin {
+		allowed, err := db.CanAccessSite(h.DB, site.ID, user.ID)
+		if err != nil {
+			logger.Error("failed to check access for user %d on site %d: %v", user.ID, site.ID, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return nil, false
+		}
+		if !allowed {
+			logger.Error("user %d cannot access site %d", user.ID, site.ID)
+			apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+			return nil, false
+		}
 	}
 
 	// log the resolved site for debugging purposes and return it
@@ -1968,10 +1976,18 @@ func (h *Handler) apiSitePush(w http.ResponseWriter, r *http.Request) {
 	// ResolveSite only proved access to the source; the target is the site being
 	// overwritten, so ownership is enforced on it as well
 	user := auth.UserFromContext(r.Context())
-	if user.Role != models.RoleAdmin && dst.UID != user.ID {
-		logger.Error("apiSitePush: user %d does not own target site %d", user.ID, dst.ID)
-		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
-		return
+	if user.Role != models.RoleAdmin {
+		allowed, err := db.CanAccessSite(h.DB, dst.ID, user.ID)
+		if err != nil {
+			logger.Error("apiSitePush: failed to check access for user %d on target site %d: %v", user.ID, dst.ID, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		if !allowed {
+			logger.Error("apiSitePush: user %d cannot access target site %d", user.ID, dst.ID)
+			apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
+			return
+		}
 	}
 	if dst.SiteType != src.SiteType {
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "source and target site types differ")
