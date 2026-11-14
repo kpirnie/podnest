@@ -8137,6 +8137,30 @@
         }
       }
     },
+    "/sites/{id}/rename": {
+      "post": {
+        "tags": ["Sites"],
+        "summary": "Rename a site",
+        "description": "Renames the site. The requested name is lowercased and disallowed characters become hyphens; names that cannot map to a pod or directory are rejected, as is a name already in use. A reverse proxy site only has its record renamed. For every other type a pre-rename backup is taken, the pod, directory, database, SFTP user and config files move to the new name, and the pod is rebuilt and started under it; the site is stopped again afterwards if it was stopped before. Any failure along the way rolls the rename back. The site is held for the whole rename, so a backup, restore, import, push or delete in progress refuses it.",
+        "operationId": "post_sites_id_rename",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string", "example": "my-site" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Success, returns the renamed site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Invalid request, invalid site name, or name unchanged", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Site not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Site name already exists, or another operation is running on the site", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "500": { "description": "Rename failed and was rolled back", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
     "/sites/{id}/restart": {
       "post": {
         "tags": [
