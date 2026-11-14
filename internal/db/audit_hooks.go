@@ -32,6 +32,15 @@ func SnapshotSite(database *sql.DB, id int64) string {
 	return snapshotJSON(s)
 }
 
+// SnapshotSiteManagers fetches the assigned manager IDs for a site as a JSON string.
+func SnapshotSiteManagers(database *sql.DB, siteID int64) string {
+	ids, err := GetSiteManagerIDs(database, siteID)
+	if err != nil {
+		return ""
+	}
+	return snapshotJSON(ids)
+}
+
 // SnapshotConfigs fetches all configs for a site+type as a JSON string.
 func SnapshotConfigs(database *sql.DB, siteID int64, configType int) string {
 	kv, err := GetConfigsBySiteAndType(database, siteID, configType)
