@@ -16,7 +16,7 @@ import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js'
 import { initDBToolsPills, renderDBToolsTab, wireDBToolsTab } from './site-dbtools.js';
 import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
-import { renderManagersTab } from './site-managers.js';
+import { loadManagersTab, renderManagersTab, wireManagersTab } from './site-managers.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-redirects.js';
 import { initSecurityPills, loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
