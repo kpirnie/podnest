@@ -172,6 +172,9 @@ func migrateColumns(db *sql.DB) error {
 		// wordpress update dashboard + wp-admin sso
 		`CREATE TABLE IF NOT EXISTS kppn_wp_updates (site_id INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE, core_version TEXT NOT NULL DEFAULT '', core_update TEXT NOT NULL DEFAULT '', plugins TEXT NOT NULL DEFAULT '[]', themes TEXT NOT NULL DEFAULT '[]', error TEXT NOT NULL DEFAULT '', checked DATETIME)`,
 		`CREATE TABLE IF NOT EXISTS kppn_wp_sso (site_id INTEGER PRIMARY KEY REFERENCES kppn_sites(id) ON DELETE CASCADE, wp_user_id INTEGER NOT NULL DEFAULT 0, updated DATETIME)`,
+		// multi-manager site assignment
+		`CREATE TABLE IF NOT EXISTS kppn_site_managers (site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE, uid INTEGER NOT NULL REFERENCES kppn_users(id) ON DELETE CASCADE, created DATETIME NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (site_id, uid))`,
+		`CREATE INDEX IF NOT EXISTS idx_site_managers_uid ON kppn_site_managers (uid)`,
 		// unknown-domain auto-ban threshold
 		`ALTER TABLE kppn_autoban_settings ADD COLUMN unknown_threshold INTEGER NOT NULL DEFAULT 5`,
 		`ALTER TABLE kppn_autoban_settings ADD COLUMN unknown_window_secs INTEGER NOT NULL DEFAULT 60`,
@@ -529,6 +532,15 @@ CREATE TABLE IF NOT EXISTS kppn_sites (
 
 CREATE INDEX IF NOT EXISTS idx_sites_uid  ON kppn_sites (uid);
 CREATE INDEX IF NOT EXISTS idx_sites_name ON kppn_sites (name);
+
+CREATE TABLE IF NOT EXISTS kppn_site_managers (
+    site_id INTEGER NOT NULL REFERENCES kppn_sites(id) ON DELETE CASCADE,
+    uid     INTEGER NOT NULL REFERENCES kppn_users(id) ON DELETE CASCADE,
+    created DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (site_id, uid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_site_managers_uid ON kppn_site_managers (uid);
 
 CREATE TABLE IF NOT EXISTS kppn_domains (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
