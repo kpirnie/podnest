@@ -136,10 +136,10 @@ func (h *Handler) callerOwnsDomain(r *http.Request, domain string) bool {
 		return true
 	}
 
-	// non-admins are limited to their own sites
-	site, err := db.GetSiteByID(h.DB, d.SiteID)
-	if err != nil || site == nil {
+	// non-admins are limited to sites they own or are assigned to
+	allowed, err := db.CanAccessSite(h.DB, d.SiteID, user.ID)
+	if err != nil {
 		return false
 	}
-	return site.UID == user.ID
+	return allowed
 }
