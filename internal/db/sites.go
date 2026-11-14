@@ -107,10 +107,12 @@ func GetAllSites(db *sql.DB) ([]*models.Site, error) {
 	return querySites(db, fmt.Sprintf("SELECT %s FROM kppn_sites ORDER BY site_type ASC, name ASC", siteColumns))
 }
 
-// GetSitesByUser returns all sites owned by a given user
+// GetSitesByUser returns all sites owned by or assigned to a given user
 func GetSitesByUser(db *sql.DB, uid int64) ([]*models.Site, error) {
 	return querySites(db,
-		fmt.Sprintf("SELECT %s FROM kppn_sites WHERE uid = ? ORDER BY site_type ASC, name ASC", siteColumns), uid,
+		fmt.Sprintf(`SELECT %s FROM kppn_sites
+		WHERE uid = ? OR id IN (SELECT site_id FROM kppn_site_managers WHERE uid = ?)
+		ORDER BY site_type ASC, name ASC`, siteColumns), uid, uid,
 	)
 }
 
@@ -177,23 +179,25 @@ func DeleteSite(db *sql.DB, id int64) error {
 	return err
 }
 
-// SiteOwnedBy returns true if the site belongs to the given user
-func SiteOwnedBy(db *sql.DB, siteID, uid int64) (bool, error) {
+// CanAccessSite returns true if the given user owns the site or is assigned to it as a manager
+func CanAccessSite(db *sql.DB, siteID, uid int64) (bool, error) {
 
-	// hold the count of matching records to determine ownership
+	// hold the count of matching records to determine access
 	var count int
 
-	// execute a query to count the number of site records that match the given site ID and user ID, and scan the result into the count variable
+	// execute a query to count the site records that match the given site ID and are either owned by the user or have the user assigned as a manager, and scan the result into the count variable
 	err := db.QueryRow(`
-		SELECT COUNT(id) FROM kppn_sites WHERE id=? AND uid=?`, siteID, uid,
+		SELECT COUNT(id) FROM kppn_sites
+		WHERE id=? AND (uid=? OR id IN (SELECT site_id FROM kppn_site_managers WHERE uid=?))`,
+		siteID, uid, uid,
 	).Scan(&count)
 	if err != nil {
-		logger.Error("SiteOwnedBy: failed to query site ownership for site ID %d and user ID %d: %v", siteID, uid, err)
+		logger.Error("CanAccessSite: failed to query site access for site ID %d and user ID %d: %v", siteID, uid, err)
 		return false, err
 	}
 
-	// return true if the count is greater than 0 (indicating ownership), along with any error that occurred during the query, and log the site ID, user ID, and ownership result for debugging purposes
-	logger.Debug("SiteOwnedBy: site ID %d is owned by user ID %d: %v", siteID, uid, count > 0)
+	// return true if the count is greater than 0 (indicating owner or assigned manager), along with any error that occurred during the query, and log the site ID, user ID, and access result for debugging purposes
+	logger.Debug("CanAccessSite: site ID %d is accessible by user ID %d: %v", siteID, uid, count > 0)
 	return count > 0, err
 }
 
