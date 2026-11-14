@@ -31,6 +31,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.Handle("PUT /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(h.apiUpdateUser)))
 	api.Handle("DELETE /users/{id}", auth.RequireAPIAdmin(http.HandlerFunc(h.apiDeleteUser)))
 	api.Handle("PUT /users/{id}/blocked", auth.RequireAPIAdmin(http.HandlerFunc(h.apiSetBlocked)))
+	api.Handle("GET /users/{id}/sites", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGetUserSites)))
 
 	api.HandleFunc("POST /users/{id}/totp/setup", h.apiTOTPSetup)
 	api.HandleFunc("POST /users/{id}/totp/confirm", h.apiTOTPConfirm)
@@ -305,6 +306,43 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("updated user %d: %s", target.ID, target.UName)
 	target.PWord = ""
 	apiutil.JSON(w, http.StatusOK, target)
+}
+
+// apiGetUserSites returns the sites a user is assigned to as a manager, excluding sites they own.
+func (h *Handler) apiGetUserSites(w http.ResponseWriter, r *http.Request) {
+	target, ok := h.resolveUser(w, r)
+	if !ok {
+		return
+	}
+
+	ids, err := db.GetManagerSiteIDs(h.DB, target.ID)
+	if err != nil {
+		logger.Error("failed to retrieve assigned sites for user %d: %v", target.ID, err)
+		apiutil.Error(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	type siteRef struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+
+	out := make([]siteRef, 0, len(ids))
+	for _, id := range ids {
+		site, err := db.GetSiteByID(h.DB, id)
+		if err != nil {
+			logger.Error("failed to retrieve site %d for user %d: %v", id, target.ID, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return
+		}
+		if site == nil {
+			continue
+		}
+		out = append(out, siteRef{ID: site.ID, Name: site.Name})
+	}
+
+	logger.Debug("retrieved %d assigned sites for user %d", len(out), target.ID)
+	apiutil.JSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) apiDeleteUser(w http.ResponseWriter, r *http.Request) {

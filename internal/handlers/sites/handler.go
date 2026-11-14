@@ -60,6 +60,7 @@ type SitesProxy interface {
 	ForgetSite(siteID int64, port int)
 	PurgeRespCache(siteID int64)
 	WarmCaches(justTrustedProxies bool) error
+	InvalidateUpstreamGuard()
 }
 
 // SFTPManager is the subset of sftp.Manager consumed by this handler.
@@ -104,6 +105,8 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("POST /sites/{id}/push", h.apiSitePush)
 	api.HandleFunc("GET /sites/{id}/push-status", h.apiSitePushStatus)
 	api.HandleFunc("POST /sites/{id}/rename", h.apiRenameSite)
+	api.Handle("GET /sites/{id}/managers", auth.RequireAPIAdmin(http.HandlerFunc(h.apiGetSiteManagers)))
+	api.Handle("PUT /sites/{id}/managers", auth.RequireAPIAdmin(http.HandlerFunc(h.apiSetSiteManagers)))
 }
 
 // sitesBase returns the base path for site directories on the host.
