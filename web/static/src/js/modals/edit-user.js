@@ -83,6 +83,14 @@ export async function showEditUserModal(root, uid) {
                         <button type="submit" class="uk-button kp-btn-primary">Save Changes</button>
                     </div>
                 </form>
+                
+                ${isAdmin && user.role === 50 ? `
+                <hr class="uk-divider-muted uk-margin-top">
+
+                <div id="edit-user-sites">
+                    <h4 class="uk-margin-small-bottom kp-view-title">Assigned Sites</h4>
+                    <div id="edit-user-sites-list"><div uk-spinner="ratio: 0.6"></div></div>
+                </div>` : ""}
 
                 <hr class="uk-divider-muted uk-margin-top" ${isSynced ? 'style="display:none"' : ""}>
 
@@ -229,5 +237,20 @@ export async function showEditUserModal(root, uid) {
 
     document.getElementById("kp-edit-user-modal")
         .addEventListener("hidden", () => document.getElementById("kp-edit-user-modal")?.remove());
+
+    // list the sites a manager is assigned to; read-only, assignment happens on the site's Managers tab
+    if (isAdmin && user.role === 50) {
+        const sitesList = document.getElementById("edit-user-sites-list");
+        try {
+            const sites = await api.get(`/users/${uid}/sites`);
+            sitesList.innerHTML = sites?.length
+                ? `<ul class="uk-list uk-list-collapse uk-margin-remove">${sites.map(s => `<li>${escapeHtml(s.name)}</li>`).join("")}</ul>`
+                : `<p class="kp-muted uk-text-small uk-margin-remove">No sites assigned.</p>`;
+        } catch (err) {
+            sitesList.innerHTML = "";
+            toast.error(err.message);
+        }
+    }
+
 }
 
