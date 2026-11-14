@@ -16,6 +16,7 @@ import { loadCronsPanel, renderCronsTab, wireCronsPanel } from './site-crons.js'
 import { initDBToolsPills, renderDBToolsTab, wireDBToolsTab } from './site-dbtools.js';
 import { loadFilesPanel, renderFilesTab, wireFilesTab } from './site-files.js';
 import { renderLogsTab, wireLogsTab } from './site-logs.js';
+import { renderManagersTab } from './site-managers.js';
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-redirects.js';
 import { initSecurityPills, loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
@@ -315,6 +316,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     const isRP = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5, 7].includes(site.SiteType);
     const hasDB = [1, 2, 4, 5, 7].includes(site.SiteType);
+    const isAdmin = window.KP?.user?.role === 99;
 
     // reset the shared listener abort before the waf/routes wiring attaches
     if (_rpWireAbort) _rpWireAbort.abort();
@@ -364,6 +366,9 @@ export async function viewSiteDetail(root, { id, tab }) {
                     <a href="#" data-switcher="4"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
                     <a href="#" data-switcher="5"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
                     <a href="#" data-switcher="6"><span uk-icon="icon: user; ratio: 0.85"></span> Basic Auth</a>
+                    ${isAdmin ? `<hr>
+                    <div class="kp-pill-dropdown-section">Access</div>
+                    <a href="#" data-switcher="managers"><span uk-icon="icon: users; ratio: 0.85"></span> Managers</a>` : ""}
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -379,8 +384,10 @@ export async function viewSiteDetail(root, { id, tab }) {
             <li>${renderSecurityPanel(id)}</li>
             <li id="waf-tab-panel"></li>
             <li>${renderBasicAuthTab()}</li>
+            ${isAdmin ? `<li>${renderManagersTab()}</li>` : ""}
         </ul>
         ` : `
+
         <!-- tab pills -->
         <ul class="kp-tab-pills" id="kp-site-pills">
             <li data-pill="0"><a href="#">Overview</a></li>
@@ -410,6 +417,9 @@ export async function viewSiteDetail(root, { id, tab }) {
                     ${showCrons ? `<a href="#" data-switcher="${site.SiteType === 1 ? (showPHP ? 14 : 13) : (showPHP ? 13 : 12)}"><span uk-icon="icon: clock; ratio: 0.85"></span> Crons</a>` : ""}
                     <a href="#" data-switcher="${(site.SiteType === 1 ? (showPHP ? 15 : 14) : (showPHP ? 14 : 13)) - (showCrons ? 0 : 1)}"><span uk-icon="icon: forward; ratio: 0.85"></span> Redirects</a>
                     <a href="#" data-switcher="files"><span uk-icon="icon: folder; ratio: 0.85"></span> Files</a>
+                    ${isAdmin ? `<hr>
+                    <div class="kp-pill-dropdown-section">Access</div>
+                    <a href="#" data-switcher="managers"><span uk-icon="icon: users; ratio: 0.85"></span> Managers</a>` : ""}
                 </div>
             </li>
             <li data-pill="1"><a href="#">Stats</a></li>
@@ -436,6 +446,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             <li>${renderRedirectsTab()}</li>
             ${hasDB ? `<li>${renderDBToolsTab(id, site.SiteType)}</li>` : ""}
             ${site.SiteType === 1 ? `<li>${renderWPUpdatesTab()}</li>` : ""}
+            ${isAdmin ? `<li>${renderManagersTab()}</li>` : ""}
             <li>${renderFilesTab(id)}</li>
         </ul>`}`;
 
@@ -480,6 +491,15 @@ export async function viewSiteDetail(root, { id, tab }) {
         wireBasicAuthTab(root, id);
         loadBasicAuthTab(id);
         initPillTabs(root, id, tab); // wire pill nav for RP sites
+        // resolve the Managers dropdown index to its panel's position, then wire it
+        if (isAdmin) {
+            const _rpSwitcher = root.querySelector("#kp-site-switcher");
+            const _mgrLink = root.querySelector('a[data-switcher="managers"]');
+            const _mgrPanel = root.querySelector("#managers-panel");
+            if (_rpSwitcher && _mgrLink && _mgrPanel) _mgrLink.dataset.switcher = String([..._rpSwitcher.children].findIndex(li => li.contains(_mgrPanel)));
+            wireManagersTab(root, id);
+            loadManagersTab(root, id);
+        }
         return;
     }
 
@@ -547,6 +567,15 @@ export async function viewSiteDetail(root, { id, tab }) {
         loadWPUpdatesTab(root, id);
     }
 
+        // resolve the Managers dropdown index to its panel's position, then wire it
+    if (isAdmin) {
+        const _mgrLink = root.querySelector('a[data-switcher="managers"]');
+        const _mgrPanel = root.querySelector("#managers-panel");
+        if (_fmSwitcher && _mgrLink && _mgrPanel) _mgrLink.dataset.switcher = String([..._fmSwitcher.children].findIndex(li => li.contains(_mgrPanel)));
+        wireManagersTab(root, id);
+        loadManagersTab(root, id);
+    }
+    
     wireHealthBadges(root, id);
     wireStatsTab(root, id, site.SiteType);
     loadStatsTab(id, site.SiteType);
