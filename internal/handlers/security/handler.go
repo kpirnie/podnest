@@ -100,8 +100,14 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/security/asn", h.apiGetSiteASNRules)
 	api.HandleFunc("PUT /sites/{id}/security/asn", h.apiSaveSiteASNRules)
 
-	// ASN lookup helper — admin only
+	// ASN lookup helper — global is admin only, per-site follows site access
 	api.Handle("GET /security/asn/lookup", admin(h.apiASNLookup))
+	api.HandleFunc("GET /sites/{id}/security/asn/lookup", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := h.Resolve(w, r); !ok {
+			return
+		}
+		h.apiASNLookup(w, r)
+	})
 
 	// global auto-ban — admin only
 	api.Handle("GET /security/autoban/settings", admin(h.apiGetGlobalAutoBanSettings))

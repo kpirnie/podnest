@@ -735,13 +735,16 @@ function showASNLookupModal(root) {
     const modal = UIkit.modal("#kp-asn-lookup-modal");
     modal.show();
 
+    const siteId = root.querySelector("#security-panel")?.dataset.siteId;
+    const lookupPath = siteId ? `/sites/${siteId}/security/asn/lookup` : "/security/asn/lookup";
+
     const run = async () => {
         const q = document.getElementById("asn-lookup-q").value.trim();
         if (!q) return;
         const out = document.getElementById("asn-lookup-result");
         out.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
         try {
-            const res = await api.get(`/security/asn/lookup?q=${encodeURIComponent(q)}`);
+            const res = await api.get(`${lookupPath}?q=${encodeURIComponent(q)}`);
             if (!res?.asn) {
                 out.innerHTML = `<p class="kp-muted uk-text-small">No ASN found for <span class="kp-mono"></span>.</p>`;
                 out.querySelector(".kp-mono").textContent = res?.ip || q;

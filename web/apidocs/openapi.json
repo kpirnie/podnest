@@ -537,6 +537,25 @@
         }
       }
     },
+    "/sites/{id}/security/asn/lookup": {
+      "get": {
+        "tags": ["Security"],
+        "summary": "Lookup asn for a site",
+        "description": "Same as GET /security/asn/lookup, but available to anyone who can access the site.",
+        "operationId": "get_sites_id_security_asn_lookup",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "required": true, "description": "IP address or domain name to resolve.", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Success — returns {\"query\", \"ip\", \"asn\", \"org\", \"country\"}; asn 0 means unresolvable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Success" } } } },
+          "400": { "description": "Bad request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Site not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/security/autoban": {
       "get": {
         "tags": ["WAF"],

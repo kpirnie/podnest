@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"podnest/internal/apiutil"
-	"podnest/internal/auth"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 	"podnest/internal/modules"
@@ -49,9 +48,7 @@ var upgrader = websocket.Upgrader{
 // RegisterRoutes mounts health routes onto api.
 func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/health/stream", h.apiHealthStream)
-	api.Handle("POST /sites/{id}/containers/{container}/restart",
-		auth.RequireAPIAdmin(http.HandlerFunc(h.apiContainerRestart)),
-	)
+	api.HandleFunc("POST /sites/{id}/containers/{container}/restart", h.apiContainerRestart)
 }
 
 // apiHealthStream upgrades to WebSocket and streams container health states
