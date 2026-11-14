@@ -179,7 +179,16 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if user == nil || (user.Role != models.RoleAdmin && site.UID != user.ID) {
+	permitted := user != nil
+	if permitted && user.Role != models.RoleAdmin {
+		permitted, err = db.CanAccessSite(h.DB, site.ID, user.ID)
+		if err != nil {
+			logger.Error("failed to check PMA session user %d access for site %d: %v", userID, id, err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+	if !permitted {
 		logger.Error("PMA session user %d no longer permitted for site %d", userID, id)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
