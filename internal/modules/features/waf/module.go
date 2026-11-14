@@ -75,6 +75,12 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		}
 		m.apiGetSitePlugins(w, r, site)
 	})
+	mux.HandleFunc("GET /sites/{id}/waf/available-plugins", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := resolve(w, r); !ok {
+			return
+		}
+		m.apiListAvailablePlugins(w, r)
+	})
 	mux.HandleFunc("PUT /sites/{id}/waf/plugins", func(w http.ResponseWriter, r *http.Request) {
 		site, ok := resolve(w, r)
 		if !ok {

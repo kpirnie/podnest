@@ -10123,6 +10123,23 @@
         }
       }
     },
+    "/sites/{id}/waf/available-plugins": {
+      "get": {
+        "tags": ["WAF"],
+        "summary": "List available plugins for a site",
+        "description": "Returns the .conf filenames present in the CRS plugins directory. Unlike GET /settings/waf/plugins this is available to anyone who can access the site.",
+        "operationId": "get_sites_id_waf_available_plugins",
+        "responses": {
+          "200": { "description": "Success", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } } },
+          "401": { "description": "Not authenticated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "403": { "description": "Forbidden", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Site not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "description": "Site ID.", "schema": { "type": "string" } }
+        ]
+      }
+    },
     "/sites/{id}/waf/plugins": {
       "get": {
         "tags": [

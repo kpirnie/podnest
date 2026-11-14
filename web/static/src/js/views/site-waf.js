@@ -127,6 +127,7 @@ export async function loadWAFTab(id, tab) {
         const pluginsList = document.getElementById("waf-plugins-list");
         if (pluginsList) {
             const [available, selected] = await Promise.all([
+                api.get(`/sites/${id}/waf/available-plugins`),
                 api.get(`/settings/waf/plugins`),
                 api.get(`/sites/${id}/waf/plugins`),
             ]);
