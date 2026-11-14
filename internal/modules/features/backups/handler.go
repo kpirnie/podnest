@@ -466,8 +466,17 @@ func (m Module) apiImportSFTP(w http.ResponseWriter, r *http.Request, site *mode
 
 		// the target never passes through ResolveSite, so authorise it here
 		user := auth.UserFromContext(r.Context())
-		if user == nil || (user.Role != models.RoleAdmin && targetSite.UID != user.ID) {
-			logger.Error("apiImportSFTP: user does not own target site %d", targetSite.ID)
+		permitted := user != nil
+		if permitted && user.Role != models.RoleAdmin {
+			permitted, err = db.CanAccessSite(m.DB, targetSite.ID, user.ID)
+			if err != nil {
+				logger.Error("apiImportSFTP: failed to check access to target site %d: %v", targetSite.ID, err)
+				apiutil.Error(w, http.StatusInternalServerError, err)
+				return
+			}
+		}
+		if !permitted {
+			logger.Error("apiImportSFTP: user cannot access target site %d", targetSite.ID)
 			apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
 			return
 		}
@@ -513,8 +522,17 @@ func (m Module) resolveImportTarget(w http.ResponseWriter, r *http.Request, curr
 
 	// the target never passes through ResolveSite, so authorise it here
 	user := auth.UserFromContext(r.Context())
-	if user == nil || (user.Role != models.RoleAdmin && target.UID != user.ID) {
-		logger.Error("resolveImportTarget: user does not own target site %d", target.ID)
+	permitted := user != nil
+	if permitted && user.Role != models.RoleAdmin {
+		permitted, err = db.CanAccessSite(m.DB, target.ID, user.ID)
+		if err != nil {
+			logger.Error("resolveImportTarget: failed to check access to target site %d: %v", target.ID, err)
+			apiutil.Error(w, http.StatusInternalServerError, err)
+			return nil, false
+		}
+	}
+	if !permitted {
+		logger.Error("resolveImportTarget: user cannot access target site %d", target.ID)
 		apiutil.ErrorMsg(w, http.StatusForbidden, "forbidden")
 		return nil, false
 	}
