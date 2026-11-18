@@ -110,7 +110,25 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                     <h3 class="kp-view-title uk-margin-bottom">SFTP Access</h3>
                     <table class="uk-table uk-table-small uk-table-divider uk-margin-remove">
                         <tbody>
-                            <tr><td class="kp-muted">Host</td><td class="kp-mono">${location.hostname}</td></tr>
+                            <tr>
+                                <td class="kp-muted">Host</td>
+                                <td>
+                                    <div class="kp-sftp-hostip">
+                                        <div class="kp-sftp-hostip-col">
+                                            <span id="sftp-host-val" class="kp-mono">${location.hostname}</span>
+                                            <button class="uk-button kp-btn-secondary kp-btn-sm" id="sftp-host-copy-btn" uk-tooltip="Copy the Host">
+                                                <span uk-icon="icon: copy; ratio: 0.75"></span>
+                                            </button>
+                                        </div>
+                                        <div class="kp-sftp-hostip-col">
+                                            <span id="sftp-ip-val" class="kp-mono kp-muted">…</span>
+                                            <button class="uk-button kp-btn-secondary kp-btn-sm" id="sftp-ip-copy-btn" uk-tooltip="Copy the IP" disabled>
+                                                <span uk-icon="icon: copy; ratio: 0.75"></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                             <tr><td class="kp-muted">Port</td><td class="kp-mono">2222</td></tr>
                             <tr><td class="kp-muted">User</td><td class="kp-mono">${sftp?.Username ?? site.Name}</td></tr>
                             <tr>
@@ -215,20 +233,20 @@ export function wireOverviewTab(root, siteId, site = null, pushTargets = []) {
         return res?.password ?? '';
     };
 
-    const writeClipboard = (pass) => {
+    const writeClipboard = (value, label) => {
         if (navigator.clipboard) {
-            navigator.clipboard.writeText(pass)
-                .then(() => toast.success('Password copied to clipboard'))
-                .catch(() => toast.error('Failed to copy password'));
+            navigator.clipboard.writeText(value)
+                .then(() => toast.success(`${label} copied to clipboard`))
+                .catch(() => toast.error(`Failed to copy ${label.toLowerCase()}`));
         } else {
             const el = document.createElement('textarea');
-            el.value = pass;
+            el.value = value;
             el.style.cssText = 'position:fixed;opacity:0';
             document.body.appendChild(el);
             el.select();
             document.execCommand('copy');
             document.body.removeChild(el);
-            toast.success('Password copied to clipboard');
+            toast.success(`${label} copied to clipboard`);
         }
     };
 
@@ -266,7 +284,7 @@ export function wireOverviewTab(root, siteId, site = null, pushTargets = []) {
         btn.innerHTML = '<div uk-spinner="ratio: 0.5"></div>';
         try {
             const pass = await fetchSftpPassword();
-            if (pass) writeClipboard(pass);
+            if (pass) writeClipboard(pass, 'Password');
         } catch (e) {
             toast.error(e.message);
         } finally {
@@ -274,6 +292,34 @@ export function wireOverviewTab(root, siteId, site = null, pushTargets = []) {
             btn.innerHTML = orig;
         }
     });
+
+    // host + ip copy buttons — ip is resolved async so it never blocks the render
+    root.querySelector('#sftp-host-copy-btn')?.addEventListener('click', () => {
+        const val = root.querySelector('#sftp-host-val')?.textContent.trim();
+        if (val) writeClipboard(val, 'Host');
+    });
+
+    root.querySelector('#sftp-ip-copy-btn')?.addEventListener('click', () => {
+        const btn = root.querySelector('#sftp-ip-copy-btn');
+        const val = btn?.dataset.ip;
+        if (val) writeClipboard(val, 'IP');
+    });
+
+    (async () => {
+        const ipEl  = root.querySelector('#sftp-ip-val');
+        const ipBtn = root.querySelector('#sftp-ip-copy-btn');
+        if (!ipEl || !ipBtn) return;
+        try {
+            const res = await api.get(`/sites/${siteId}/security/asn/lookup?q=${encodeURIComponent(location.hostname)}`);
+            if (!res?.ip) throw new Error('no ip');
+            ipEl.textContent = res.ip;
+            ipEl.classList.remove('kp-muted');
+            ipBtn.dataset.ip = res.ip;
+            ipBtn.disabled = false;
+        } catch (_) {
+            ipEl.textContent = 'unavailable';
+        }
+    })();
 
     root.querySelector("#pma-open-btn")?.addEventListener("click", async () => {
         const btn  = root.querySelector("#pma-open-btn");
