@@ -2501,13 +2501,13 @@ ${u}`:u),s.hide(),d.success(`${u} added to blacklist \u2014 save to apply`)})}ca
                                     <div class="kp-sftp-hostip">
                                         <div class="kp-sftp-hostip-col">
                                             <span id="sftp-host-val" class="kp-mono">${location.hostname}</span>
-                                            <button class="uk-button kp-btn-secondary kp-btn-sm" id="sftp-host-copy-btn" uk-tooltip="Copy the Host">
+                                            <button class="uk-button kp-btn-secondary kp-btn-sm kp-btn-copy" id="sftp-host-copy-btn" uk-tooltip="Copy the Host">
                                                 <span uk-icon="icon: copy; ratio: 0.75"></span>
                                             </button>
                                         </div>
                                         <div class="kp-sftp-hostip-col uk-hidden" id="sftp-ip-col">
                                             <span id="sftp-ip-val" class="kp-mono"></span>
-                                            <button class="uk-button kp-btn-secondary kp-btn-sm" id="sftp-ip-copy-btn" uk-tooltip="Copy the IP">
+                                            <button class="uk-button kp-btn-secondary kp-btn-sm kp-btn-copy" id="sftp-ip-copy-btn" uk-tooltip="Copy the IP">
                                                 <span uk-icon="icon: copy; ratio: 0.75"></span>
                                             </button>
                                         </div>
@@ -2519,7 +2519,7 @@ ${u}`:u),s.hide(),d.success(`${u} added to blacklist \u2014 save to apply`)})}ca
                                 <td class="kp-muted">User</td>
                                 <td>
                                     <span id="sftp-user-val" class="kp-mono">${s?.Username??e.Name}</span>
-                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left" id="sftp-user-copy-btn" uk-tooltip="Copy the Username">
+                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left kp-btn-copy" id="sftp-user-copy-btn" uk-tooltip="Copy the Username">
                                         <span uk-icon="icon: copy; ratio: 0.75"></span>
                                     </button>
                                 </td>
@@ -2528,10 +2528,10 @@ ${u}`:u),s.hide(),d.success(`${u} added to blacklist \u2014 save to apply`)})}ca
                                 <td class="kp-muted">Password</td>
                                 <td>
                                     <span id="sftp-pass-display" class="kp-mono kp-sftp-pass" data-revealed="0">\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022</span>
-                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left" id="sftp-reveal-btn" uk-tooltip="Reveal the Password">
+                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left kp-btn-copy" id="sftp-reveal-btn" uk-tooltip="Reveal the Password">
                                         <span uk-icon="icon: eye; ratio: 0.75"></span>
                                     </button>
-                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left" id="sftp-copy-btn" uk-tooltip="Copy the Password">
+                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left kp-btn-copy" id="sftp-copy-btn" uk-tooltip="Copy the Password">
                                         <span uk-icon="icon: copy; ratio: 0.75"></span>
                                     </button>
                                 </td>

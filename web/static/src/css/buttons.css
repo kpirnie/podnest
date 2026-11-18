@@ -172,3 +172,9 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 .kp-vert-sep{
     width:1px;height:24px;background:var(--kp-border);margin:0 4px;flex-shrink:0;
 }
+
+.kp-btn-copy {
+    background: none !important;
+    padding: 0 5px !important;
+    border:0 !important;
+}
