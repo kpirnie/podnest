@@ -130,7 +130,15 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                                 </td>
                             </tr>
                             <tr><td class="kp-muted">Port</td><td class="kp-mono">2222</td></tr>
-                            <tr><td class="kp-muted">User</td><td class="kp-mono">${sftp?.Username ?? site.Name}</td></tr>
+                            <tr>
+                                <td class="kp-muted">User</td>
+                                <td>
+                                    <span id="sftp-user-val" class="kp-mono">${sftp?.Username ?? site.Name}</span>
+                                    <button class="uk-button kp-btn-secondary kp-btn-sm uk-margin-small-left" id="sftp-user-copy-btn" uk-tooltip="Copy the Username">
+                                        <span uk-icon="icon: copy; ratio: 0.75"></span>
+                                    </button>
+                                </td>
+                            </tr>
                             <tr>
                                 <td class="kp-muted">Password</td>
                                 <td>
@@ -291,6 +299,11 @@ export function wireOverviewTab(root, siteId, site = null, pushTargets = []) {
             btn.disabled = false;
             btn.innerHTML = orig;
         }
+    });
+
+    root.querySelector('#sftp-user-copy-btn')?.addEventListener('click', () => {
+        const val = root.querySelector('#sftp-user-val')?.textContent.trim();
+        if (val) writeClipboard(val, 'Username');
     });
 
     // host + ip copy buttons — ip is resolved async so it never blocks the render
