@@ -125,9 +125,9 @@ export function renderOverviewTab(site, domains, sftp, parentID = 0, parentName 
                                                 <span uk-icon="icon: copy; ratio: 0.75"></span>
                                             </button>
                                         </div>
-                                        <div class="kp-sftp-hostip-col">
-                                            <span id="sftp-ip-val" class="kp-mono kp-muted">…</span>
-                                            <button class="uk-button kp-btn-secondary kp-btn-sm" id="sftp-ip-copy-btn" uk-tooltip="Copy the IP" disabled>
+                                        <div class="kp-sftp-hostip-col uk-hidden" id="sftp-ip-col">
+                                            <span id="sftp-ip-val" class="kp-mono"></span>
+                                            <button class="uk-button kp-btn-secondary kp-btn-sm" id="sftp-ip-copy-btn" uk-tooltip="Copy the IP">
                                                 <span uk-icon="icon: copy; ratio: 0.75"></span>
                                             </button>
                                         </div>
@@ -324,19 +324,17 @@ export function wireOverviewTab(root, siteId, site = null, pushTargets = []) {
     });
 
     (async () => {
+        const ipCol = root.querySelector('#sftp-ip-col');
         const ipEl  = root.querySelector('#sftp-ip-val');
         const ipBtn = root.querySelector('#sftp-ip-copy-btn');
-        if (!ipEl || !ipBtn) return;
+        if (!ipCol || !ipEl || !ipBtn) return;
         try {
             const res = await api.get(`/sites/${siteId}/security/asn/lookup?q=${encodeURIComponent(location.hostname)}`);
-            if (!res?.ip) throw new Error('no ip');
+            if (!res?.ip) return;
             ipEl.textContent = res.ip;
-            ipEl.classList.remove('kp-muted');
             ipBtn.dataset.ip = res.ip;
-            ipBtn.disabled = false;
-        } catch (_) {
-            ipEl.textContent = 'unavailable';
-        }
+            ipCol.classList.remove('uk-hidden');
+        } catch (_) { /* column stays hidden */ }
     })();
 
     root.querySelector("#pma-open-btn")?.addEventListener("click", async () => {
