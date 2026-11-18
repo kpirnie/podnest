@@ -26,6 +26,11 @@ async function loadDomainSSL(domain, id) {
         const res = await api.get(`/ssl-status?domain=${encodeURIComponent(domain)}`);
         const el  = document.getElementById(`ssl-icon-${id}`);
         if (el) el.outerHTML = sslIcon(res.status);
+        // no cert at all — fall back to http
+        if (res.status === "none") {
+            const link = document.getElementById(`domain-link-${id}`);
+            if (link) link.href = `http://${domain}`;
+        }
     } catch (e) { /* silently ignore — icon stays pending */ }
 }
 
@@ -170,7 +175,7 @@ function domainRow(d) {
     return `<div class="uk-flex uk-flex-between uk-flex-middle kp-config-row" data-domain-id="${d.ID}">
         <div class="uk-flex uk-flex-middle kp-domain-row-inner">
             <span id="ssl-icon-${d.ID}" class="kp-ssl-pending" uk-icon="icon: more; ratio: 0.85"></span>
-            <span class="uk-text-small kp-mono">${d.Domain}</span>
+            <a id="domain-link-${d.ID}" class="uk-text-small kp-mono" href="https://${d.Domain}" target="_blank" rel="noopener noreferrer" style="color:var(--kp-cyan)">${d.Domain}</a>
         </div>
         <button class="kp-config-del" data-action="delete-domain" data-did="${d.ID}" title="Remove">
             <span uk-icon="icon: close; ratio: 0.8"></span>
