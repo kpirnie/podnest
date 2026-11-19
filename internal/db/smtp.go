@@ -67,3 +67,31 @@ func GetSMTPSettings(database *sql.DB, siteID int64) (map[string]string, error) 
 
 	return settings, nil
 }
+
+// GetSMTPRuntimeConfig returns the SMTP configuration, including the decrypted
+// password, for trusted internal runtime provisioning only.
+func GetSMTPRuntimeConfig(database *sql.DB, siteID int64) (map[string]string, error) {
+
+	// Retrieve the site's SMTP settings without exposing stored credentials.
+	settings, err := GetSMTPSettings(database, siteID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Never return credentials when SMTP is disabled.
+	if settings["enabled"] != "true" {
+		return settings, nil
+	}
+
+	// Decrypt the password only for enabled SMTP configurations.
+	password, err := GetSMTPPassword(database, siteID)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve SMTP credentials for site %d: %w", siteID, err)
+	}
+
+	// Keep password metadata out of runtime configuration.
+	delete(settings, "password_set")
+	settings["password"] = password
+
+	return settings, nil
+}
