@@ -97,6 +97,7 @@ const (
 	ConfigRedis      = 4
 	ConfigVarnish    = 5
 	ConfigProxyCache = 6
+	ConfigSMTP       = 7
 )
 
 // node versions
