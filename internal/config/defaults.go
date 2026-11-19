@@ -159,6 +159,17 @@ var DefaultProxyCache = map[string]string{
 	"memory":   "128M",
 }
 
+// setup and hold the default SMTP config for new sites
+var DefaultSMTP = map[string]string{
+	"enabled":    "false",
+	"host":       "",
+	"port":       "587",
+	"encryption": "starttls",
+	"username":   "",
+	"from_email": "",
+	"from_name":  "",
+}
+
 // DefaultsForType returns the default config map for a given config type constant
 func DefaultsForType(configType int) (map[string]string, error) {
 	switch configType {
@@ -180,6 +191,9 @@ func DefaultsForType(configType int) (map[string]string, error) {
 	case models.ConfigProxyCache:
 		logger.Debug("returning default proxy cache config")
 		return DefaultProxyCache, nil
+	case models.ConfigSMTP:
+		logger.Debug("returning default smtp config")
+		return DefaultSMTP, nil
 	default:
 		logger.Error("unknown config type: %d", configType)
 		return nil, fmt.Errorf("unknown config type: %d", configType)
