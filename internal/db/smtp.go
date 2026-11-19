@@ -46,3 +46,24 @@ func DeleteSMTPPassword(database *sql.DB, siteID int64) error {
 
 	return DeleteConfig(database, siteID, models.ConfigSMTP, "password")
 }
+
+// GetSMTPSettings returns a site's SMTP settings without exposing its password.
+func GetSMTPSettings(database *sql.DB, siteID int64) (map[string]string, error) {
+
+	// Retrieve the site's stored SMTP configuration.
+	settings, err := GetConfigsBySiteAndType(database, siteID, models.ConfigSMTP)
+	if err != nil {
+		return nil, err
+	}
+
+	// Report whether credentials exist without returning the encrypted value.
+	_, exists := settings["password"]
+	delete(settings, "password")
+
+	settings["password_set"] = "false"
+	if exists {
+		settings["password_set"] = "true"
+	}
+
+	return settings, nil
+}
