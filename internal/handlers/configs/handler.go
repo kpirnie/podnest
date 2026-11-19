@@ -84,6 +84,25 @@ func (h *Handler) apiGetConfigs(w http.ResponseWriter, r *http.Request) {
 		out = make(map[int]map[string]string)
 	}
 
+	// Remove sensitive configuration values before returning the response.
+	for _, settings := range out {
+		for key := range settings {
+			normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+
+			if strings.Contains(normalized, "password") ||
+				strings.Contains(normalized, "passwd") ||
+				normalized == "pass" ||
+				normalized == "pwd" ||
+				strings.HasSuffix(normalized, "_pass") ||
+				strings.HasSuffix(normalized, "_pwd") {
+				delete(settings, key)
+			}
+		}
+	}
+
+	// SMTP settings use their own password-safe API.
+	delete(out, models.ConfigSMTP)
+
 	logger.Debug("fetched configs for site %d: %d types", site.ID, len(out))
 	apiutil.JSON(w, http.StatusOK, out)
 }
