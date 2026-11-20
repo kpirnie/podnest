@@ -133,3 +133,29 @@ func (m Module) apiSaveSMTPPassword(w http.ResponseWriter, r *http.Request, site
 		"password_set": "true",
 	})
 }
+
+// apiDeleteSMTPPassword removes stored SMTP credentials and disables SMTP.
+func (m Module) apiDeleteSMTPPassword(w http.ResponseWriter, _ *http.Request, site *models.Site) {
+
+	// Disable SMTP before removing its credentials.
+	if err := db.SaveSMTPSettings(m.DB, site.ID, map[string]string{
+		"enabled": "false",
+	}); err != nil {
+		logger.Error("apiDeleteSMTPPassword: siteID=%d: failed to disable SMTP", site.ID)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to disable SMTP")
+		return
+	}
+
+	// Remove the encrypted password without exposing its value.
+	if err := db.DeleteSMTPPassword(m.DB, site.ID); err != nil {
+		logger.Error("apiDeleteSMTPPassword: siteID=%d: credential removal failed", site.ID)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to remove SMTP password")
+		return
+	}
+
+	logger.Debug("apiDeleteSMTPPassword: siteID=%d credentials removed", site.ID)
+	apiutil.JSON(w, http.StatusOK, map[string]string{
+		"status":       "ok",
+		"password_set": "false",
+	})
+}

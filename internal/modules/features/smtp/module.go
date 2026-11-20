@@ -86,6 +86,21 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 
 		m.apiSaveSMTPPassword(w, r, site)
 	})
+
+	// Remove stored SMTP credentials for supported site types.
+	mux.HandleFunc("DELETE /sites/{id}/smtp/password", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+
+		if !m.AppliesTo(site.SiteType) {
+			http.NotFound(w, r)
+			return
+		}
+
+		m.apiDeleteSMTPPassword(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; SMTP starts disabled.
