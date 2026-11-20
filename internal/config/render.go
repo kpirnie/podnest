@@ -319,6 +319,23 @@ opcache.enable_file_override    = 1
 	), nil
 }
 
+// RenderPHPIniWithSMTP renders the PHP configuration with per-site SMTP support.
+func RenderPHPIniWithSMTP(configJSON string, smtpEnabled bool) (string, error) {
+
+	// Render the existing PHP configuration without modifying its settings.
+	ini, err := RenderPHPIni(configJSON)
+	if err != nil {
+		return "", err
+	}
+
+	// Only route PHP mail() through msmtp when SMTP is enabled.
+	if smtpEnabled {
+		ini += "\nsendmail_path = \"/usr/bin/msmtp -C /etc/podnest/smtp/msmtprc -t -i\"\n"
+	}
+
+	return ini, nil
+}
+
 // RenderMariaDB renders the my.cnf
 func RenderMariaDB(configJSON string) (string, error) {
 
