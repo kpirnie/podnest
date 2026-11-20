@@ -63,15 +63,12 @@ func CreateAppRuntime(ctx context.Context, client modules.PodmanClient, spec mod
 		}
 		spec.Labels[podman.AppSMTPSiteLabel] = strconv.FormatInt(cfg.Site.ID, 10)
 
-		// Root owns the mount. New files inherit the site's group.
+		// Root owns the mount. The site group can read provisioned settings.
 		spec.Mounts = append(spec.Mounts, modules.Mount{
-			Type:        "tmpfs",
-			Source:      "tmpfs",
+			Type:        "ramfs",
+			Source:      "ramfs",
 			Destination: "/etc/podnest/smtp",
-			Options: []string{
-				"rw", "nosuid", "nodev", "noexec", "noswap", "notmpcopyup",
-				"uid=0", "gid=" + strconv.Itoa(cfg.SiteUID), "mode=2710", "size=64k",
-			},
+			Options:     []string{"rw", "nosuid", "nodev", "noexec", "mode=0711"},
 		})
 		spec.Entrypoint = []string{"/bin/sh", "-c", waitForAppSMTP, "podnest-app"}
 		spec.Command = argv

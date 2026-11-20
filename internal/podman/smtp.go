@@ -22,6 +22,7 @@ const PHPSMTPSiteLabel = "app.podnest.smtp-site-id"
 const AppSMTPSiteLabel = "app.podnest.app-smtp-site-id"
 
 // requirePrivateSMTPMount refuses to write credentials outside a noswap tmpfs.
+// requirePrivateSMTPMount verifies the mount before any credentials are written.
 const requirePrivateSMTPMount = `
 set -eu
 dir=/etc/podnest/smtp
@@ -29,14 +30,15 @@ dir=/etc/podnest/smtp
 awk -v target="$dir" '
 	$5 == target {
 		for (i = 7; i + 3 <= NF; i++) {
-			if ($i == "-" && $(i+1) == "tmpfs" &&
-				$(i+3) ~ /(^|,)noswap(,|$)/) {
+			if ($i == "-" && $(i+1) == "ramfs") {
 				found = 1
 			}
 		}
 	}
 	END { exit !found }
 ' /proc/self/mountinfo
+
+test "$(stat -c '%u:%a' "$dir")" = "0:711"
 `
 
 // provisionPHPSMTP publishes msmtprc after its password file is ready.
@@ -65,22 +67,22 @@ unset password
 cat > "$staging/msmtprc"
 test -s "$staging/msmtprc"
 
-chmod 0400 "$staging/password" "$staging/msmtprc"
-chown "$1:$1" "$staging/password" "$staging/msmtprc"
+test "$(stat -c '%u:%g' "$staging/password")" = "0:$1"
+test "$(stat -c '%u:%g' "$staging/msmtprc")" = "0:$1"
+chmod 0440 "$staging/password" "$staging/msmtprc"
 mv -f "$staging/password" "$dir/password"
 mv -f "$staging/msmtprc" "$dir/msmtprc"
 `
 
 // provisionAppSMTP publishes one JSON file atomically on the private mount.
 const provisionAppSMTP = requirePrivateSMTPMount + `
-test "$(stat -c '%u:%g:%a' "$dir")" = "0:$1:2710"
-
 umask 077
 staging=$(mktemp "$dir/.settings.XXXXXX")
 trap 'rm -f "$staging"' EXIT
 
 cat > "$staging"
 test -s "$staging"
+test "$(stat -c '%u:%g' "$staging")" = "0:$1"
 chmod 0440 "$staging"
 mv -f "$staging" "$dir/settings.json"
 `
@@ -112,9 +114,12 @@ func (c *Client) LoadAppSMTP(ctx context.Context, container string, siteGID int,
 	if err != nil {
 		return fmt.Errorf("encode application SMTP configuration: %w", err)
 	}
+	if len(payload) > 32*1024 {
+		return fmt.Errorf("application SMTP configuration exceeds 32 KiB")
+	}
 
 	cmd := []string{"/bin/sh", "-c", provisionAppSMTP, "podnest-smtp", strconv.Itoa(siteGID)}
-	result, err := c.ExecStream(ctx, container, "0:0", cmd, strings.NewReader(string(payload)))
+	result, err := c.ExecStream(ctx, container, "0:"+strconv.Itoa(siteGID), cmd, strings.NewReader(string(payload)))
 	if err != nil {
 		return fmt.Errorf("stream application SMTP configuration: %w", err)
 	}
@@ -220,7 +225,7 @@ func (c *Client) LoadPHPSMTP(ctx context.Context, container string, siteUID int,
 		strings.NewReader(msmtprc),
 	)
 	cmd := []string{"/bin/sh", "-c", provisionPHPSMTP, "podnest-smtp", strconv.Itoa(siteUID)}
-	result, err := c.ExecStream(ctx, container, "0:0", cmd, stdin)
+	result, err := c.ExecStream(ctx, container, "0:"+strconv.Itoa(siteUID), cmd, stdin)
 	if err != nil {
 		return fmt.Errorf("stream PHP SMTP configuration: %w", err)
 	}

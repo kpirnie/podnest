@@ -44,10 +44,10 @@ func CreatePHPRuntime(ctx context.Context, client modules.PodmanClient, spec mod
 		spec.Labels[podman.PHPSMTPSiteLabel] = strconv.FormatInt(siteID, 10)
 
 		spec.Mounts = append(spec.Mounts, modules.Mount{
-			Type:        "tmpfs",
-			Source:      "tmpfs",
+			Type:        "ramfs",
+			Source:      "ramfs",
 			Destination: "/etc/podnest/smtp",
-			Options:     []string{"rw", "nosuid", "nodev", "noexec", "noswap", "notmpcopyup", "mode=0711", "size=64k"},
+			Options:     []string{"rw", "nosuid", "nodev", "noexec", "mode=0711"},
 		})
 
 		// Keep the image entrypoint and pass it the gated PHP-FPM command.
