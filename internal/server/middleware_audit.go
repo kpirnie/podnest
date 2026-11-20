@@ -31,12 +31,12 @@ const auditMaxBodyBytes = 1 << 20 // 1 MB
 // numericSegment matches path segments that are purely numeric (e.g. /sites/42/configs)
 var numericSegment = regexp.MustCompile(`/\d+`)
 
-// auditBodySkipSuffixes are route suffixes whose bodies are multipart uploads.
-// Buffering a megabyte of binary payload only to mask it into uselessness costs
-// throughput and gains nothing, so the body is left untouched for these.
+// auditBodySkipSuffixes are route suffixes whose request bodies must not be
+// captured, including multipart uploads and SMTP credentials.
 var auditBodySkipSuffixes = []string{
 	"/files/upload",
 	"/backups/import/upload",
+	"/smtp/password",
 }
 
 // auditMiddleware is the outermost wrapper for /api/ — it records every non-GET/HEAD
