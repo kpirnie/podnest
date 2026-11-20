@@ -10,12 +10,16 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
+	"sync"
 
 	"podnest/internal/apiutil"
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 )
+
+// smtpSettingsMu serializes settings saves with credential removal.
+var smtpSettingsMu sync.Mutex
 
 // apiGetSMTP returns a site's SMTP settings without exposing credentials.
 func (m Module) apiGetSMTP(w http.ResponseWriter, _ *http.Request, site *models.Site) {
@@ -89,26 +93,30 @@ func (m Module) apiSaveSMTP(w http.ResponseWriter, r *http.Request, site *models
 		}
 	}
 
-	// Require a complete configuration before enabling SMTP.
-	if settings["enabled"] == "true" {
+	// Keep the saved settings stable through validation and persistence.
+	smtpSettingsMu.Lock()
+	defer smtpSettingsMu.Unlock()
 
-		// Include previously saved settings for partial updates.
-		existing, err := db.GetSMTPSettings(m.DB, site.ID)
-		if err != nil {
-			logger.Error("apiSaveSMTP: siteID=%d: failed to retrieve SMTP settings", site.ID)
-			apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to validate SMTP settings")
-			return
-		}
+	existing, err := db.GetSMTPSettings(m.DB, site.ID)
+	if err != nil {
+		logger.Error("apiSaveSMTP: siteID=%d: failed to retrieve SMTP settings", site.ID)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to validate SMTP settings")
+		return
+	}
 
-		for key, value := range settings {
-			existing[key] = value
-		}
+	passwordSet := existing["password_set"] == "true"
+	for key, value := range settings {
+		existing[key] = value
+	}
+
+	// An enabled site must retain a complete configuration after a partial update.
+	if existing["enabled"] == "true" {
 
 		// Host, sender address, and credentials are required.
 		if strings.TrimSpace(existing["host"]) == "" ||
 			strings.TrimSpace(existing["from_email"]) == "" ||
 			strings.TrimSpace(existing["username"]) == "" ||
-			existing["password_set"] != "true" {
+			!passwordSet {
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "SMTP host, sender email, username, and password are required")
 			return
 		}
@@ -173,6 +181,10 @@ func (m Module) apiSaveSMTPPassword(w http.ResponseWriter, r *http.Request, site
 
 // apiDeleteSMTPPassword removes stored SMTP credentials and disables SMTP.
 func (m Module) apiDeleteSMTPPassword(w http.ResponseWriter, _ *http.Request, site *models.Site) {
+
+	// Prevent a settings save from re-enabling SMTP during credential removal.
+	smtpSettingsMu.Lock()
+	defer smtpSettingsMu.Unlock()
 
 	// Disable SMTP before removing its credentials.
 	if err := db.SaveSMTPSettings(m.DB, site.ID, map[string]string{
