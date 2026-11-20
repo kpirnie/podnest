@@ -1163,7 +1163,11 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	}
 
 	// fetch all configuration key-value pairs for the site from the database to be used in pod recreation
-	allConfigs, _ := db.GetAllConfigsBySite(h.DB, site.ID)
+	allConfigs, err := db.GetAllConfigsBySite(h.DB, site.ID)
+	if err != nil {
+		revertDBUser()
+		return "", fmt.Errorf("load site configuration for recreation: %w", err)
+	}
 	rm := modules.TypeModule(site.SiteType)
 
 	// re-render nginx from the stored config so template changes reach existing sites
@@ -1178,17 +1182,57 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		}
 	}
 
+	siteUID := sftp.UIDForSite(site.ID)
+	var loadPHPSMTP func(context.Context, string) error
+
+	if site.SiteType == models.SiteTypePHP || site.SiteType == models.SiteTypeWordPress {
+		smtpSettings, err := db.GetSMTPRuntimeConfig(h.DB, site.ID)
+		if err != nil {
+			revertDBUser()
+			return "", fmt.Errorf("load PHP SMTP configuration for recreation: %w", err)
+		}
+
+		smtpEnabled := smtpSettings["enabled"] == "true"
+		if smtpEnabled {
+			// Catch invalid settings before replacing the running PHP container.
+			if _, err := config.RenderMSMTPConfig(smtpSettings); err != nil {
+				revertDBUser()
+				return "", fmt.Errorf("validate PHP SMTP configuration for recreation: %w", err)
+			}
+
+			loadPHPSMTP = func(ctx context.Context, container string) error {
+				return h.PodmanClient.LoadPHPSMTP(ctx, container, siteUID, smtpSettings)
+			}
+		}
+
+		phpBlob, err := json.Marshal(allConfigs[models.ConfigPHP])
+		if err != nil {
+			revertDBUser()
+			return "", fmt.Errorf("marshal PHP configuration for recreation: %w", err)
+		}
+		phpIni, err := config.RenderPHPIniWithSMTP(string(phpBlob), smtpEnabled)
+		if err != nil {
+			revertDBUser()
+			return "", fmt.Errorf("render PHP configuration for recreation: %w", err)
+		}
+		if err := fileutil.WriteFile(siteDir, "php-fpm/php.ini", phpIni, 0644); err != nil {
+			revertDBUser()
+			return "", fmt.Errorf("write PHP configuration for recreation: %w", err)
+		}
+	}
+
 	// create the pod
 	if err := rm.Create(podCtx, &modules.PodmanClientAdapter{Client: h.PodmanClient}, modules.PodConfig{
-		Site:       site,
-		SiteUID:    sftp.UIDForSite(site.ID),
-		SiteDir:    hostSiteDir,
-		LocalDir:   siteDir,
-		Configs:    allConfigs,
-		DBUser:     dbUser,
-		DBPass:     dbPass,
-		DBRootPass: dbRootPass,
-		RedisPass:  redisPass,
+		Site:        site,
+		SiteUID:     siteUID,
+		SiteDir:     hostSiteDir,
+		LocalDir:    siteDir,
+		Configs:     allConfigs,
+		DBUser:      dbUser,
+		DBPass:      dbPass,
+		DBRootPass:  dbRootPass,
+		RedisPass:   redisPass,
+		LoadPHPSMTP: loadPHPSMTP,
 	}); err != nil {
 		logger.Error("recreating pod for site %s — pod left in place for inspection: %v", site.Name, err)
 		revertDBUser()
