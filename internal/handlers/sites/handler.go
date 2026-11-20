@@ -1706,6 +1706,12 @@ func (h *Handler) apiSiteClone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SMTP credentials are bound to the source site. Keep SMTP disabled on the clone.
+	if smtpSettings, ok := srcConfigs[models.ConfigSMTP]; ok {
+		delete(smtpSettings, "password")
+		smtpSettings["enabled"] = "false"
+	}
+
 	// copy IP rules and UA rules from the source site to the cloned site, logging warnings for any errors encountered during the copying process
 	if srcIPRules, err := db.GetIPRules(h.DB, &src.ID); err == nil && len(srcIPRules) > 0 {
 		cloneIPRules := make([]db.IPRule, len(srcIPRules))
