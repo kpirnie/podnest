@@ -33,6 +33,14 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		return err
 	}
 
+	return CreateRuntime(ctx, client, cfg, true)
+}
+
+// CreateRuntime replaces the application container in the existing site pod.
+func CreateRuntime(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, start bool) error {
+
+	podName := modules.PodName(cfg.Site.Name)
+
 	appCfg := modules.ContainerConfig{
 		Name:       modules.ContainerName(cfg.Site.Name, "app"),
 		Image:      models.RuntimeImage(cfg.Site),
@@ -56,12 +64,6 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 	if cfg.Site.StartCommand != "" {
 		appCfg.Command = strings.Fields(cfg.Site.StartCommand)
 	}
-	if err := client.CreateContainer(ctx, appCfg); err != nil {
-		return fmt.Errorf("create app: %w", err)
-	}
-	if err := client.StartContainer(ctx, modules.ContainerName(cfg.Site.Name, "app")); err != nil {
-		return fmt.Errorf("start app: %w", err)
-	}
 
-	return nil
+	return containers.CreateAppRuntime(ctx, client, appCfg, cfg, start)
 }

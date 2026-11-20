@@ -157,6 +157,8 @@ type PodConfig struct {
 
 	// LoadPHPSMTP provisions credentials after the PHP container starts.
 	LoadPHPSMTP func(ctx context.Context, container string) error
+	// LoadAppSMTP provisions SMTP settings before the application starts.
+	LoadAppSMTP func(ctx context.Context, container string) error
 }
 
 // ScaffoldConfig holds everything a type module needs for filesystem setup.

@@ -6,6 +6,7 @@ package modules
 
 import (
 	"context"
+	"net/url"
 
 	"podnest/internal/models"
 	"podnest/internal/podman"
@@ -56,6 +57,21 @@ func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg Container
 
 	_, err := a.Client.CreateContainer(ctx, spec)
 	return err
+}
+
+// ImageStartup returns the entrypoint and default command of a local image.
+func (a *PodmanClientAdapter) ImageStartup(ctx context.Context, image string) ([]string, []string, error) {
+	var inspect struct {
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+			Cmd        []string `json:"Cmd"`
+		} `json:"Config"`
+	}
+	path := "/v4.0.0/libpod/images/" + url.PathEscape(image) + "/json"
+	if err := a.Client.GetJSON(ctx, path, &inspect); err != nil {
+		return nil, nil, err
+	}
+	return inspect.Config.Entrypoint, inspect.Config.Cmd, nil
 }
 
 // StartContainer delegates to the underlying podman client.

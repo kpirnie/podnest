@@ -18,6 +18,9 @@ import (
 // PHPSMTPSiteLabel identifies the site whose PHP runtime uses the SMTP startup gate.
 const PHPSMTPSiteLabel = "app.podnest.smtp-site-id"
 
+// AppSMTPSiteLabel identifies the site whose application uses the SMTP startup gate.
+const AppSMTPSiteLabel = "app.podnest.app-smtp-site-id"
+
 // requirePrivateSMTPMount refuses to write credentials outside a noswap tmpfs.
 const requirePrivateSMTPMount = `
 set -eu
