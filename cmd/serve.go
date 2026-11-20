@@ -24,6 +24,7 @@ import (
 	"podnest/internal/modules/features/dbtools"
 	"podnest/internal/modules/features/files"
 	sftpfeature "podnest/internal/modules/features/sftp"
+	"podnest/internal/modules/features/smtp"
 	"podnest/internal/modules/features/stats"
 	"podnest/internal/modules/features/waf"
 	"podnest/internal/modules/platform/fail2ban"
@@ -197,6 +198,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	modules.RegisterFeature(basicauth.Module{
 		DB:         database,
 		WarmCaches: srv.WarmCaches,
+	})
+
+	// register the per-site SMTP module
+	modules.RegisterFeature(smtp.Module{
+		DB: database,
 	})
 
 	// register the file manager module
