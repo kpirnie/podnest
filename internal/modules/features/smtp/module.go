@@ -16,7 +16,8 @@ import (
 
 // Module implements modules.FeatureModule for per-site SMTP configuration.
 type Module struct {
-	DB *sql.DB
+	DB             *sql.DB
+	RefreshPHPSMTP func(context.Context, *models.Site) error
 }
 
 // FeatureID returns the unique key for this feature.

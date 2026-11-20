@@ -30,6 +30,7 @@ import (
 	wpupdateshandler "podnest/internal/handlers/wpupdates"
 	"podnest/internal/logger"
 	"podnest/internal/modules"
+	"podnest/internal/modules/features/smtp"
 	"podnest/web"
 )
 
@@ -232,6 +233,10 @@ func (s *Server) routes() http.Handler {
 
 	// feature module routes
 	for _, f := range modules.AllFeatureModules() {
+		if feature, ok := f.(smtp.Module); ok {
+			feature.RefreshPHPSMTP = sitesHandler.RefreshPHPSMTP
+			f = feature
+		}
 		f.RegisterRoutes(api, sitesHandler.ResolveSite)
 	}
 

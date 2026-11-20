@@ -6,6 +6,7 @@ package smtp
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/mail"
 	"strconv"
@@ -134,10 +135,19 @@ func (m Module) apiSaveSMTP(w http.ResponseWriter, r *http.Request, site *models
 		}
 	}
 
+	previous, ok := m.snapshotSMTP(w, site)
+	if !ok {
+		return
+	}
+
 	// Passwords are managed separately and never accepted by this endpoint.
 	if err := db.SaveSMTPSettings(m.DB, site.ID, settings); err != nil {
 		logger.Error("apiSaveSMTP: siteID=%d: %v", site.ID, err)
 		apiutil.ErrorMsg(w, http.StatusBadRequest, "unable to save SMTP settings")
+		return
+	}
+
+	if !m.applyPHPSMTP(w, r, site, previous, previous["enabled"] == "true" || existing["enabled"] == "true") {
 		return
 	}
 
@@ -164,10 +174,28 @@ func (m Module) apiSaveSMTPPassword(w http.ResponseWriter, r *http.Request, site
 		return
 	}
 
+	if (site.SiteType == models.SiteTypePHP || site.SiteType == models.SiteTypeWordPress) &&
+		strings.ContainsAny(req.Password, "\x00\r\n") {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "PHP SMTP passwords cannot contain NUL or line breaks")
+		return
+	}
+
+	smtpSettingsMu.Lock()
+	defer smtpSettingsMu.Unlock()
+
+	previous, ok := m.snapshotSMTP(w, site)
+	if !ok {
+		return
+	}
+
 	// Encrypt the password before storing it.
 	if err := db.SetSMTPPassword(m.DB, site.ID, req.Password); err != nil {
 		logger.Error("apiSaveSMTPPassword: siteID=%d: credential storage failed", site.ID)
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to save SMTP password")
+		return
+	}
+
+	if !m.applyPHPSMTP(w, r, site, previous, previous["enabled"] == "true") {
 		return
 	}
 
@@ -180,25 +208,29 @@ func (m Module) apiSaveSMTPPassword(w http.ResponseWriter, r *http.Request, site
 }
 
 // apiDeleteSMTPPassword removes stored SMTP credentials and disables SMTP.
-func (m Module) apiDeleteSMTPPassword(w http.ResponseWriter, _ *http.Request, site *models.Site) {
+func (m Module) apiDeleteSMTPPassword(w http.ResponseWriter, r *http.Request, site *models.Site) {
 
 	// Prevent a settings save from re-enabling SMTP during credential removal.
 	smtpSettingsMu.Lock()
 	defer smtpSettingsMu.Unlock()
 
-	// Disable SMTP before removing its credentials.
-	if err := db.SaveSMTPSettings(m.DB, site.ID, map[string]string{
-		"enabled": "false",
-	}); err != nil {
-		logger.Error("apiDeleteSMTPPassword: siteID=%d: failed to disable SMTP", site.ID)
-		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to disable SMTP")
+	previous, ok := m.snapshotSMTP(w, site)
+	if !ok {
 		return
 	}
 
-	// Remove the encrypted password without exposing its value.
-	if err := db.DeleteSMTPPassword(m.DB, site.ID); err != nil {
+	// Disable SMTP and remove the encrypted password in the same transaction.
+	settings := maps.Clone(previous)
+	settings["enabled"] = "false"
+	delete(settings, "password")
+
+	if err := db.SetConfigs(m.DB, site.ID, models.ConfigSMTP, settings); err != nil {
 		logger.Error("apiDeleteSMTPPassword: siteID=%d: credential removal failed", site.ID)
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to remove SMTP password")
+		return
+	}
+
+	if !m.applyPHPSMTP(w, r, site, previous, previous["enabled"] == "true") {
 		return
 	}
 
