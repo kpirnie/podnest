@@ -62,7 +62,12 @@ var podRestartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return userRun(s.User, s.UID, "podman", "pod", "restart", "pn-"+args[0])
+		return userRun(s.User, s.UID, "podman", "exec", "podnest",
+			"podnest", "restart-site",
+			"--app-path", "/opt/podnest",
+			"--socket", "/run/podman/podman.sock",
+			"--", args[0],
+		)
 	},
 }
 

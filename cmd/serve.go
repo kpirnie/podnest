@@ -17,7 +17,6 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/malware"
-	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/basicauth"
@@ -113,36 +112,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// one podman client is shared by every consumer — they all talk to the same
 	// socket and a second client only adds another connection pool
 	podmanClient := podman.New(podmanSock)
-
-	podmanClient.SetSMTPResolver(func(siteID int64, container, role string) (int, map[string]string, error) {
-		site, err := db.GetSiteByID(database, siteID)
-		if err != nil {
-			return 0, nil, err
-		}
-		if site == nil {
-			return 0, nil, fmt.Errorf("SMTP site does not exist")
-		}
-
-		var expectedRole string
-		switch site.SiteType {
-		case models.SiteTypePHP, models.SiteTypeWordPress:
-			expectedRole = "php"
-		case models.SiteTypeNode, models.SiteTypeDotNet, models.SiteTypePython:
-			expectedRole = "app"
-		default:
-			return 0, nil, fmt.Errorf("site type does not support SMTP")
-		}
-		if role != expectedRole || container != podman.ContainerName(site.Name, expectedRole) {
-			return 0, nil, fmt.Errorf("SMTP site and container do not match")
-		}
-
-		settings, err := db.GetSMTPRuntimeConfig(database, site.ID)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		return sftpmanager.UIDForSite(site.ID), settings, nil
-	})
+	configureSMTPResolver(podmanClient, database)
 
 	// create the sftp server
 	sftpMgr := sftpmanager.New(podmanClient, database, appPath, "")
