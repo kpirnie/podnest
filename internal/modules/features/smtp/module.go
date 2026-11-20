@@ -40,7 +40,23 @@ func (m Module) AppliesTo(siteType int) bool {
 func (m Module) Tabs(_ *models.Site) []modules.TabDescriptor { return nil }
 
 // RegisterRoutes registers the SMTP management API routes.
-func (m Module) RegisterRoutes(_ *http.ServeMux, _ modules.SiteResolver) {}
+func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver) {
+
+	// Return SMTP settings for supported site types.
+	mux.HandleFunc("GET /sites/{id}/smtp", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+
+		if !m.AppliesTo(site.SiteType) {
+			http.NotFound(w, r)
+			return
+		}
+
+		m.apiGetSMTP(w, r, site)
+	})
+}
 
 // OnSiteCreate is a no-op; SMTP starts disabled.
 func (m Module) OnSiteCreate(_ context.Context, _ *models.Site) error { return nil }
