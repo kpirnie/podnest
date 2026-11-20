@@ -56,6 +56,21 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 
 		m.apiGetSMTP(w, r, site)
 	})
+
+	// Save SMTP settings for supported site types.
+	mux.HandleFunc("PUT /sites/{id}/smtp", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+
+		if !m.AppliesTo(site.SiteType) {
+			http.NotFound(w, r)
+			return
+		}
+
+		m.apiSaveSMTP(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; SMTP starts disabled.
