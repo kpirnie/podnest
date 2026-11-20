@@ -99,3 +99,37 @@ func (m Module) apiSaveSMTP(w http.ResponseWriter, r *http.Request, site *models
 	logger.Debug("apiSaveSMTP: siteID=%d saved", site.ID)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// apiSaveSMTPPassword encrypts and stores a site's SMTP password.
+func (m Module) apiSaveSMTPPassword(w http.ResponseWriter, r *http.Request, site *models.Site) {
+
+	// Decode credentials without recording their contents.
+	var req struct {
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP password request")
+		return
+	}
+
+	// Reject empty or excessively long credentials.
+	if req.Password == "" || len(req.Password) > 4096 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "SMTP password must be between 1 and 4096 bytes")
+		return
+	}
+
+	// Encrypt the password before storing it.
+	if err := db.SetSMTPPassword(m.DB, site.ID, req.Password); err != nil {
+		logger.Error("apiSaveSMTPPassword: siteID=%d: credential storage failed", site.ID)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to save SMTP password")
+		return
+	}
+
+	// Never return credentials, encrypted values, or password hashes.
+	logger.Debug("apiSaveSMTPPassword: siteID=%d credentials updated", site.ID)
+	apiutil.JSON(w, http.StatusOK, map[string]string{
+		"status":       "ok",
+		"password_set": "true",
+	})
+}

@@ -71,6 +71,21 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 
 		m.apiSaveSMTP(w, r, site)
 	})
+
+	// Save SMTP credentials separately from general settings.
+	mux.HandleFunc("PUT /sites/{id}/smtp/password", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+
+		if !m.AppliesTo(site.SiteType) {
+			http.NotFound(w, r)
+			return
+		}
+
+		m.apiSaveSMTPPassword(w, r, site)
+	})
 }
 
 // OnSiteCreate is a no-op; SMTP starts disabled.
