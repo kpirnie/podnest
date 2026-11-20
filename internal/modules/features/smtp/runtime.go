@@ -27,37 +27,47 @@ func (m Module) snapshotSMTP(w http.ResponseWriter, site *models.Site) (map[stri
 	return settings, true
 }
 
-// applyPHPSMTP refreshes the PHP runtime and restores the prior configuration on failure.
-func (m Module) applyPHPSMTP(w http.ResponseWriter, r *http.Request, site *models.Site, previous map[string]string, refresh bool) bool {
-	if !refresh || (site.SiteType != models.SiteTypePHP && site.SiteType != models.SiteTypeWordPress) {
+// applySMTPRuntime refreshes the site runtime and restores the prior configuration on failure.
+func (m Module) applySMTPRuntime(w http.ResponseWriter, r *http.Request, site *models.Site, previous map[string]string, refresh bool) bool {
+	if !refresh {
+		return true
+	}
+
+	var apply func(context.Context, *models.Site) error
+	switch site.SiteType {
+	case models.SiteTypePHP, models.SiteTypeWordPress:
+		apply = m.RefreshPHPSMTP
+	case models.SiteTypeNode, models.SiteTypeDotNet, models.SiteTypePython:
+		apply = m.RefreshAppSMTP
+	default:
 		return true
 	}
 
 	// Once the database is updated, finish the apply or recovery even if the client disconnects.
 	refreshRuntime := func() error {
-		if m.RefreshPHPSMTP == nil {
-			return errors.New("PHP SMTP refresh is unavailable")
+		if apply == nil {
+			return errors.New("SMTP runtime refresh is unavailable")
 		}
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 45*time.Second)
 		defer cancel()
-		return m.RefreshPHPSMTP(ctx, site)
+		return apply(ctx, site)
 	}
 
 	if err := refreshRuntime(); err != nil {
-		logger.Error("applyPHPSMTP: siteID=%d: %v", site.ID, err)
+		logger.Error("applySMTPRuntime: siteID=%d: %v", site.ID, err)
 	} else {
 		return true
 	}
 
 	if err := db.SetConfigs(m.DB, site.ID, models.ConfigSMTP, previous); err != nil {
-		logger.Error("applyPHPSMTP: siteID=%d: configuration rollback failed: %v", site.ID, err)
+		logger.Error("applySMTPRuntime: siteID=%d: configuration rollback failed: %v", site.ID, err)
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "SMTP apply failed and the previous settings could not be restored")
 		return false
 	}
 
 	if err := refreshRuntime(); err != nil {
-		logger.Error("applyPHPSMTP: siteID=%d: runtime recovery failed: %v", site.ID, err)
-		apiutil.ErrorMsg(w, http.StatusInternalServerError, "previous SMTP settings restored, but PHP runtime recovery failed")
+		logger.Error("applySMTPRuntime: siteID=%d: runtime recovery failed: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "previous SMTP settings restored, but site runtime recovery failed")
 		return false
 	}
 

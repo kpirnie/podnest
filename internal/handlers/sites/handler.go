@@ -1183,14 +1183,17 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	}
 
 	siteUID := sftp.UIDForSite(site.ID)
-	var loadPHPSMTP func(context.Context, string) error
+	var loadPHPSMTP, loadAppSMTP func(context.Context, string) error
 
-	if site.SiteType == models.SiteTypePHP || site.SiteType == models.SiteTypeWordPress {
+	switch site.SiteType {
+	case models.SiteTypePHP, models.SiteTypeWordPress:
 		loadPHPSMTP, err = h.preparePHPSMTP(site, siteDir, siteUID, allConfigs[models.ConfigPHP])
-		if err != nil {
-			revertDBUser()
-			return "", err
-		}
+	case models.SiteTypeNode, models.SiteTypeDotNet, models.SiteTypePython:
+		loadAppSMTP, err = h.prepareAppSMTP(site, siteUID)
+	}
+	if err != nil {
+		revertDBUser()
+		return "", err
 	}
 
 	// create the pod
@@ -1205,6 +1208,7 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 		DBRootPass:  dbRootPass,
 		RedisPass:   redisPass,
 		LoadPHPSMTP: loadPHPSMTP,
+		LoadAppSMTP: loadAppSMTP,
 	}); err != nil {
 		logger.Error("recreating pod for site %s — pod left in place for inspection: %v", site.Name, err)
 		revertDBUser()

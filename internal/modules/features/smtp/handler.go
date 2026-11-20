@@ -147,7 +147,7 @@ func (m Module) apiSaveSMTP(w http.ResponseWriter, r *http.Request, site *models
 		return
 	}
 
-	if !m.applyPHPSMTP(w, r, site, previous, previous["enabled"] == "true" || existing["enabled"] == "true") {
+	if !m.applySMTPRuntime(w, r, site, previous, previous["enabled"] == "true" || existing["enabled"] == "true") {
 		return
 	}
 
@@ -195,7 +195,7 @@ func (m Module) apiSaveSMTPPassword(w http.ResponseWriter, r *http.Request, site
 		return
 	}
 
-	if !m.applyPHPSMTP(w, r, site, previous, previous["enabled"] == "true") {
+	if !m.applySMTPRuntime(w, r, site, previous, previous["enabled"] == "true") {
 		return
 	}
 
@@ -230,7 +230,7 @@ func (m Module) apiDeleteSMTPPassword(w http.ResponseWriter, r *http.Request, si
 		return
 	}
 
-	if !m.applyPHPSMTP(w, r, site, previous, previous["enabled"] == "true") {
+	if !m.applySMTPRuntime(w, r, site, previous, previous["enabled"] == "true") {
 		return
 	}
 

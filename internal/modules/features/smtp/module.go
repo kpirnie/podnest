@@ -18,6 +18,7 @@ import (
 type Module struct {
 	DB             *sql.DB
 	RefreshPHPSMTP func(context.Context, *models.Site) error
+	RefreshAppSMTP func(context.Context, *models.Site) error
 }
 
 // FeatureID returns the unique key for this feature.

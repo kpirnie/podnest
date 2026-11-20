@@ -235,6 +235,7 @@ func (s *Server) routes() http.Handler {
 	for _, f := range modules.AllFeatureModules() {
 		if feature, ok := f.(smtp.Module); ok {
 			feature.RefreshPHPSMTP = sitesHandler.RefreshPHPSMTP
+			feature.RefreshAppSMTP = sitesHandler.RefreshAppSMTP
 			f = feature
 		}
 		f.RegisterRoutes(api, sitesHandler.ResolveSite)

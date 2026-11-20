@@ -14,7 +14,10 @@ import (
 	"podnest/internal/fileutil"
 	"podnest/internal/models"
 	"podnest/internal/modules"
+	"podnest/internal/modules/types/dotnet"
+	"podnest/internal/modules/types/node"
 	"podnest/internal/modules/types/php"
+	"podnest/internal/modules/types/python"
 	"podnest/internal/modules/types/wordpress"
 	"podnest/internal/podman"
 	"podnest/internal/sftp"
@@ -79,6 +82,65 @@ func (h *Handler) RefreshPHPSMTP(ctx context.Context, site *models.Site) error {
 	}
 
 	return php.CreateRuntime(ctx, client, cfg, start)
+}
+
+// RefreshAppSMTP applies the saved SMTP settings to an existing application runtime.
+func (h *Handler) RefreshAppSMTP(ctx context.Context, site *models.Site) error {
+
+	var createRuntime func(context.Context, modules.PodmanClient, modules.PodConfig, bool) error
+	switch site.SiteType {
+	case models.SiteTypeNode:
+		createRuntime = node.CreateRuntime
+	case models.SiteTypeDotNet:
+		createRuntime = dotnet.CreateRuntime
+	case models.SiteTypePython:
+		createRuntime = python.CreateRuntime
+	default:
+		return nil
+	}
+
+	if _, err := h.Podman.InspectPod(ctx, podman.PodName(site.Name)); err != nil {
+		return fmt.Errorf("inspect site pod for SMTP refresh: %w", err)
+	}
+
+	hostSiteDir, err := fileutil.SiteDir(h.hostSitesBase(), site.Name)
+	if err != nil {
+		return err
+	}
+
+	siteUID := sftp.UIDForSite(site.ID)
+	loadSMTP, err := h.prepareAppSMTP(site, siteUID)
+	if err != nil {
+		return err
+	}
+
+	client := &modules.PodmanClientAdapter{Client: h.PodmanClient}
+	cfg := modules.PodConfig{
+		Site:        site,
+		SiteUID:     siteUID,
+		SiteDir:     hostSiteDir,
+		LoadAppSMTP: loadSMTP,
+	}
+	return createRuntime(ctx, client, cfg, site.SiteStatus != models.StatusStopped)
+}
+
+// prepareAppSMTP returns a loader when SMTP is enabled for an application site.
+func (h *Handler) prepareAppSMTP(site *models.Site, siteUID int) (func(context.Context, string) error, error) {
+
+	settings, err := db.GetSMTPRuntimeConfig(h.DB, site.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load application SMTP configuration: %w", err)
+	}
+	if settings["enabled"] != "true" {
+		return nil, nil
+	}
+	if settings["password"] == "" {
+		return nil, fmt.Errorf("application SMTP password is required")
+	}
+
+	return func(ctx context.Context, container string) error {
+		return h.PodmanClient.LoadAppSMTP(ctx, container, siteUID, settings)
+	}, nil
 }
 
 // preparePHPSMTP writes the PHP override and returns the loader for enabled SMTP.
