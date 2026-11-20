@@ -108,7 +108,9 @@ func scaffoldDir(dir string, cfg modules.ScaffoldConfig) error {
 		return fmt.Errorf("write www.conf: %w", err)
 	}
 
-	phpIni, err := config.RenderPHPIni(marshalCfg(cfg.Configs[models.ConfigPHP]))
+	// Enable the msmtp sendmail handler when per-site SMTP is configured.
+	smtpEnabled := cfg.Configs[models.ConfigSMTP]["enabled"] == "true"
+	phpIni, err := config.RenderPHPIniWithSMTP(marshalCfg(cfg.Configs[models.ConfigPHP]), smtpEnabled)
 	if err != nil {
 		return fmt.Errorf("render php.ini: %w", err)
 	}
