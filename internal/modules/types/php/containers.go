@@ -63,5 +63,5 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		CapDrop:  []string{"ALL"},
 		CapAdd:   []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
 		SecOpts:  []string{"no-new-privileges:true"},
-	}, cfg.LoadPHPSMTP)
+	}, cfg.Site.ID, cfg.LoadPHPSMTP)
 }

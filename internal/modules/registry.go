@@ -131,6 +131,7 @@ type ContainerConfig struct {
 	Image      string
 	PodName    string
 	Env        map[string]string
+	Labels     map[string]string
 	Mounts     []Mount
 	Command    []string
 	Entrypoint []string

@@ -8,9 +8,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"podnest/internal/modules"
+	"podnest/internal/podman"
 )
 
 // waitForPHPSMTP holds PHP-FPM until the loader publishes the SMTP files.
@@ -28,9 +30,19 @@ exec "$@"
 `
 
 // CreatePHPRuntime creates and starts PHP-FPM, provisioning SMTP when requested.
-func CreatePHPRuntime(ctx context.Context, client modules.PodmanClient, spec modules.ContainerConfig, loadSMTP func(context.Context, string) error) error {
+func CreatePHPRuntime(ctx context.Context, client modules.PodmanClient, spec modules.ContainerConfig, siteID int64, loadSMTP func(context.Context, string) error) error {
 
 	if loadSMTP != nil {
+		if siteID <= 0 {
+			return fmt.Errorf("invalid site ID for PHP SMTP")
+		}
+
+		// Keep the site identity available after PodNest restarts.
+		if spec.Labels == nil {
+			spec.Labels = make(map[string]string)
+		}
+		spec.Labels[podman.PHPSMTPSiteLabel] = strconv.FormatInt(siteID, 10)
+
 		spec.Mounts = append(spec.Mounts, modules.Mount{
 			Type:        "tmpfs",
 			Source:      "tmpfs",

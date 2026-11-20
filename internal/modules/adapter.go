@@ -39,6 +39,7 @@ func (a *PodmanClientAdapter) CreateContainer(ctx context.Context, cfg Container
 		Image:      cfg.Image,
 		Pod:        cfg.PodName,
 		Env:        cfg.Env,
+		Labels:     cfg.Labels,
 		Mounts:     mounts,
 		Command:    cfg.Command,
 		Entrypoint: cfg.Entrypoint,

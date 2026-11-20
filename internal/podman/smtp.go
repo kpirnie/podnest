@@ -14,6 +14,9 @@ import (
 	"podnest/internal/config"
 )
 
+// PHPSMTPSiteLabel identifies the site whose PHP runtime uses the SMTP startup gate.
+const PHPSMTPSiteLabel = "app.podnest.smtp-site-id"
+
 // provisionPHPSMTP verifies the mount before writing and publishes msmtprc last.
 const provisionPHPSMTP = `
 set -eu
