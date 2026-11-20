@@ -1186,38 +1186,10 @@ func (h *Handler) RecreateSite(ctx context.Context, site *models.Site, installWo
 	var loadPHPSMTP func(context.Context, string) error
 
 	if site.SiteType == models.SiteTypePHP || site.SiteType == models.SiteTypeWordPress {
-		smtpSettings, err := db.GetSMTPRuntimeConfig(h.DB, site.ID)
+		loadPHPSMTP, err = h.preparePHPSMTP(site, siteDir, siteUID, allConfigs[models.ConfigPHP])
 		if err != nil {
 			revertDBUser()
-			return "", fmt.Errorf("load PHP SMTP configuration for recreation: %w", err)
-		}
-
-		smtpEnabled := smtpSettings["enabled"] == "true"
-		if smtpEnabled {
-			// Catch invalid settings before replacing the running PHP container.
-			if _, err := config.RenderMSMTPConfig(smtpSettings); err != nil {
-				revertDBUser()
-				return "", fmt.Errorf("validate PHP SMTP configuration for recreation: %w", err)
-			}
-
-			loadPHPSMTP = func(ctx context.Context, container string) error {
-				return h.PodmanClient.LoadPHPSMTP(ctx, container, siteUID, smtpSettings)
-			}
-		}
-
-		phpBlob, err := json.Marshal(allConfigs[models.ConfigPHP])
-		if err != nil {
-			revertDBUser()
-			return "", fmt.Errorf("marshal PHP configuration for recreation: %w", err)
-		}
-		phpIni, err := config.RenderPHPIniWithSMTP(string(phpBlob), smtpEnabled)
-		if err != nil {
-			revertDBUser()
-			return "", fmt.Errorf("render PHP configuration for recreation: %w", err)
-		}
-		if err := fileutil.WriteFile(siteDir, "php-fpm/php.ini", phpIni, 0644); err != nil {
-			revertDBUser()
-			return "", fmt.Errorf("write PHP configuration for recreation: %w", err)
+			return "", err
 		}
 	}
 
