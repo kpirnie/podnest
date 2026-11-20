@@ -18,6 +18,10 @@
   ],
   "tags": [
     {
+      "name": "Outbound SMTP",
+      "description": "Per-site SMTP settings, credentials, and test email."
+    },
+    {
       "name": "Sites",
       "description": "Site CRUD, lifecycle (start/stop/restart/recreate), clone, and image pruning."
     },
@@ -124,6 +128,151 @@
       }
     },
     "schemas": {
+      "SiteSMTPSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "password_set"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "string",
+            "description": "Enable or disable outbound SMTP for this site.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "host": {
+            "type": "string",
+            "description": "SMTP provider hostname or address without a URL scheme or port.",
+            "examples": [
+              "smtp.example.com"
+            ]
+          },
+          "port": {
+            "type": "string",
+            "description": "SMTP port number from 1 to 65535, encoded as a string.",
+            "examples": [
+              "587"
+            ]
+          },
+          "encryption": {
+            "type": "string",
+            "description": "STARTTLS or implicit TLS.",
+            "enum": [
+              "starttls",
+              "tls"
+            ]
+          },
+          "username": {
+            "type": "string",
+            "description": "SMTP provider username."
+          },
+          "from_email": {
+            "type": "string",
+            "description": "Bare sender email address authorized by the provider. May be empty while SMTP is disabled.",
+            "examples": [
+              "mail@example.com"
+            ]
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Optional sender display name."
+          },
+          "password_set": {
+            "type": "string",
+            "description": "Whether a password is configured.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      },
+      "SiteSMTPUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "enabled": {
+            "type": "string",
+            "description": "Enable or disable outbound SMTP for this site.",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "host": {
+            "type": "string",
+            "description": "SMTP provider hostname or address without a URL scheme or port.",
+            "examples": [
+              "smtp.example.com"
+            ]
+          },
+          "port": {
+            "type": "string",
+            "description": "SMTP port number from 1 to 65535, encoded as a string.",
+            "examples": [
+              "587"
+            ]
+          },
+          "encryption": {
+            "type": "string",
+            "description": "STARTTLS or implicit TLS.",
+            "enum": [
+              "starttls",
+              "tls"
+            ]
+          },
+          "username": {
+            "type": "string",
+            "description": "SMTP provider username."
+          },
+          "from_email": {
+            "type": "string",
+            "description": "Bare sender email address authorized by the provider. May be empty while SMTP is disabled.",
+            "examples": [
+              "mail@example.com"
+            ]
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Optional sender display name."
+          }
+        }
+      },
+      "SiteSMTPPassword": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "SMTP password, 1 to 4096 UTF-8 bytes. For WordPress and PHP it cannot contain NUL, CR, or LF.",
+            "format": "password",
+            "writeOnly": true,
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      },
+      "SiteSMTPTestRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recipient"
+        ],
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "description": "One bare recipient email address.",
+            "format": "email",
+            "maxLength": 254
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -9301,6 +9450,571 @@
             }
           },
           "description": "TODO: document request body."
+        }
+      }
+    },
+    "/sites/{id}/smtp": {
+      "get": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Get site SMTP settings",
+        "description": "Returns provider settings and whether a password is configured. Passwords and encrypted credential values are omitted. Available for WordPress, PHP, Node.js, .NET, and Python.",
+        "operationId": "get_sites_id_smtp",
+        "responses": {
+          "200": {
+            "description": "Site SMTP settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SiteSMTPSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid site ID or request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Site not found or its type does not support SMTP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unable to load SMTP settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Update site SMTP settings",
+        "description": "Updates only the supplied fields. Save the password separately first. The resulting configuration must be complete whenever SMTP is enabled. Available for WordPress, PHP, Node.js, .NET, and Python.",
+        "operationId": "put_sites_id_smtp",
+        "responses": {
+          "200": {
+            "description": "SMTP settings saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid settings or incomplete configuration for enabled SMTP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Site not found or its type does not support SMTP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unable to validate, save, or apply SMTP settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "CSRF token for session-authenticated writes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Partial update to the site's SMTP settings. Use strings for enabled and port.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteSMTPUpdate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sites/{id}/smtp/password": {
+      "put": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Set site SMTP password",
+        "description": "Encrypts and stores the supplied password. A password change refreshes the runtime when SMTP is enabled. Available for WordPress, PHP, Node.js, .NET, and Python.",
+        "operationId": "put_sites_id_smtp_password",
+        "responses": {
+          "200": {
+            "description": "SMTP password set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "password_set"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    },
+                    "password_set": {
+                      "type": "string",
+                      "const": "true"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid password request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Site not found or its type does not support SMTP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unable to store or apply the SMTP password.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "CSRF token for session-authenticated writes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "New SMTP password.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteSMTPPassword"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Remove site SMTP password",
+        "description": "Removes the stored SMTP password and disables outbound SMTP for the site. Available for WordPress, PHP, Node.js, .NET, and Python.",
+        "operationId": "delete_sites_id_smtp_password",
+        "responses": {
+          "200": {
+            "description": "SMTP password removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "password_set"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    },
+                    "password_set": {
+                      "type": "string",
+                      "const": "false"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid site ID or request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Site not found or its type does not support SMTP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unable to remove the password or apply the changed configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "CSRF token for session-authenticated writes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/sites/{id}/smtp/test": {
+      "post": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Send a site SMTP test email",
+        "description": "Sends one fixed test message to the supplied recipient using the site's enabled SMTP settings. The sender uses AUTH PLAIN over verified TLS and connects only to public provider addresses. The rate limit is one attempt per site per minute with a shared two-second interval between attempts. Available for WordPress, PHP, Node.js, .NET, and Python.",
+        "operationId": "post_sites_id_smtp_test",
+        "responses": {
+          "200": {
+            "description": "The SMTP provider accepted the message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "accepted"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or recipient address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Site not found or its type does not support SMTP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Outbound SMTP is disabled for the site.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "SMTP test cooldown is active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until another attempt is allowed.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unable to load SMTP configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The test sender could not complete the SMTP delivery attempt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Site ID.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "description": "CSRF token for session-authenticated writes.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "One recipient address. The JSON request body is limited to 1024 bytes.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SiteSMTPTestRequest"
+              }
+            }
+          }
         }
       }
     },

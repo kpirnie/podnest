@@ -16,7 +16,7 @@ A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js,
 
 ---
 
-[Overview](#overview) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [Development Container](#development-container) · [Security Policy](#security-policy) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements-contributions--accolades) · [License](#license) · [Support](#support)
+[Overview](#overview) · [Outbound SMTP](#outbound-smtp) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [Development Container](#development-container) · [Security Policy](#security-policy) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements-contributions--accolades) · [License](#license) · [Support](#support)
 
 ---
 
@@ -43,6 +43,25 @@ All sites share a single global SFTP container for file management. The same con
 The recommended and fully supported deployment method is as a container. The binary option is available for those who prefer to compile and run it directly.
 
 > **Full documentation** — feature guides, configuration reference, the security model, and the complete API reference — lives in the [PodNest Knowledge Base](https://podnest.app). This README covers only what you need to get an instance up and running. See [Documentation](#documentation) below for the topic index.
+
+---
+
+## Outbound SMTP
+
+Set up an external SMTP provider per WordPress, PHP, Node.js, .NET, or Python site under **Manage → SMTP**. Static HTML and Reverse Proxy sites have no SMTP panel. PodNest’s panel notification settings are managed separately.
+
+1. Enter your provider’s host, port, encryption mode, username, and From Email. Use a sender address authorized by the provider. From Name is optional.
+2. Save the SMTP password, then select **Enable outbound SMTP** and save the settings. Use STARTTLS or implicit TLS as directed by the provider.
+3. Enter a recipient and select **Send Test Email**. A successful test means the provider accepted the message. The test sender uses `AUTH PLAIN` over verified TLS and connects to public provider addresses.
+
+| Runtime | How outgoing mail works |
+| --- | --- |
+| WordPress and PHP | PHP’s `mail()` uses `msmtp` when per-site SMTP is enabled. Use a PodNest PHP image that includes `msmtp`. |
+| Node.js, .NET, and Python | The app uses its own SMTP client. When enabled, it can read `/etc/podnest/smtp/settings.json`, which contains `host`, `port` (a number), `encryption`, `username`, `password`, `from_email`, and `from_name`. |
+
+PodNest encrypts the password with `PN_SECRET_KEY`. Back up that key separately from the database so you can decrypt saved credentials after a restore. Decrypted runtime files are provisioned on a private `tmpfs` with `noswap`. SMTP requires rootful Podman with `noswap` support and a compatible host kernel. Mainline Linux added the mount option in 6.4. The default rootless `pdnctl` installation cannot enable per-site SMTP.
+
+Changes to active SMTP settings refresh the site’s PHP or app container. Stopped sites stay stopped. Use PodNest’s start and restart actions so it can repopulate the runtime files. Removing the password disables outbound SMTP. A cloned site starts with its SMTP settings disabled and requires its own password.
 
 ---
 
@@ -109,7 +128,7 @@ pdnctl install --user USER --version latest|dev|beta
 
 The timezone is pulled from the host, site data lives at `/home/<user>/sites`, and the install details are stored in `/etc/podnest/install.json` — every command after `install` needs zero flags.
 
-`install` also generates `/home/<user>/.pn.env`, holding the `PN_SECRET_KEY` that encrypts node link private keys at rest. It lives outside the site data directory on purpose — back it up with your data, and never change or delete it, or every paired child node will need to be re-paired.
+`install` also generates `/home/<user>/.pn.env`, holding the `PN_SECRET_KEY` used to encrypt node link private keys and per-site SMTP passwords. Back up the key separately from the site data. If you lose it, paired child nodes must be re-paired and saved SMTP passwords must be re-entered.
 
 Once running, the UI is available at: `http://your-host:9000`
 
@@ -201,14 +220,14 @@ podman-compose up -d
 
 **Volume mount and the `:z` label** — the `:z` flag on the `/opt/podnest` mount is a SELinux relabeling option required on systems running SELinux in enforcing mode. It is safe to omit on systems that do not use SELinux.
 
-**Secret key (`PN_SECRET_KEY`)** — PodNest encrypts node link private keys at rest with the key in `PN_SECRET_KEY`. Keep the env file outside the `/opt/podnest` volume, so a copy of the data directory alone does not carry it. Create it once before the first start:
+**Secret key (`PN_SECRET_KEY`)** — PodNest uses this key to encrypt node link private keys and per-site SMTP passwords at rest. Keep the env file outside the `/opt/podnest` volume, so a copy of the data directory alone does not carry it. Create it once before the first start:
 
 ```bash
 printf 'PN_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" > ~/.pn.env
 chmod 600 ~/.pn.env
 ```
 
-Never change or delete it once set, or every paired child node will need to be re-paired. Without it PodNest still runs, but stores node keys in plaintext and logs a warning at startup. Existing plaintext keys are encrypted automatically on the first start with the key present.
+If you lose the key, paired child nodes must be re-paired and saved SMTP passwords must be re-entered. Per-site SMTP password storage requires the key. When the key is missing, PodNest still runs, stores node keys in plaintext, and logs a startup warning. Existing plaintext node keys are encrypted automatically on the first start with the key present.
 
 ### Running with systemd (Recommended for Production)
 
@@ -302,7 +321,7 @@ export PN_SECRET_KEY="$(grep PN_SECRET_KEY ~/.pn.env | cut -d= -f2)"
   --socket /run/podman/podman.sock
 ```
 
-`PN_SECRET_KEY` encrypts node link private keys at rest — see **Secret key** under Docker Compose for how to create `~/.pn.env`.
+`PN_SECRET_KEY` encrypts node link private keys and per-site SMTP passwords at rest. See **Secret key** under Docker Compose for how to create `~/.pn.env`.
 
 ### Available Commands and Flags
 
@@ -425,6 +444,7 @@ The `.env` file inside each site directory holds the auto-generated database and
 Day-to-day usage, configuration, and the full API reference are documented in the [PodNest Knowledge Base](https://podnest.app). Topic index:
 
 - **Managing Sites** — creating sites, site actions, container health, cloning, domains
+- **[Outbound SMTP](#outbound-smtp)** — per-site provider setup, runtime behavior, and test email
 - **Site Push** — push one site's files and/or database onto another site (the target is backed up first)
 - **SFTP Access** — global SFTP container, directory access, Fail2Ban integration
 - **Built-in Reverse Proxy** — how it works, SSL / Let's Encrypt, admin domain, Reverse Proxy site type
