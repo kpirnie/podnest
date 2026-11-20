@@ -12,11 +12,12 @@ import (
 // seedConfigs returns the default config maps for a PHP site.
 func seedConfigs() map[int]map[string]string {
 	return map[int]map[string]string{
-		models.ConfigNginx:   config.NginxDefaultsForSiteType(models.SiteTypePHP),
-		models.ConfigPHP:     config.DefaultPHP,
-		models.ConfigMariaDB: config.DefaultMariaDB,
-		models.ConfigRedis:   config.DefaultRedis,
-		models.ConfigVarnish: config.DefaultVarnish,
+		models.ConfigNginx:      config.NginxDefaultsForSiteType(models.SiteTypePHP),
+		models.ConfigPHP:        config.DefaultPHP,
+		models.ConfigMariaDB:    config.DefaultMariaDB,
+		models.ConfigRedis:      config.DefaultRedis,
+		models.ConfigVarnish:    config.DefaultVarnish,
 		models.ConfigProxyCache: config.DefaultProxyCache,
+		models.ConfigSMTP:       config.DefaultSMTP,
 	}
 }
