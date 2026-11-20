@@ -6,6 +6,7 @@ package podman
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"podnest/internal/config"
@@ -17,8 +18,8 @@ import (
 // PHPSMTPSiteLabel identifies the site whose PHP runtime uses the SMTP startup gate.
 const PHPSMTPSiteLabel = "app.podnest.smtp-site-id"
 
-// provisionPHPSMTP verifies the mount before writing and publishes msmtprc last.
-const provisionPHPSMTP = `
+// requirePrivateSMTPMount refuses to write credentials outside a noswap tmpfs.
+const requirePrivateSMTPMount = `
 set -eu
 dir=/etc/podnest/smtp
 
@@ -33,7 +34,10 @@ awk -v target="$dir" '
 	}
 	END { exit !found }
 ' /proc/self/mountinfo
+`
 
+// provisionPHPSMTP publishes msmtprc after its password file is ready.
+const provisionPHPSMTP = requirePrivateSMTPMount + `
 umask 077
 staging="$dir/.provisioning"
 attempts=0
@@ -63,6 +67,60 @@ chown "$1:$1" "$staging/password" "$staging/msmtprc"
 mv -f "$staging/password" "$dir/password"
 mv -f "$staging/msmtprc" "$dir/msmtprc"
 `
+
+// provisionAppSMTP publishes one JSON file atomically on the private mount.
+const provisionAppSMTP = requirePrivateSMTPMount + `
+test "$(stat -c '%u:%g:%a' "$dir")" = "0:$1:2710"
+
+umask 077
+staging=$(mktemp "$dir/.settings.XXXXXX")
+trap 'rm -f "$staging"' EXIT
+
+cat > "$staging"
+test -s "$staging"
+chmod 0440 "$staging"
+mv -f "$staging" "$dir/settings.json"
+`
+
+// LoadAppSMTP streams a site's SMTP settings into its application container.
+func (c *Client) LoadAppSMTP(ctx context.Context, container string, siteGID int, settings map[string]string) error {
+	if siteGID <= 0 || settings["enabled"] != "true" {
+		return fmt.Errorf("invalid application SMTP runtime configuration")
+	}
+
+	port, err := strconv.Atoi(settings["port"])
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid application SMTP port")
+	}
+	if settings["encryption"] != "starttls" && settings["encryption"] != "tls" {
+		return fmt.Errorf("invalid application SMTP encryption mode")
+	}
+
+	// Allowlist the fields the application needs for sending mail.
+	payload, err := json.Marshal(map[string]any{
+		"host":       settings["host"],
+		"port":       port,
+		"encryption": settings["encryption"],
+		"username":   settings["username"],
+		"password":   settings["password"],
+		"from_email": settings["from_email"],
+		"from_name":  settings["from_name"],
+	})
+	if err != nil {
+		return fmt.Errorf("encode application SMTP configuration: %w", err)
+	}
+
+	cmd := []string{"/bin/sh", "-c", provisionAppSMTP, "podnest-smtp", strconv.Itoa(siteGID)}
+	result, err := c.ExecStream(ctx, container, "0:0", cmd, strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("stream application SMTP configuration: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("install application SMTP configuration in private tmpfs: exit status %d", result.ExitCode)
+	}
+
+	return nil
+}
 
 // SetPHPSMTPResolver registers the site credential lookup before Podman operations begin.
 func (c *Client) SetPHPSMTPResolver(resolve func(siteID int64, container string) (int, map[string]string, error)) {
