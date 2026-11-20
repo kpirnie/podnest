@@ -20,9 +20,10 @@ import (
 
 // Client talks to the Podman REST API over a Unix socket
 type Client struct {
-	http         *http.Client
-	streamClient *http.Client // no timeout — context drives cancellation for streams
-	socketPath   string
+	http            *http.Client
+	streamClient    *http.Client // no timeout — context drives cancellation for streams
+	socketPath      string
+	phpSMTPResolver func(siteID int64, container string) (int, map[string]string, error)
 }
 
 // New returns a Podman REST API client bound to the given socket path

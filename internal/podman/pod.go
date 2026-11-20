@@ -246,6 +246,10 @@ func (c *Client) StartPod(ctx context.Context, name string) error {
 		return err
 	}
 
+	if err := c.loadPodPHPSMTP(ctx, name); err != nil {
+		return err
+	}
+
 	// log the successful start of the pod with its name and return nil to indicate success
 	logger.Debug("started pod %s", name)
 	return nil
@@ -271,6 +275,10 @@ func (c *Client) RestartPod(ctx context.Context, name string) error {
 	// send the request to restart the pod and handle any errors that occur
 	if err := c.post(ctx, "/v4.0.0/libpod/pods/"+name+"/restart", nil, nil); err != nil {
 		logger.Error("failed to restart pod %s: %v", name, err)
+		return err
+	}
+
+	if err := c.loadPodPHPSMTP(ctx, name); err != nil {
 		return err
 	}
 
@@ -794,6 +802,11 @@ func (c *Client) RestartContainer(ctx context.Context, name string) error {
 		logger.Warn("RestartContainer: failed to restart %s: %v", name, err)
 		return err
 	}
+
+	if err := c.loadStartedPHPSMTP(ctx, name); err != nil {
+		return err
+	}
+
 	logger.Debug("RestartContainer: restarted %s", name)
 	return nil
 }

@@ -17,6 +17,7 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/malware"
+	"podnest/internal/models"
 	"podnest/internal/modules"
 	"podnest/internal/modules/features/backups"
 	"podnest/internal/modules/features/basicauth"
@@ -112,6 +113,25 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// one podman client is shared by every consumer — they all talk to the same
 	// socket and a second client only adds another connection pool
 	podmanClient := podman.New(podmanSock)
+
+	podmanClient.SetPHPSMTPResolver(func(siteID int64, container string) (int, map[string]string, error) {
+		site, err := db.GetSiteByID(database, siteID)
+		if err != nil {
+			return 0, nil, err
+		}
+		if site == nil ||
+			(site.SiteType != models.SiteTypePHP && site.SiteType != models.SiteTypeWordPress) ||
+			container != podman.ContainerName(site.Name, "php") {
+			return 0, nil, fmt.Errorf("PHP SMTP site and container do not match")
+		}
+
+		settings, err := db.GetSMTPRuntimeConfig(database, site.ID)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		return sftpmanager.UIDForSite(site.ID), settings, nil
+	})
 
 	// create the sftp server
 	sftpMgr := sftpmanager.New(podmanClient, database, appPath, "")
