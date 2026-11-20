@@ -35,7 +35,14 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		return err
 	}
 
-	// PHP-FPM
+	return CreateRuntime(ctx, client, cfg, true)
+}
+
+// CreateRuntime replaces the PHP-FPM container in the existing site pod.
+func CreateRuntime(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, start bool) error {
+
+	podName := modules.PodName(cfg.Site.Name)
+
 	return containers.CreatePHPRuntime(ctx, client, modules.ContainerConfig{
 		Name:    modules.ContainerName(cfg.Site.Name, "php"),
 		Image:   models.PHPImage(cfg.Site.PHPVersion),
@@ -63,5 +70,5 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		CapDrop:  []string{"ALL"},
 		CapAdd:   []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
 		SecOpts:  []string{"no-new-privileges:true"},
-	}, cfg.Site.ID, cfg.LoadPHPSMTP)
+	}, cfg.Site.ID, cfg.LoadPHPSMTP, start)
 }

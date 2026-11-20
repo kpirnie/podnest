@@ -35,6 +35,14 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		return err
 	}
 
+	return CreateRuntime(ctx, client, cfg, true)
+}
+
+// CreateRuntime replaces the WordPress PHP-FPM container in the existing site pod.
+func CreateRuntime(ctx context.Context, client modules.PodmanClient, cfg modules.PodConfig, start bool) error {
+
+	podName := modules.PodName(cfg.Site.Name)
+
 	// the SSO mu-plugin bind needs a site-owned mu-plugins dir to mount into
 	if err := EnsureMUPluginsDir(cfg.LocalDir, cfg.SiteUID); err != nil {
 		return err
@@ -70,5 +78,5 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		CapDrop:  []string{"ALL"},
 		CapAdd:   []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
 		SecOpts:  []string{"no-new-privileges:true"},
-	}, cfg.Site.ID, cfg.LoadPHPSMTP)
+	}, cfg.Site.ID, cfg.LoadPHPSMTP, start)
 }

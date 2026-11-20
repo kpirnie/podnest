@@ -29,8 +29,8 @@ done
 exec "$@"
 `
 
-// CreatePHPRuntime creates and starts PHP-FPM, provisioning SMTP when requested.
-func CreatePHPRuntime(ctx context.Context, client modules.PodmanClient, spec modules.ContainerConfig, siteID int64, loadSMTP func(context.Context, string) error) error {
+// CreatePHPRuntime creates PHP-FPM and provisions SMTP when starting the container.
+func CreatePHPRuntime(ctx context.Context, client modules.PodmanClient, spec modules.ContainerConfig, siteID int64, loadSMTP func(context.Context, string) error, start bool) error {
 
 	if loadSMTP != nil {
 		if siteID <= 0 {
@@ -56,6 +56,9 @@ func CreatePHPRuntime(ctx context.Context, client modules.PodmanClient, spec mod
 
 	if err := client.CreateContainer(ctx, spec); err != nil {
 		return fmt.Errorf("create php: %w", err)
+	}
+	if !start {
+		return nil
 	}
 	if err := client.StartContainer(ctx, spec.Name); err != nil {
 		return fmt.Errorf("start php: %w", err)
