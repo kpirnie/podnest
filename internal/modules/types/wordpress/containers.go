@@ -41,7 +41,7 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 	}
 
 	// PHP-FPM
-	if err := client.CreateContainer(ctx, modules.ContainerConfig{
+	return containers.CreatePHPRuntime(ctx, client, modules.ContainerConfig{
 		Name:    modules.ContainerName(cfg.Site.Name, "php"),
 		Image:   models.PHPImage(cfg.Site.PHPVersion),
 		PodName: podName,
@@ -70,12 +70,5 @@ func create(ctx context.Context, client modules.PodmanClient, cfg modules.PodCon
 		CapDrop:  []string{"ALL"},
 		CapAdd:   []string{"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"},
 		SecOpts:  []string{"no-new-privileges:true"},
-	}); err != nil {
-		return fmt.Errorf("create php: %w", err)
-	}
-	if err := client.StartContainer(ctx, modules.ContainerName(cfg.Site.Name, "php")); err != nil {
-		return fmt.Errorf("start php: %w", err)
-	}
-
-	return nil
+	}, cfg.LoadPHPSMTP)
 }

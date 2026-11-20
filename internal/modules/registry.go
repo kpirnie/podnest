@@ -153,6 +153,9 @@ type PodConfig struct {
 	DBPass     string
 	DBRootPass string
 	RedisPass  string
+
+	// LoadPHPSMTP provisions credentials after the PHP container starts.
+	LoadPHPSMTP func(ctx context.Context, container string) error
 }
 
 // ScaffoldConfig holds everything a type module needs for filesystem setup.
