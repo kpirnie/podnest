@@ -7,6 +7,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"podnest/internal/models"
 )
@@ -94,4 +95,50 @@ func GetSMTPRuntimeConfig(database *sql.DB, siteID int64) (map[string]string, er
 	settings["password"] = password
 
 	return settings, nil
+}
+
+// SaveSMTPSettings saves non-sensitive SMTP settings while preserving the
+// site's encrypted password.
+func SaveSMTPSettings(database *sql.DB, siteID int64, settings map[string]string) error {
+
+	// Only allow supported SMTP configuration keys.
+	allowed := map[string]bool{
+		"enabled":    true,
+		"host":       true,
+		"port":       true,
+		"encryption": true,
+		"username":   true,
+		"from_email": true,
+		"from_name":  true,
+	}
+
+	for key := range settings {
+		if !allowed[key] {
+			return fmt.Errorf("invalid SMTP setting: %s", key)
+		}
+	}
+
+	// Save settings atomically without deleting the encrypted password.
+	tx, err := database.Begin()
+	if err != nil {
+		return fmt.Errorf("begin SMTP settings transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+
+	for key, value := range settings {
+		_, err := tx.Exec(`
+			INSERT INTO kppn_configs (site_id, type, key, value, created, updated)
+			VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT (site_id, type, key)
+			DO UPDATE SET value=excluded.value, updated=excluded.updated`,
+			siteID, models.ConfigSMTP, key, value, now, now,
+		)
+		if err != nil {
+			return fmt.Errorf("save SMTP setting %s: %w", key, err)
+		}
+	}
+
+	return tx.Commit()
 }
