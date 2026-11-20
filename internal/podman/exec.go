@@ -131,6 +131,10 @@ func (c *Client) ExecStream(ctx context.Context, container, user string, cmd []s
 		"Cmd":          cmd,
 	}
 
+	if user != "" {
+		spec["User"] = user
+	}
+
 	var execResp struct {
 		ID string `json:"Id"`
 	}
@@ -161,9 +165,6 @@ func (c *Client) ExecStream(ctx context.Context, container, user string, cmd []s
 
 	// write the raw HTTP request to start the exec attached
 	startBody := []byte(`{"Detach":false}`)
-	if user != "" {
-		startBody = []byte(`{"Detach":false,"User":"` + user + `"}`)
-	}
 	req := fmt.Sprintf(
 		"POST /v4.0.0/libpod/exec/%s/start HTTP/1.1\r\nHost: d\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: Upgrade\r\nUpgrade: tcp\r\n\r\n",
 		execResp.ID, len(startBody),
