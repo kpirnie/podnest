@@ -89,6 +89,43 @@ func (m Module) apiSaveSMTP(w http.ResponseWriter, r *http.Request, site *models
 		}
 	}
 
+	// Require a complete configuration before enabling SMTP.
+	if settings["enabled"] == "true" {
+
+		// Include previously saved settings for partial updates.
+		existing, err := db.GetSMTPSettings(m.DB, site.ID)
+		if err != nil {
+			logger.Error("apiSaveSMTP: siteID=%d: failed to retrieve SMTP settings", site.ID)
+			apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to validate SMTP settings")
+			return
+		}
+
+		for key, value := range settings {
+			existing[key] = value
+		}
+
+		// Host, sender address, and credentials are required.
+		if strings.TrimSpace(existing["host"]) == "" ||
+			strings.TrimSpace(existing["from_email"]) == "" ||
+			strings.TrimSpace(existing["username"]) == "" ||
+			existing["password_set"] != "true" {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "SMTP host, sender email, username, and password are required")
+			return
+		}
+
+		// Validate the effective port and encryption settings.
+		port, err := strconv.Atoi(existing["port"])
+		if err != nil || port < 1 || port > 65535 {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP port")
+			return
+		}
+
+		if existing["encryption"] != "starttls" && existing["encryption"] != "tls" {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP encryption mode")
+			return
+		}
+	}
+
 	// Passwords are managed separately and never accepted by this endpoint.
 	if err := db.SaveSMTPSettings(m.DB, site.ID, settings); err != nil {
 		logger.Error("apiSaveSMTP: siteID=%d: %v", site.ID, err)
