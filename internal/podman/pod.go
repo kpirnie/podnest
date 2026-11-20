@@ -246,7 +246,7 @@ func (c *Client) StartPod(ctx context.Context, name string) error {
 		return err
 	}
 
-	if err := c.loadPodPHPSMTP(ctx, name); err != nil {
+	if err := c.loadPodSMTP(ctx, name); err != nil {
 		return err
 	}
 
@@ -278,7 +278,7 @@ func (c *Client) RestartPod(ctx context.Context, name string) error {
 		return err
 	}
 
-	if err := c.loadPodPHPSMTP(ctx, name); err != nil {
+	if err := c.loadPodSMTP(ctx, name); err != nil {
 		return err
 	}
 
@@ -803,7 +803,7 @@ func (c *Client) RestartContainer(ctx context.Context, name string) error {
 		return err
 	}
 
-	if err := c.loadStartedPHPSMTP(ctx, name); err != nil {
+	if err := c.loadStartedSMTP(ctx, name); err != nil {
 		return err
 	}
 

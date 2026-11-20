@@ -114,15 +114,26 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// socket and a second client only adds another connection pool
 	podmanClient := podman.New(podmanSock)
 
-	podmanClient.SetPHPSMTPResolver(func(siteID int64, container string) (int, map[string]string, error) {
+	podmanClient.SetSMTPResolver(func(siteID int64, container, role string) (int, map[string]string, error) {
 		site, err := db.GetSiteByID(database, siteID)
 		if err != nil {
 			return 0, nil, err
 		}
-		if site == nil ||
-			(site.SiteType != models.SiteTypePHP && site.SiteType != models.SiteTypeWordPress) ||
-			container != podman.ContainerName(site.Name, "php") {
-			return 0, nil, fmt.Errorf("PHP SMTP site and container do not match")
+		if site == nil {
+			return 0, nil, fmt.Errorf("SMTP site does not exist")
+		}
+
+		var expectedRole string
+		switch site.SiteType {
+		case models.SiteTypePHP, models.SiteTypeWordPress:
+			expectedRole = "php"
+		case models.SiteTypeNode, models.SiteTypeDotNet, models.SiteTypePython:
+			expectedRole = "app"
+		default:
+			return 0, nil, fmt.Errorf("site type does not support SMTP")
+		}
+		if role != expectedRole || container != podman.ContainerName(site.Name, expectedRole) {
+			return 0, nil, fmt.Errorf("SMTP site and container do not match")
 		}
 
 		settings, err := db.GetSMTPRuntimeConfig(database, site.ID)

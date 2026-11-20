@@ -125,14 +125,14 @@ func (c *Client) LoadAppSMTP(ctx context.Context, container string, siteGID int,
 	return nil
 }
 
-// SetPHPSMTPResolver registers the site credential lookup before Podman operations begin.
-func (c *Client) SetPHPSMTPResolver(resolve func(siteID int64, container string) (int, map[string]string, error)) {
-	c.phpSMTPResolver = resolve
+// SetSMTPResolver registers the site credential lookup before Podman operations begin.
+func (c *Client) SetSMTPResolver(resolve func(siteID int64, container, role string) (int, map[string]string, error)) {
+	c.smtpResolver = resolve
 }
 
-// loadPodPHPSMTP restores SMTP for the PHP runtime in a started pod.
-func (c *Client) loadPodPHPSMTP(ctx context.Context, name string) error {
-	if c.phpSMTPResolver == nil {
+// loadPodSMTP restores SMTP for the site runtime in a started pod.
+func (c *Client) loadPodSMTP(ctx context.Context, name string) error {
+	if c.smtpResolver == nil {
 		return nil
 	}
 
@@ -142,17 +142,20 @@ func (c *Client) loadPodPHPSMTP(ctx context.Context, name string) error {
 	}
 
 	for _, container := range pod.Containers {
-		if container.Name == pod.Name+"-php" {
-			return c.loadStartedPHPSMTP(ctx, container.ID)
+		switch container.Name {
+		case pod.Name + "-php", pod.Name + "-app":
+			if err := c.loadStartedSMTP(ctx, container.ID); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
-// loadStartedPHPSMTP restores SMTP when a started container carries a site label.
-func (c *Client) loadStartedPHPSMTP(ctx context.Context, container string) error {
-	if c.phpSMTPResolver == nil {
+// loadStartedSMTP restores credentials for a container with an SMTP startup gate.
+func (c *Client) loadStartedSMTP(ctx context.Context, container string) error {
+	if c.smtpResolver == nil {
 		return nil
 	}
 
@@ -167,25 +170,35 @@ func (c *Client) loadStartedPHPSMTP(ctx context.Context, container string) error
 		} `json:"Config"`
 	}
 	if err := c.get(loadCtx, "/v4.0.0/libpod/containers/"+container+"/json", &inspect); err != nil {
-		return fmt.Errorf("inspect container for PHP SMTP: %w", err)
+		return fmt.Errorf("inspect container for SMTP: %w", err)
 	}
 
-	label, gated := inspect.Config.Labels[PHPSMTPSiteLabel]
-	if !gated {
+	label, php := inspect.Config.Labels[PHPSMTPSiteLabel]
+	appLabel, app := inspect.Config.Labels[AppSMTPSiteLabel]
+	if !php && !app {
 		return nil
 	}
+	if php && app {
+		return fmt.Errorf("conflicting SMTP runtime labels")
+	}
+
+	role, load := "php", c.LoadPHPSMTP
+	if app {
+		label, role, load = appLabel, "app", c.LoadAppSMTP
+	}
+
 	siteID, err := strconv.ParseInt(label, 10, 64)
 	if err != nil || siteID <= 0 || inspect.ID == "" {
-		return fmt.Errorf("invalid PHP SMTP container identity")
+		return fmt.Errorf("invalid SMTP container identity")
 	}
 
-	uid, settings, err := c.phpSMTPResolver(siteID, strings.TrimPrefix(inspect.Name, "/"))
+	uid, settings, err := c.smtpResolver(siteID, strings.TrimPrefix(inspect.Name, "/"), role)
 	if err != nil {
-		return fmt.Errorf("resolve PHP SMTP configuration for site %d: %w", siteID, err)
+		return fmt.Errorf("resolve SMTP configuration for site %d: %w", siteID, err)
 	}
 
-	// Use the inspected ID so a replacement with the same name cannot receive the credentials.
-	return c.LoadPHPSMTP(loadCtx, inspect.ID, uid, settings)
+	// Target the inspected ID so a replacement with the same name cannot receive the credentials.
+	return load(loadCtx, inspect.ID, uid, settings)
 }
 
 // LoadPHPSMTP populates the private SMTP mount for a PHP container during startup.
