@@ -7,16 +7,116 @@ package smtp
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/mail"
 	"net/netip"
 	gosmtp "net/smtp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"podnest/internal/apiutil"
+	"podnest/internal/db"
+	"podnest/internal/logger"
+	"podnest/internal/models"
 )
+
+const (
+	smtpTestSiteInterval   = time.Minute
+	smtpTestServerInterval = 2 * time.Second
+)
+
+// smtpTestLimits shares cooldowns across requests and sites.
+var smtpTestLimits = struct {
+	sync.Mutex
+	nextServer time.Time
+	nextSite   map[int64]time.Time
+}{
+	nextSite: make(map[int64]time.Time),
+}
+
+// reserveSMTPTest returns the remaining cooldown or reserves a send attempt.
+func reserveSMTPTest(siteID int64) time.Duration {
+	smtpTestLimits.Lock()
+	defer smtpTestLimits.Unlock()
+
+	now := time.Now()
+	retryAfter := max(smtpTestLimits.nextServer.Sub(now), smtpTestLimits.nextSite[siteID].Sub(now))
+	if retryAfter > 0 {
+		return retryAfter
+	}
+
+	// Discard expired entries so the map tracks only outstanding cooldowns.
+	for id, next := range smtpTestLimits.nextSite {
+		if !next.After(now) {
+			delete(smtpTestLimits.nextSite, id)
+		}
+	}
+	smtpTestLimits.nextServer = now.Add(smtpTestServerInterval)
+	smtpTestLimits.nextSite[siteID] = now.Add(smtpTestSiteInterval)
+	return 0
+}
+
+// apiTestSMTP sends one fixed test message to a validated recipient.
+func (m Module) apiTestSMTP(w http.ResponseWriter, r *http.Request, site *models.Site) {
+	var req struct {
+		Recipient string `json:"recipient"`
+	}
+
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP test request")
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP test request")
+		return
+	}
+
+	recipient := strings.TrimSpace(req.Recipient)
+	address, err := mail.ParseAddress(recipient)
+	if err != nil || address.Address != recipient || len(recipient) > 254 ||
+		strings.ContainsAny(req.Recipient, "\x00\r\n") {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "a single recipient email address is required")
+		return
+	}
+
+	if retryAfter := reserveSMTPTest(site.ID); retryAfter > 0 {
+		seconds := int((retryAfter + time.Second - 1) / time.Second)
+		w.Header().Set("Retry-After", strconv.Itoa(seconds))
+		apiutil.ErrorMsg(w, http.StatusTooManyRequests, "please wait before sending another SMTP test")
+		return
+	}
+
+	// Read the settings and password together while SMTP writes are excluded.
+	smtpSettingsMu.Lock()
+	settings, err := db.GetSMTPRuntimeConfig(m.DB, site.ID)
+	smtpSettingsMu.Unlock()
+	if err != nil {
+		logger.Error("apiTestSMTP: siteID=%d: failed to load runtime settings", site.ID)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "unable to load SMTP configuration")
+		return
+	}
+	if settings["enabled"] != "true" {
+		apiutil.ErrorMsg(w, http.StatusConflict, "enable SMTP before sending a test")
+		return
+	}
+
+	if err := sendTestSMTP(r.Context(), settings, recipient); err != nil {
+		// The sender returns fixed errors that omit server replies and credentials.
+		logger.Warn("apiTestSMTP: siteID=%d: %v", site.ID, err)
+		apiutil.ErrorMsg(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
 
 // testSMTPBlockedNetworks holds special-purpose ranges beyond the standard IP checks.
 var testSMTPBlockedNetworks = []netip.Prefix{

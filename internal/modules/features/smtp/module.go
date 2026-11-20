@@ -89,6 +89,20 @@ func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver)
 		m.apiSaveSMTPPassword(w, r, site)
 	})
 
+	// Send a fixed test message using the site's saved SMTP configuration.
+	mux.HandleFunc("POST /sites/{id}/smtp/test", func(w http.ResponseWriter, r *http.Request) {
+		site, ok := resolve(w, r)
+		if !ok {
+			return
+		}
+		if !m.AppliesTo(site.SiteType) {
+			http.NotFound(w, r)
+			return
+		}
+
+		m.apiTestSMTP(w, r, site)
+	})
+
 	// Remove stored SMTP credentials for supported site types.
 	mux.HandleFunc("DELETE /sites/{id}/smtp/password", func(w http.ResponseWriter, r *http.Request) {
 		site, ok := resolve(w, r)

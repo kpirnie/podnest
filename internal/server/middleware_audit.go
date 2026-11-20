@@ -37,6 +37,7 @@ var auditBodySkipSuffixes = []string{
 	"/files/upload",
 	"/backups/import/upload",
 	"/smtp/password",
+	"/smtp/test",
 }
 
 // auditMiddleware is the outermost wrapper for /api/ — it records every non-GET/HEAD
