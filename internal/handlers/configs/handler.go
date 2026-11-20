@@ -381,6 +381,11 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		return nil
 
 	case models.ConfigPHP:
+		smtpEnabled, _, err := db.GetConfigValue(h.DB, site.ID, models.ConfigSMTP, "enabled")
+		if err != nil {
+			logger.Error("failed to read SMTP enabled setting for site %d: %v", site.ID, err)
+			return err
+		}
 		fpm, err := config.RenderPHPFPM(blob, sftp.UIDForSite(site.ID))
 		if err != nil {
 			logger.Error("failed to render php-fpm config for site %d: %v", site.ID, err)
@@ -389,7 +394,7 @@ func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob stri
 		if err := fileutil.WriteFile(siteDir, "php-fpm/www.conf", fpm, 0644); err != nil {
 			return err
 		}
-		ini, err := config.RenderPHPIni(blob)
+		ini, err := config.RenderPHPIniWithSMTP(blob, smtpEnabled == "true")
 		if err != nil {
 			logger.Error("failed to render php.ini config for site %d: %v", site.ID, err)
 			return err
