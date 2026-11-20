@@ -12,10 +12,10 @@
   },
   "devDependencies": {
     "@fontsource/jetbrains-mono": "latest",
-    "@scalar/api-reference": "latest",
-    "chart.js": "latest",
     "@fontsource/orbitron": "latest",
     "@fontsource/space-grotesk": "latest",
+    "@scalar/api-reference": "latest",
+    "chart.js": "latest",
     "codemirror": "^5",
     "cssnano": "latest",
     "esbuild": "latest",
@@ -31,6 +31,6 @@
     "vue-demi@0.14.10": true
   },
   "dependencies": {
-    "npm": "^12.2.0"
+    "npm": "^12.2.3"
   }
 }

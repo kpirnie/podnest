@@ -100,7 +100,8 @@ func (h *Handler) apiGetConfigs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// SMTP settings use their own password-safe API.
+	// SMTP configuration is managed through its dedicated API.
+	// Never expose stored SMTP credentials through generic configuration responses.
 	delete(out, models.ConfigSMTP)
 
 	logger.Debug("fetched configs for site %d: %d types", site.ID, len(out))
