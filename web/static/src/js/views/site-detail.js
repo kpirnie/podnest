@@ -20,6 +20,7 @@ import { loadManagersTab, renderManagersTab, wireManagersTab } from './site-mana
 import { loadAllDomainSSL, renderOverviewTab, wireDomainActions, wireOverviewTab } from './site-overview.js';
 import { loadRedirectsTab, renderRedirectsTab, wireRedirectsTab } from './site-redirects.js';
 import { initSecurityPills, loadSecurityPanel, renderSecurityPanel, wireSecurityPanel } from './site-security.js';
+import { renderSMTPTab, wireSMTPTab } from './site-smtp.js';
 import { loadStatsTab, renderStatsTab, wireStatsTab } from './site-stats.js';
 import { loadWAFTab, wireWAFTab } from './site-waf.js';
 import { renderWPCLITab, wireWPCLITab } from './site-wpcli.js';
@@ -313,6 +314,7 @@ export async function viewSiteDetail(root, { id, tab }) {
     // a site can push onto its parent and onto any of its own clones
     const pushTargets = allSites.filter(s => s.ID === site.ParentID || s.ParentID === site.ID);
     const showPHP = site.SiteType === 1 || site.SiteType === 2;
+    const showSMTP = [1, 2, 4, 5, 7].includes(site.SiteType);
     const isRP = site.SiteType === 6;
     const showCrons = [1, 2, 4, 5, 7].includes(site.SiteType);
     const hasDB = [1, 2, 4, 5, 7].includes(site.SiteType);
@@ -403,6 +405,7 @@ export async function viewSiteDetail(root, { id, tab }) {
                     <a href="#" data-switcher="${showPHP ? 5 : 4}"><span uk-icon="icon: bolt; ratio: 0.85"></span> Proxy Cache</a>
                     <a href="#" data-switcher="${showPHP ? 6 : 5}"><span uk-icon="icon: server; ratio: 0.85"></span> Redis</a>
                     <a href="#" data-switcher="${showPHP ? 7 : 6}"><span uk-icon="icon: world; ratio: 0.85"></span> Varnish</a>
+                    ${showSMTP ? `<a href="#" id="sd-smtp-tab" data-switcher="smtp"><span uk-icon="icon: mail; ratio: 0.85"></span> SMTP</a>` : ""}
                     <hr>
                     <div class="kp-pill-dropdown-section">Security</div>
                     <a href="#" data-switcher="${showPHP ? 9 : 8}"><span uk-icon="icon: lock; ratio: 0.85"></span> Security</a>
@@ -447,6 +450,7 @@ export async function viewSiteDetail(root, { id, tab }) {
             ${hasDB ? `<li>${renderDBToolsTab(id, site.SiteType)}</li>` : ""}
             ${site.SiteType === 1 ? `<li>${renderWPUpdatesTab()}</li>` : ""}
             ${isAdmin ? `<li>${renderManagersTab()}</li>` : ""}
+            ${showSMTP ? `<li>${renderSMTPTab(!showPHP)}</li>` : ""}
             <li>${renderFilesTab(id)}</li>
         </ul>`}`;
 
@@ -548,6 +552,13 @@ export async function viewSiteDetail(root, { id, tab }) {
     if (_fmSwitcher && _fmLink) _fmLink.dataset.switcher = String(_fmSwitcher.children.length - 1);
     wireFilesTab(root, id);
     loadFilesPanel(id);
+
+    if (showSMTP) {
+        const smtpLink = root.querySelector("#sd-smtp-tab");
+        const smtpPanel = root.querySelector("#smtp-panel");
+        smtpLink.dataset.switcher = String([..._fmSwitcher.children].findIndex(li => li.contains(smtpPanel)));
+        wireSMTPTab(smtpPanel, smtpLink, id);
+    }
 
     // resolve the Database dropdown index to its panel's position, then wire it
     if (hasDB) {
