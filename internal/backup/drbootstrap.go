@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -59,8 +60,44 @@ func DiscoverDRSources(ctx context.Context, storage DRStorage) ([]DRSource, erro
 	if err != nil {
 		return nil, err
 	}
-	query := url.Values{"list-type": {"2"}, "prefix": {drPrefix}, "delimiter": {"/"}}
-	sources := make([]DRSource, 0)
+	prefixes, err := drListPrefixes(ctx, s3, drPrefix)
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]DRSource, 0, len(prefixes))
+	var unavailable error
+	for _, id := range prefixes {
+		if !validDRIdentity(id) {
+			continue
+		}
+		point, err := readDRLatest(ctx, s3, id)
+		if errors.Is(err, errDRPointMissing) {
+			continue
+		}
+		if err != nil {
+			unavailable = fmt.Errorf("read recovery source %s: %w", id, err)
+			continue
+		}
+		sources = append(sources, DRSource{
+			ID: id, Hostname: point.Hostname,
+			Verified: point.Verified.Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+	if len(sources) == 0 && unavailable != nil {
+		return nil, unavailable
+	}
+	sort.Slice(sources, func(i, j int) bool {
+		if sources[i].Hostname == sources[j].Hostname {
+			return sources[i].ID < sources[j].ID
+		}
+		return sources[i].Hostname < sources[j].Hostname
+	})
+	return sources, nil
+}
+
+func drListPrefixes(ctx context.Context, s3 *s3Config, prefix string) ([]string, error) {
+	query := url.Values{"list-type": {"2"}, "prefix": {prefix}, "delimiter": {"/"}}
+	var paths []string
 	for {
 		resp, err := drS3RequestQuery(ctx, s3, http.MethodGet, "", nil, false, query)
 		if err != nil {
@@ -68,7 +105,7 @@ func DiscoverDRSources(ctx context.Context, storage DRStorage) ([]DRSource, erro
 		}
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
-			return nil, fmt.Errorf("list recovery sources: S3 returned HTTP %d", resp.StatusCode)
+			return nil, fmt.Errorf("list disaster recovery prefixes: S3 returned HTTP %d", resp.StatusCode)
 		}
 		var page struct {
 			Prefixes []string `xml:"CommonPrefixes>Prefix"`
@@ -80,38 +117,19 @@ func DiscoverDRSources(ctx context.Context, storage DRStorage) ([]DRSource, erro
 		if decodeErr != nil {
 			return nil, errors.New("could not decode S3 recovery source listing")
 		}
-		for _, prefix := range page.Prefixes {
-			id := strings.TrimSuffix(strings.TrimPrefix(prefix, drPrefix), "/")
-			if !validDRIdentity(id) {
-				continue
+		for _, path := range page.Prefixes {
+			if strings.HasPrefix(path, prefix) && strings.HasSuffix(path, "/") {
+				paths = append(paths, strings.TrimSuffix(strings.TrimPrefix(path, prefix), "/"))
 			}
-			point, err := readDRLatest(ctx, s3, id)
-			if errors.Is(err, errDRPointMissing) {
-				continue
-			}
-			if err != nil {
-				return nil, fmt.Errorf("read recovery source %s: %w", id, err)
-			}
-			sources = append(sources, DRSource{
-				ID: id, Hostname: point.Hostname,
-				Verified: point.Verified.Format("2006-01-02T15:04:05Z07:00"),
-			})
 		}
 		if !page.More {
-			break
+			return paths, nil
 		}
 		if page.Token == "" || page.Token == query.Get("continuation-token") {
 			return nil, errors.New("invalid S3 recovery source continuation token")
 		}
 		query.Set("continuation-token", page.Token)
 	}
-	sort.Slice(sources, func(i, j int) bool {
-		if sources[i].Hostname == sources[j].Hostname {
-			return sources[i].ID < sources[j].ID
-		}
-		return sources[i].Hostname < sources[j].Hostname
-	})
-	return sources, nil
 }
 
 // StageDRBootstrap verifies a published application snapshot and stages it in
@@ -156,7 +174,7 @@ func StageDRBootstrap(ctx context.Context, storage DRStorage, id, passphrase, de
 	}
 	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+id+"/server")
 	cmd := exec.CommandContext(ctx, resticBin, "-r", repo, "restore", point.Snapshot, "--target", app, "--verify")
-	cmd.Env = stripDRInstanceKey(resticEnv(pw, s3))
+	cmd.Env = resticEnv(pw, s3)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("restore verified application snapshot: %w", err)
 	}
@@ -177,17 +195,22 @@ func StageDRBootstrap(ctx context.Context, storage DRStorage, id, passphrase, de
 	}); err != nil {
 		return err
 	}
-	if err := prepareDRDatabase(ctx, filepath.Join(app, "podnest.db"), s3, id, key, envelope, sites); err != nil {
+	if err := prepareDRDatabase(ctx, filepath.Join(app, "podnest.db"), s3, point, key, envelope, sites); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(destination, ".pn.env"), []byte(db.NodeKeyEnv+"="+key+"\n"), 0600); err != nil {
+	keyFile, err := os.OpenFile(filepath.Join(destination, ".pn.env"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := keyFile.WriteString(db.NodeKeyEnv + "=" + key + "\n")
+	if err := errors.Join(writeErr, keyFile.Sync(), keyFile.Close()); err != nil {
 		return err
 	}
 	ready = true
 	return nil
 }
 
-func prepareDRDatabase(ctx context.Context, path string, s3 *s3Config, id, key string, envelope []byte, sites []drSitePoint) error {
+func prepareDRDatabase(ctx context.Context, path string, s3 *s3Config, point drApplicationPoint, key string, envelope []byte, sites []drSitePoint) error {
 	database, err := sql.Open("sqlite3", path+"?mode=rw&_journal_mode=delete")
 	if err != nil {
 		return err
@@ -200,7 +223,7 @@ func prepareDRDatabase(ctx context.Context, path string, s3 *s3Config, id, key s
 		return err
 	}
 	var currentID string
-	if err := database.QueryRowContext(ctx, "SELECT identity FROM kppn_dr_identity WHERE id = 1").Scan(&currentID); err != nil || currentID != id {
+	if err := database.QueryRowContext(ctx, "SELECT identity FROM kppn_dr_identity WHERE id = 1").Scan(&currentID); err != nil || currentID != point.Node {
 		return errors.New("restored database belongs to another recovery source")
 	}
 	digest := sha256.Sum256(envelope)
@@ -214,6 +237,25 @@ func prepareDRDatabase(ctx context.Context, path string, s3 *s3Config, id, key s
 		if err := db.SetSetting(database, name, value); err != nil {
 			return err
 		}
+	}
+	previous, err := db.GetSetting(database, "dr_status")
+	if err != nil {
+		return err
+	}
+	status := make(map[string]any)
+	if previous != "" {
+		if err := json.Unmarshal([]byte(previous), &status); err != nil {
+			return errors.New("invalid backup status in restored database")
+		}
+	}
+	status["result"], status["last_verified"] = "succeeded", point.Verified
+	delete(status, "error")
+	rawStatus, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	if err := db.SetSetting(database, "dr_status", string(rawStatus)); err != nil {
+		return err
 	}
 	return createDRRestoreState(ctx, database, sites)
 }

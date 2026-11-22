@@ -193,7 +193,12 @@ func (m *Manager) restoreDRRecord(ctx context.Context, s3 *s3Config, id, passwor
 	}
 	if err != nil && site != nil && site.Name == entry.Name {
 		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		_ = m.podman.StopPod(cleanup, podman.PodName(site.Name))
+		pod := podman.PodName(site.Name)
+		if stopErr := m.podman.StopPod(cleanup, pod); stopErr != nil {
+			if exists, inspectErr := m.podman.PodExists(cleanup, pod); inspectErr == nil && exists {
+				err = errors.Join(err, m.podman.RemovePod(cleanup, pod))
+			}
+		}
 		cancel()
 	}
 	if ctx.Err() != nil {
@@ -272,6 +277,9 @@ func (m *Manager) restoreDRSite(ctx context.Context, s3 *s3Config, id, password 
 	}
 	siteDir := filepath.Join(base, site.Name)
 	m.fixPostRestorePerms(siteDir, site.ID)
+	if err := os.Chmod(siteDir, 0700); err != nil {
+		return err
+	}
 	site.SiteStatus = models.StatusRunning
 	if err := rebuild(ctx, site); err != nil {
 		return err
@@ -281,13 +289,17 @@ func (m *Manager) restoreDRSite(ctx context.Context, s3 *s3Config, id, password 
 			return err
 		}
 	}
+	finalStatus := models.StatusRunning
 	if originalStatus != models.StatusRunning {
 		if err := m.podman.StopPod(ctx, pod); err != nil {
 			return err
 		}
-		return db.UpdateSiteStatus(m.db, site.ID, models.StatusStopped)
+		finalStatus = models.StatusStopped
 	}
-	return db.UpdateSiteStatus(m.db, site.ID, models.StatusRunning)
+	if err := db.UpdateSiteStatus(m.db, site.ID, finalStatus); err != nil {
+		return err
+	}
+	return os.Chmod(siteDir, 0755)
 }
 
 func drSiteSnapshotRoot(ctx context.Context, repo string, env []string, snapshotID, name string, database bool) (string, error) {
@@ -345,7 +357,7 @@ func (m *Manager) prepareDRSiteTree(dir string, site *models.Site, database bool
 			return fmt.Errorf("invalid managed site file %s", file)
 		}
 	}
-	if err := os.Chmod(dir, 0755); err != nil {
+	if err := os.Chmod(dir, 0700); err != nil {
 		return err
 	}
 	uid := sftp.UIDForSite(site.ID)

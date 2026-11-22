@@ -138,15 +138,19 @@ func runRecover(cmd *cobra.Command, args []string) error {
 
 func verifyRecoveryHome(account *user.User) error {
 	uid, err := strconv.Atoi(account.Uid)
-	if err != nil || uid < 1000 || !filepath.IsAbs(account.HomeDir) || filepath.Clean(account.HomeDir) == "/" {
+	if err != nil || uid < 1000 || !filepath.IsAbs(account.HomeDir) || filepath.Clean(account.HomeDir) == "/" || strings.ContainsRune(account.HomeDir, ':') {
 		return errors.New("recovery requires a dedicated unprivileged Linux account with its own home directory")
+	}
+	info, err := os.Lstat(account.HomeDir)
+	if err != nil || !info.IsDir() {
+		return errors.New("recovery requires a real dedicated home directory")
 	}
 	root, err := os.OpenRoot(account.HomeDir)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	info, err := root.Lstat("sites")
+	info, err = root.Lstat("sites")
 	if os.IsNotExist(err) {
 		if _, keyErr := root.Lstat(pnEnvName); os.IsNotExist(keyErr) {
 			return nil
@@ -205,12 +209,18 @@ func recoverHostData(ctx context.Context, account *user.User, uid int, dataPath 
 	defer root.Close()
 
 	installed, err := root.ReadFile(filepath.Join("sites", drBootstrapMarker))
-	if err == nil {
+	appPublished := err == nil
+	if appPublished {
 		id := strings.TrimSpace(string(installed))
-		if recoverSource != "" && id != recoverSource {
+		if !recoverID.MatchString(id) || (recoverSource != "" && id != recoverSource) {
 			return errors.New("staged application is from a different recovery source")
 		}
-		return checkPNEnv(filepath.Join(home, pnEnvName))
+		recoverSource = id
+		if err := checkPNEnv(filepath.Join(home, pnEnvName)); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
 	}
 
 	if pending, err := root.ReadFile(drPendingMarker); err == nil {
@@ -271,7 +281,7 @@ func recoverHostData(ctx context.Context, account *user.User, uid int, dataPath 
 	stage := filepath.Join(filepath.Base(work), "checkpoint")
 	restoredApp := filepath.Join(stage, "application")
 	marker := filepath.Join(restoredApp, drBootstrapMarker)
-	if err := root.WriteFile(marker, []byte(request.Source+"\n"), 0600); err != nil {
+	if err := writeRecoveryMarker(root, marker, request.Source); err != nil {
 		return err
 	}
 	keyfile := filepath.Join(stage, pnEnvName)
@@ -280,7 +290,7 @@ func recoverHostData(ctx context.Context, account *user.User, uid int, dataPath 
 	}
 	// Persist the source before linking the key so an interrupted bootstrap
 	// can resume with the same selected node.
-	if err := root.WriteFile(drPendingMarker, []byte(request.Source+"\n"), 0600); err != nil {
+	if err := writeRecoveryMarker(root, drPendingMarker, request.Source); err != nil {
 		return err
 	}
 	linked := false
@@ -304,12 +314,34 @@ func recoverHostData(ctx context.Context, account *user.User, uid int, dataPath 
 			_ = root.Remove(pnEnvName)
 		}
 	}()
-	if err := root.Rename(restoredApp, filepath.Base(dataPath)); err != nil {
-		return fmt.Errorf("publish restored application data: %w", err)
+	if !appPublished {
+		if err := root.Rename(restoredApp, filepath.Base(dataPath)); err != nil {
+			return fmt.Errorf("publish restored application data: %w", err)
+		}
 	}
 	published = true
 	_ = root.Remove(drPendingMarker)
 	return nil
+}
+
+func writeRecoveryMarker(root *os.Root, path, source string) error {
+	file, err := root.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+	if errors.Is(err, os.ErrExist) {
+		info, err := root.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+			return errors.New("invalid existing recovery marker")
+		}
+		raw, err := root.ReadFile(path)
+		if err != nil || strings.TrimSpace(string(raw)) != source {
+			return errors.New("existing recovery marker is for another source")
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.WriteString(source + "\n")
+	return errors.Join(writeErr, file.Sync(), file.Close())
 }
 
 func runDRStageContainer(ctx context.Context, account *user.User, uid int, image string, request drStageRequest, work string) ([]byte, error) {
@@ -368,6 +400,9 @@ func requestHostRecovery(ctx context.Context, state *State, retry bool, site str
 	}
 	if !retry && !status.Active {
 		return printHostDRResult(status, "")
+	}
+	if status.Busy && retry {
+		return errors.New("another site recovery operation is already running")
 	}
 	if !status.Busy {
 		body, err := json.Marshal(map[string]any{"retry": retry, "site": site})

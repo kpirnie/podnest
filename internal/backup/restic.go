@@ -29,7 +29,7 @@ import (
 
 // resticEnv builds the environment slice for a restic command
 func resticEnv(password string, s3 *s3Config) []string {
-	env := append(os.Environ(), "RESTIC_PASSWORD="+password)
+	env := append(withoutInstanceKey(os.Environ()), "RESTIC_PASSWORD="+password)
 	env = append(env, "TMPDIR="+resticTmpDir)
 	if s3 != nil {
 		env = append(env,
@@ -320,13 +320,15 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	)
 	// MYSQL_PWD passed via -e (name only) so the password is in neither the host
 	// nor the container process list (it lives only in this command's env)
-	dumpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+	dumpCmd.Env = append(withoutInstanceKey(os.Environ()), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
 
 	// connect: dumpCmd.Stdout → resticCmd.Stdin
-	resticCmd.Stdin, err = dumpCmd.StdoutPipe()
+	dumpPipe, err := dumpCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("backupDB: stdout pipe: %w", err)
 	}
+	resticCmd.Stdin = dumpPipe
+	defer dumpPipe.Close()
 
 	logger.Debug("backupDB: starting DB stream to restic for site %s", site.Name)
 
@@ -337,7 +339,11 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 
 	// then start the restic command to read from the dump's stdout
 	if err := resticCmd.Run(); err != nil {
-		dumpCmd.Wait()
+		// Restic can leave the dump blocked on a full pipe after an upload
+		// fails. Terminate the producer before reaping it.
+		_ = dumpPipe.Close()
+		_ = dumpCmd.Process.Kill()
+		_ = dumpCmd.Wait()
 		return fmt.Errorf("backupDB: restic: %w", err)
 	}
 
@@ -550,7 +556,7 @@ func (m *Manager) restoreDBSnapshot(ctx context.Context, site *models.Site, repo
 		"sh",
 		dbName,
 	)
-	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
+	mysqlCmd.Env = append(withoutInstanceKey(os.Environ()), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
 
 	if err := mysqlCmd.Run(); err != nil {
 		return fmt.Errorf("restoreDB: mariadb: %w", err)
@@ -886,10 +892,10 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		}
 	}
 
-	return m.exportSiteSnapshots(ctx, site, backup, repoPath, env, fileSnapID, dbSnapID, w)
+	return m.exportSiteSnapshots(ctx, site, backup, repoPath, env, fileSnapID, dbSnapID, filepath.Join(m.appPath, "sites", site.Name), w)
 }
 
-func (m *Manager) exportSiteSnapshots(ctx context.Context, site *models.Site, backup *models.Backup, repoPath string, env []string, fileSnapID, dbSnapID string, w io.Writer) error {
+func (m *Manager) exportSiteSnapshots(ctx context.Context, site *models.Site, backup *models.Backup, repoPath string, env []string, fileSnapID, dbSnapID, archiveRoot string, w io.Writer) error {
 
 	logger.Debug("Export: fileSnapID=%q", fileSnapID)
 
@@ -916,7 +922,7 @@ func (m *Manager) exportSiteSnapshots(ctx context.Context, site *models.Site, ba
 
 	// restic restores to tmpDir + original absolute path, e.g.
 	// tmpDir/home/sites/sites/testsite/html/...
-	siteRestoreDir := filepath.Join(tmpDir, m.appPath, "sites", site.Name)
+	siteRestoreDir := filepath.Join(tmpDir, archiveRoot)
 
 	// staging succeeded — signal the caller that headers may now be written
 	if h, ok := w.(interface{ ExportReady() }); ok {

@@ -53,6 +53,12 @@ func runRestartSite(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("site %q does not have a pod", site.Name)
 	}
 
+	if needed, err := db.SiteNeedsRecovery(cmd.Context(), database, site.ID); err != nil {
+		return err
+	} else if needed {
+		return fmt.Errorf("site %q requires recovery before it can restart", site.Name)
+	}
+
 	client := podman.New(podmanSock)
 	configureSMTPResolver(client, database)
 

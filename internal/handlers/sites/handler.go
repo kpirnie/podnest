@@ -850,6 +850,11 @@ func (h *Handler) apiSiteStart(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if needed, err := db.SiteNeedsRecovery(r.Context(), h.DB, site.ID); err != nil || needed {
+		apiutil.ErrorMsg(w, http.StatusConflict, "complete site recovery before starting or recreating the site")
+		return
+	}
+
 
 	if !requirePod(w, site) {
 		return
@@ -904,6 +909,11 @@ func (h *Handler) apiSiteRestart(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if needed, err := db.SiteNeedsRecovery(r.Context(), h.DB, site.ID); err != nil || needed {
+		apiutil.ErrorMsg(w, http.StatusConflict, "complete site recovery before starting or recreating the site")
+		return
+	}
+
 
 	if !requirePod(w, site) {
 		return
@@ -1016,6 +1026,11 @@ func (h *Handler) apiSiteRecreate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if needed, err := db.SiteNeedsRecovery(r.Context(), h.DB, site.ID); err != nil || needed {
+		apiutil.ErrorMsg(w, http.StatusConflict, "complete site recovery before starting or recreating the site")
+		return
+	}
+
 
 	if !requirePod(w, site) {
 		return

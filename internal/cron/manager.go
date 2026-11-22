@@ -184,6 +184,10 @@ func (m *Manager) run(ctx context.Context) {
 					continue
 				}
 
+				if needed, err := db.SiteNeedsRecovery(ctx, m.database, site.ID); err != nil || needed {
+					continue
+				}
+
 				// add to the wait group
 				wg.Add(1)
 
