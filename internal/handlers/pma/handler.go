@@ -50,7 +50,7 @@ func (h *Handler) RegisterMuxRoutes(mux *http.ServeMux) {
 func (h *Handler) apiIssuePMAToken(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site: %v", r)
+		logger.Error("failed to resolve site")
 		return
 	}
 

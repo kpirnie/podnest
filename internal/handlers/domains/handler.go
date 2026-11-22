@@ -49,7 +49,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 func (h *Handler) apiListDomains(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site for request to list domains: %v", r)
+		logger.Error("failed to resolve site for request to list domains")
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *Handler) apiListDomains(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site for request to add domains: %v", r)
+		logger.Error("failed to resolve site for request to add domains")
 		return
 	}
 
@@ -145,7 +145,7 @@ func (h *Handler) apiAddDomain(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) apiDeleteDomain(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site for request to delete domains: %v", r)
+		logger.Error("failed to resolve site for request to delete domains")
 		return
 	}
 

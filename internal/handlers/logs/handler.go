@@ -75,7 +75,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 func (h *Handler) apiSiteLogs(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site: %v", r)
+		logger.Error("failed to resolve site")
 		return
 	}
 
