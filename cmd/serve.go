@@ -104,9 +104,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// seed the default admin user if it doesn't exist
-	if err := db.SeedDefaultAdmin(database); err != nil {
+	password, err := db.SeedDefaultAdmin(database)
+	if err != nil {
 		logger.Error("failed to seed default admin: %v", err)
 		return err
+	}
+	if password != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "default admin created — username: admin  password: %s  (change it after first login)\n", password)
 	}
 
 	// one podman client is shared by every consumer — they all talk to the same

@@ -439,17 +439,17 @@ func MigrateConfigs(db *sql.DB) error {
 }
 
 // SeedDefaultAdmin creates a default admin account if none exists
-func SeedDefaultAdmin(database *sql.DB) error {
+func SeedDefaultAdmin(database *sql.DB) (string, error) {
 
 	// Check if the default admin user already exists to avoid duplicate entries
 	exists, err := AdminExists(database)
 	if err != nil {
 		logger.Error("failed to check for existing admin: %v", err)
-		return err
+		return "", err
 	}
 	if exists {
 		logger.Debug("default admin already exists")
-		return nil
+		return "", nil
 	}
 
 	// every install gets its own password — a shared default hands admin to
@@ -461,14 +461,14 @@ func SeedDefaultAdmin(database *sql.DB) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(prehashed), bcrypt.DefaultCost)
 	if err != nil {
 		logger.Error("failed to generate password hash: %v", err)
-		return err
+		return "", err
 	}
 
 	// Generate a unique user hash (uhash) for the admin user
 	uhash, err := models.GenerateUHash()
 	if err != nil {
 		logger.Error("failed to generate user hash: %v", err)
-		return err
+		return "", err
 	}
 
 	// Insert the default admin user into the database with the hashed password and generated uhash
@@ -479,12 +479,10 @@ func SeedDefaultAdmin(database *sql.DB) error {
 	)
 	if err != nil {
 		logger.Error("failed to create default admin: %v", err)
-		return err
+		return "", err
 	}
 
-	// logged once at info level so the owner can find it without debug enabled
-	logger.Info("default admin created — username: admin  password: %s  (change it after first login)", password)
-	return err
+	return password, nil
 }
 
 // setup the database schema
