@@ -494,6 +494,11 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 		return err
 	}
 
+	return m.restoreDBSnapshot(ctx, site, repoPath, env, snapID, siteDir)
+}
+
+func (m *Manager) restoreDBSnapshot(ctx context.Context, site *models.Site, repoPath string, env []string, snapID, siteDir string) error {
+
 	// read DB credentials from the site's .env file
 	rootPass, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_ROOT_PASS")
 	if err != nil {

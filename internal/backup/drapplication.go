@@ -115,9 +115,15 @@ func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) 
 		}
 		return "", fmt.Errorf("verify application disaster recovery snapshot: %w", err)
 	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", fmt.Errorf("read source server hostname: %w", err)
+	hostname := strings.TrimSpace(os.Getenv("PN_SERVER_HOST"))
+	if hostname == "" {
+		hostname, err = os.Hostname()
+		if err != nil {
+			return "", fmt.Errorf("read source server hostname: %w", err)
+		}
+	}
+	if len(hostname) > 253 {
+		return "", errors.New("source server hostname is too long")
 	}
 	point := drApplicationPoint{Version: 1, Node: id, Hostname: hostname, Snapshot: summary.ID, Verified: time.Now().UTC()}
 	if err := publishDRApplication(ctx, s3, point); err != nil {

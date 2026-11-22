@@ -215,5 +215,5 @@ func prepareDRDatabase(ctx context.Context, path string, s3 *s3Config, id, key s
 			return err
 		}
 	}
-	return nil
+	return createDRRestoreState(ctx, database, sites)
 }

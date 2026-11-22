@@ -13,10 +13,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"podnest/internal/db"
 	"podnest/internal/models"
 	"podnest/internal/modules"
+	"podnest/internal/podman"
 )
 
 type drSitePoint struct {
@@ -31,13 +33,29 @@ func (m *Manager) captureDRSites(ctx context.Context, s3 *s3Config, nodeID, pass
 	if err != nil {
 		return nil, err
 	}
+	recovery, err := m.DRRestoreStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	unrestored := make(map[int64]DRRestoreSite)
+	for _, site := range recovery.Sites {
+		if site.State != "restored" {
+			unrestored[site.SiteID] = site
+		}
+	}
 	points := make([]drSitePoint, 0, len(sites))
 	var failures error
 	for _, site := range sites {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		point, err := m.captureDRSite(ctx, s3, nodeID, password, site)
+		var point drSitePoint
+		var err error
+		if entry, pending := unrestored[site.ID]; pending {
+			point, err = m.retainedDRSite(ctx, s3, nodeID, password, site, entry)
+		} else {
+			point, err = m.captureDRSite(ctx, s3, nodeID, password, site)
+		}
 		if err != nil {
 			failures = errors.Join(failures, fmt.Errorf("site %s: %w", site.Name, err))
 			continue
@@ -91,6 +109,10 @@ func (m *Manager) captureDRSite(ctx context.Context, s3 *s3Config, nodeID, passw
 		if err != nil {
 			return point, err
 		}
+	}
+
+	if _, err := drSiteSnapshotRoot(ctx, repo, env, point.Files, site.Name, siteType.HasDatabase()); err != nil {
+		return point, err
 	}
 
 	// Check that repository trees and referenced data packs are intact. Restic
@@ -186,6 +208,13 @@ func (m *Manager) backupDRSite(ctx context.Context, site *models.Site, repo stri
 	if _, err := m.backupFiles(ctx, repo, env, paths, excludes, tag); err != nil {
 		return "", err
 	}
+	if modules.TypeModule(site.SiteType).HasDatabase() {
+		restoreDBState, err := m.startDRDatabase(ctx, site, siteDir)
+		if err != nil {
+			return "", err
+		}
+		defer restoreDBState()
+	}
 	if err := m.backupDB(ctx, site, repo, env, tag, siteDir); err != nil {
 		return "", err
 	}
@@ -243,4 +272,62 @@ func pruneDRSite(ctx context.Context, repo string, env []string, point drSitePoi
 	cmd := exec.CommandContext(ctx, resticBin, append([]string{"-r", repo, "forget", "--prune"}, obsolete...)...)
 	cmd.Env = env
 	return cmd.Run()
+}
+
+func (m *Manager) retainedDRSite(ctx context.Context, s3 *s3Config, nodeID, password string, site *models.Site, entry DRRestoreSite) (drSitePoint, error) {
+	point := drSitePoint{SiteID: site.ID, Name: site.Name}
+	if site.Name != entry.Name {
+		return point, errors.New("the failed site's original recovery identity has changed")
+	}
+	if err := m.db.QueryRowContext(ctx, `SELECT files,db_snapshot FROM kppn_dr_restore WHERE site_id=?`, site.ID).Scan(&point.Files, &point.DB); err != nil {
+		return point, err
+	}
+	if point.Files == "" {
+		return point, nil
+	}
+	repo, env := drSiteRepo(s3, nodeID, password, site.ID)
+	for _, id := range []string{point.Files, point.DB} {
+		if id == "" {
+			continue
+		}
+		if !validDRSnapshotID(id) {
+			return point, errors.New("invalid retained site snapshot")
+		}
+		cmd := exec.CommandContext(ctx, resticBin, "-r", repo, "cat", "snapshot", id)
+		cmd.Env = env
+		if err := cmd.Run(); err != nil {
+			return point, fmt.Errorf("verify retained site recovery snapshot: %w", err)
+		}
+	}
+	return point, nil
+}
+
+func (m *Manager) startDRDatabase(ctx context.Context, site *models.Site, siteDir string) (func(), error) {
+	name := podman.ContainerName(site.Name, "db")
+	running, err := m.podman.ContainerIsRunning(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if running {
+		return func() {}, nil
+	}
+	rootPass, err := readEnvValue(filepath.Join(siteDir, ".env"), "DB_ROOT_PASS")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.podman.StartContainer(ctx, name); err != nil {
+		return nil, err
+	}
+	stop := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "podman", "stop", "--time", "30", name)
+		cmd.Env = append(stripDRInstanceKey(os.Environ()), "CONTAINER_HOST=unix://"+m.podmanSock)
+		_ = cmd.Run()
+	}
+	if err := m.podman.WaitForMariaDB(ctx, name, rootPass); err != nil {
+		stop()
+		return nil, err
+	}
+	return stop, nil
 }

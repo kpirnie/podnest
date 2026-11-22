@@ -176,6 +176,7 @@ const (
 	ClaimDelete
 	ClaimRepoSettings
 	ClaimRecreate
+	ClaimDisasterRestore
 )
 
 // SiteClaim is one operation's hold on a site. Release frees the site only
@@ -241,10 +242,16 @@ func (m *Manager) claimKindOf(siteID int64) (ClaimKind, bool) {
 // push — the operations the restore and import status polls represent.
 func (m *Manager) restoreClaimed(siteID int64) bool {
 	switch kind, _ := m.claimKindOf(siteID); kind {
-	case ClaimRestore, ClaimImport, ClaimPushSource, ClaimPushTarget:
+	case ClaimRestore, ClaimImport, ClaimPushSource, ClaimPushTarget, ClaimDisasterRestore:
 		return true
 	}
 	return false
+}
+
+// IsDRSiteRestoring reports whether disaster recovery owns the site's claim.
+func (m *Manager) IsDRSiteRestoring(siteID int64) bool {
+	kind, _ := m.claimKindOf(siteID)
+	return kind == ClaimDisasterRestore
 }
 
 // backupClaimed reports whether the site is held by a manual backup.
