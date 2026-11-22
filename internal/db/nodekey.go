@@ -49,12 +49,15 @@ func nodeGCM(kek []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// sealNodeKey encrypts a node private key for storage. Without PN_SECRET_KEY,
-// or for an empty or already sealed value, it is returned unchanged.
+// sealNodeKey encrypts a node private key for storage. Empty and already
+// sealed values are returned unchanged.
 func sealNodeKey(plain string) (string, error) {
 	kek := nodeKEK()
-	if kek == nil || plain == "" || strings.HasPrefix(plain, nodeKeyPrefix) {
+	if plain == "" || strings.HasPrefix(plain, nodeKeyPrefix) {
 		return plain, nil
+	}
+	if kek == nil {
+		return "", ErrNodeKeyUnavailable
 	}
 	gcm, err := nodeGCM(kek)
 	if err != nil {
@@ -95,12 +98,10 @@ func openNodeKey(stored string) (string, error) {
 }
 
 // SealNodeKeys encrypts any node private keys still stored in plaintext, both on
-// node links and on pending re-key operations. Without PN_SECRET_KEY the keys are
-// left as they are and a warning is logged.
+// node links and on pending re-key operations.
 func SealNodeKeys(db *sql.DB) error {
 	if nodeKEK() == nil {
-		logger.Warn("SealNodeKeys: %s is not set — node link private keys are stored in plaintext", NodeKeyEnv)
-		return nil
+		return ErrNodeKeyUnavailable
 	}
 	if err := sealNodeKeyColumn(db, `SELECT id, priv_key FROM kppn_nodes WHERE priv_key != '' AND priv_key NOT LIKE ?`,
 		`UPDATE kppn_nodes SET priv_key = ? WHERE id = ?`); err != nil {
