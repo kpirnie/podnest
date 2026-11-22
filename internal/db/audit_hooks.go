@@ -29,6 +29,7 @@ func SnapshotSite(database *sql.DB, id int64) string {
 	if err != nil || s == nil {
 		return ""
 	}
+	s.StartCommand = ""
 	return snapshotJSON(s)
 }
 
@@ -39,15 +40,6 @@ func SnapshotSiteManagers(database *sql.DB, siteID int64) string {
 		return ""
 	}
 	return snapshotJSON(ids)
-}
-
-// SnapshotConfigs fetches all configs for a site+type as a JSON string.
-func SnapshotConfigs(database *sql.DB, siteID int64, configType int) string {
-	kv, err := GetConfigsBySiteAndType(database, siteID, configType)
-	if err != nil {
-		return ""
-	}
-	return snapshotJSON(kv)
 }
 
 // SnapshotIPRules fetches the current IP rules for a scope as a JSON string.
@@ -110,25 +102,8 @@ func SnapshotCron(database *sql.DB, id int64) string {
 	if err != nil || c == nil {
 		return ""
 	}
+	c.Command = ""
 	return snapshotJSON(c)
-}
-
-// SnapshotSetting fetches a single setting value as a JSON string.
-func SnapshotSetting(database *sql.DB, key string) string {
-	v, err := GetSetting(database, key)
-	if err != nil {
-		return ""
-	}
-	return snapshotJSON(map[string]string{key: v})
-}
-
-// SnapshotAllSettings fetches all settings as a JSON string.
-func SnapshotAllSettings(database *sql.DB) string {
-	m, err := GetAllSettings(database)
-	if err != nil {
-		return ""
-	}
-	return snapshotJSON(m)
 }
 
 // SnapshotUser serializes a User struct to JSON for audit prior_state.

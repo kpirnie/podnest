@@ -14,6 +14,17 @@ import (
 	"podnest/internal/models"
 )
 
+// Untagged rows predate safe audit capture and can contain arbitrary secrets.
+const safeAuditDetailsPrefix = "audit:v2:"
+
+func hideLegacyAuditPayload(entry *models.AuditEntry) {
+	details, safe := strings.CutPrefix(entry.Details, safeAuditDetailsPrefix)
+	entry.Details = details
+	if !safe {
+		entry.Details, entry.PriorState, entry.NewState = "", "", ""
+	}
+}
+
 // InsertAuditLog writes a single audit row to kppn_audit_log.
 // Called only from the async audit recorder — never on the hot request path.
 func InsertAuditLog(database *sql.DB, e models.AuditEntry) error {
@@ -111,6 +122,7 @@ func QueryAuditLog(database *sql.DB, f AuditFilter) ([]models.AuditEntry, int, e
 		} else if t, err := time.Parse(time.RFC3339, ts); err == nil {
 			e.TS = t
 		}
+		hideLegacyAuditPayload(&e)
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {
@@ -210,6 +222,7 @@ func ExportAuditRowsForDate(database *sql.DB, day time.Time) ([]models.AuditEntr
 		} else if t, err := time.Parse(time.RFC3339, ts); err == nil {
 			e.TS = t
 		}
+		hideLegacyAuditPayload(&e)
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
