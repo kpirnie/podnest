@@ -228,27 +228,18 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	tx.ProcessConnection(clientIP, 0, "", 0)
 	tx.ProcessURI(r.URL.RequestURI(), r.Method, r.Proto)
 
-	// query string args — only log individual entries when debug is explicitly enabled
-	// to avoid fmt.Sprintf allocations on every arg for every request
-	for key, vals := range r.URL.Query() {
+	// Inspect complete request values without copying credentials to diagnostics.
+	query := r.URL.Query()
+	for key, vals := range query {
 		for _, v := range vals {
 			tx.AddGetRequestArgument(key, v)
-			if logger.IsDebug() {
-				logger.Debug("waf: adding GET arg key=%q val=%q", key, v)
-			}
 		}
 	}
 
-	// process request headers — Host must be added explicitly as Go excludes
-	// it from r.Header and stores it separately in r.Host
 	tx.AddRequestHeader("Host", r.Host)
 	for name, vals := range r.Header {
 		for _, v := range vals {
 			tx.AddRequestHeader(name, v)
-			// only log individual headers when debug is explicitly enabled
-			if logger.IsDebug() {
-				logger.Debug("waf: HEADER name=%q val=%q", name, v)
-			}
 		}
 	}
 	if it := tx.ProcessRequestHeaders(); it != nil {
@@ -309,7 +300,7 @@ func (e *WAFEngine) inspect(w http.ResponseWriter, r *http.Request, clientIP str
 	}
 
 	if logger.IsDebug() {
-		logger.Debug("waf: inspect complete — no interruption (method=%s uri=%s)", r.Method, r.URL.RequestURI())
+		logger.Debug("waf: inspect complete — no interruption (method=%s query_keys=%d headers=%d)", r.Method, len(query), len(r.Header))
 	}
 	return true
 }
