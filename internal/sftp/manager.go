@@ -400,13 +400,13 @@ func (m *Manager) exec(ctx context.Context, cmd []string) error {
 		ID string `json:"Id"`
 	}
 	if err := m.client.PostJSON(ctx, "/v4.0.0/libpod/containers/"+GlobalContainerName+"/exec", spec, &execResp); err != nil {
-		logger.Error("failed to create exec instance for cmd %v: %v", cmd, err)
+		logger.Error("failed to create exec instance")
 		return err
 	}
 
 	// start the exec instance and block until the command completes
 	if err := m.client.PostJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/start", map[string]any{"Detach": false}, nil); err != nil {
-		logger.Error("failed to start exec instance for cmd %v: %v", cmd, err)
+		logger.Error("failed to start exec instance")
 		return err
 	}
 
@@ -416,15 +416,15 @@ func (m *Manager) exec(ctx context.Context, cmd []string) error {
 		Running  bool `json:"Running"`
 	}
 	if err := m.client.GetJSON(ctx, "/v4.0.0/libpod/exec/"+execResp.ID+"/json", &inspect); err != nil {
-		logger.Error("failed to inspect exec instance for cmd %v: %v", cmd, err)
+		logger.Error("failed to inspect exec instance")
 		return err
 	}
 	if inspect.ExitCode != 0 {
-		logger.Error("exec %v exited %d", cmd, inspect.ExitCode)
-		return fmt.Errorf("exec %v exited %d", cmd, inspect.ExitCode)
+		logger.Error("exec exited %d", inspect.ExitCode)
+		return fmt.Errorf("exec exited %d", inspect.ExitCode)
 	}
 
-	logger.Debug("exec'd in SFTP container: %v", cmd)
+	logger.Debug("exec completed in SFTP container")
 	return nil
 }
 

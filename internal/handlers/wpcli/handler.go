@@ -91,7 +91,7 @@ func (h *Handler) apiWPCLI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Debug("apiWPCLI: site %d running command: wp %s", site.ID, cmd)
+	logger.Debug("apiWPCLI: site %d running WP-CLI command", site.ID)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()

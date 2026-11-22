@@ -41,7 +41,7 @@ func (c *Client) ExecCapture(ctx context.Context, container, user string, cmd []
 		ID string `json:"Id"`
 	}
 	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+container+"/exec", spec, &execResp); err != nil {
-		logger.Error("ExecCapture: failed to create exec in %s for cmd %v: %v", container, cmd, err)
+		logger.Error("ExecCapture: failed to create exec in %s ", container)
 		return nil, err
 	}
 
@@ -73,7 +73,7 @@ func (c *Client) ExecCapture(ctx context.Context, container, user string, cmd []
 		return nil, err
 	}
 
-	logger.Debug("ExecCapture: %v in %s exited %d", cmd, container, inspect.ExitCode)
+	logger.Debug("ExecCapture: exec %s in %s exited %d", execResp.ID, container, inspect.ExitCode)
 	return &ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: inspect.ExitCode}, nil
 }
 
@@ -139,7 +139,7 @@ func (c *Client) ExecStream(ctx context.Context, container, user string, cmd []s
 		ID string `json:"Id"`
 	}
 	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+container+"/exec", spec, &execResp); err != nil {
-		logger.Error("ExecStream: failed to create exec in %s for cmd %v: %v", container, cmd, err)
+		logger.Error("ExecStream: failed to create exec in %s ", container)
 		return nil, err
 	}
 
@@ -218,7 +218,7 @@ func (c *Client) ExecStream(ctx context.Context, container, user string, cmd []s
 		return nil, err
 	}
 
-	logger.Debug("ExecStream: %v in %s exited %d", cmd, container, inspect.ExitCode)
+	logger.Debug("ExecStream: exec %s in %s exited %d", execResp.ID, container, inspect.ExitCode)
 	return &ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: inspect.ExitCode}, nil
 }
 
@@ -244,7 +244,7 @@ func (c *Client) ExecStreamOut(ctx context.Context, container, user string, cmd 
 		ID string `json:"Id"`
 	}
 	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+container+"/exec", spec, &execResp); err != nil {
-		logger.Error("ExecStreamOut: failed to create exec in %s for cmd %v: %v", container, cmd, err)
+		logger.Error("ExecStreamOut: failed to create exec in %s ", container)
 		return nil, err
 	}
 
@@ -275,7 +275,7 @@ func (c *Client) ExecStreamOut(ctx context.Context, container, user string, cmd 
 		return nil, err
 	}
 
-	logger.Debug("ExecStreamOut: %v in %s exited %d", cmd, container, inspect.ExitCode)
+	logger.Debug("ExecStreamOut: exec %s in %s exited %d", execResp.ID, container, inspect.ExitCode)
 	return &ExecResult{Stderr: stderr.Bytes(), ExitCode: inspect.ExitCode}, nil
 }
 
