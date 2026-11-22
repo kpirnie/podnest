@@ -22,13 +22,22 @@ import (
 )
 
 type drSitePoint struct {
-	SiteID int64  `json:"site_id"`
-	Name   string `json:"name"`
-	Files  string `json:"files"`
-	DB     string `json:"database,omitempty"`
+	SiteID  int64    `json:"site_id"`
+	Name    string   `json:"name"`
+	Files   string   `json:"files"`
+	DB      string   `json:"database,omitempty"`
+	Domains []string `json:"domains,omitempty"`
 }
 
-func (m *Manager) captureDRSites(ctx context.Context, s3 *s3Config, nodeID, password string) ([]drSitePoint, error) {
+// DRSiteBackupStatus describes a site's result in the current backup run.
+type DRSiteBackupStatus struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Error string `json:"error,omitempty"`
+}
+
+func (m *Manager) captureDRSites(ctx context.Context, s3 *s3Config, nodeID, password string, report func(DRSiteBackupStatus)) ([]drSitePoint, error) {
 	sites, err := db.GetAllSites(m.db)
 	if err != nil {
 		return nil, err
@@ -49,6 +58,10 @@ func (m *Manager) captureDRSites(ctx context.Context, s3 *s3Config, nodeID, pass
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		progress := DRSiteBackupStatus{ID: site.ID, Name: site.Name, State: "running"}
+		if report != nil {
+			report(progress)
+		}
 		var point drSitePoint
 		var err error
 		if entry, pending := unrestored[site.ID]; pending {
@@ -58,9 +71,14 @@ func (m *Manager) captureDRSites(ctx context.Context, s3 *s3Config, nodeID, pass
 		}
 		if err != nil {
 			failures = errors.Join(failures, fmt.Errorf("site %s: %w", site.Name, err))
-			continue
+			progress.State, progress.Error = "failed", err.Error()
+		} else {
+			points = append(points, point)
+			progress.State = "verified"
 		}
-		points = append(points, point)
+		if report != nil {
+			report(progress)
+		}
 	}
 	return points, failures
 }
@@ -127,7 +145,7 @@ func (m *Manager) captureDRSite(ctx context.Context, s3 *s3Config, nodeID, passw
 
 func drSiteRepo(s3 *s3Config, nodeID, password string, siteID int64) (string, []string) {
 	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+nodeID+"/sites/"+strconv.FormatInt(siteID, 10))
-	return repo, stripDRInstanceKey(resticEnv(password, s3))
+	return repo, resticEnv(password, s3)
 }
 
 func (m *Manager) copyOrdinaryDRSite(ctx context.Context, s3 *s3Config, site *models.Site, hasDatabase bool, repo string, env []string) (string, error) {
@@ -140,7 +158,7 @@ func (m *Manager) copyOrdinaryDRSite(ctx context.Context, s3 *s3Config, site *mo
 		return "", err
 	}
 	source := s3RepoURL(s3.endpoint, s3.bucket, site.Name)
-	sourceEnv := stripDRInstanceKey(resticEnv(ordinary.RepoPassword, s3))
+	sourceEnv := resticEnv(ordinary.RepoPassword, s3)
 	for _, backup := range backups {
 		// A local-typed record can also have an S3 copy. Check the underlying
 		// repository instead of using the record's destination as proof.
@@ -222,14 +240,24 @@ func (m *Manager) backupDRSite(ctx context.Context, site *models.Site, repo stri
 }
 
 func pruneDRSites(ctx context.Context, s3 *s3Config, nodeID, password string, points []drSitePoint) error {
-	var failures error
+	prefixes, err := drListPrefixes(ctx, s3, drPrefix+nodeID+"/sites/")
+	if err != nil {
+		return err
+	}
+	keep := make(map[int64]drSitePoint, len(points))
 	for _, point := range points {
-		if point.Files == "" {
+		keep[point.SiteID] = point
+	}
+	var failures error
+	for _, prefix := range prefixes {
+		id, err := strconv.ParseInt(prefix, 10, 64)
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != prefix {
 			continue
 		}
-		repo, env := drSiteRepo(s3, nodeID, password, point.SiteID)
+		point := keep[id]
+		repo, env := drSiteRepo(s3, nodeID, password, id)
 		if err := pruneDRSite(ctx, repo, env, point); err != nil {
-			failures = errors.Join(failures, fmt.Errorf("retain site %s recovery point: %w", point.Name, err))
+			failures = errors.Join(failures, fmt.Errorf("retain recovery snapshots for site %d: %w", id, err))
 		}
 	}
 	return failures
@@ -248,7 +276,7 @@ func pruneDRSite(ctx context.Context, repo string, env []string, point drSitePoi
 	if err := json.Unmarshal(raw, &snapshots); err != nil {
 		return err
 	}
-	filesFound, dbFound := false, point.DB == ""
+	filesFound, dbFound := point.Files == "", point.DB == ""
 	var obsolete []string
 	for _, snap := range snapshots {
 		if !validDRSnapshotID(snap.ID) {
@@ -322,7 +350,7 @@ func (m *Manager) startDRDatabase(ctx context.Context, site *models.Site, siteDi
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "podman", "stop", "--time", "30", name)
-		cmd.Env = append(stripDRInstanceKey(os.Environ()), "CONTAINER_HOST=unix://"+m.podmanSock)
+		cmd.Env = append(withoutInstanceKey(os.Environ()), "CONTAINER_HOST=unix://"+m.podmanSock)
 		_ = cmd.Run()
 	}
 	if err := m.podman.WaitForMariaDB(ctx, name, rootPass); err != nil {

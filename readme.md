@@ -16,7 +16,7 @@ A self-hosted web hosting control panel. Create and run WordPress, PHP, Node.js,
 
 ---
 
-[Overview](#overview) · [Outbound SMTP](#outbound-smtp) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [Development Container](#development-container) · [Security Policy](#security-policy) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements-contributions--accolades) · [License](#license) · [Support](#support)
+[Overview](#overview) · [Outbound SMTP](#outbound-smtp) · [Requirements](#requirements) · [Host Install (pdnctl)](#host-install-pdnctl) · [Running as a Container](#running-as-a-container) · [Running the Binary](#running-the-binary) · [First Login](#first-login) · [Disaster Recovery](#disaster-recovery) · [Directory Structure](#directory-structure) · [Documentation](#documentation) · [Development Container](#development-container) · [Security Policy](#security-policy) · [Contributing](#contributing) · [Acknowledgements](#acknowledgements-contributions--accolades) · [License](#license) · [Support](#support)
 
 ---
 
@@ -147,6 +147,7 @@ Once running, the UI is available at: `http://your-host:9000`
 | Command | Description |
 | --- | --- |
 | `pdnctl install --user <name> --version <latest\|dev\|beta>` | Fresh rootless setup under a dedicated user |
+| `pdnctl recover` | Restore the latest S3 recovery point onto a fresh host. Use `--full` to complete site recovery in the CLI. |
 | `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
 | `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
 | `pdnctl pull-images` | Pull updated versions of every image already on the host |
@@ -399,8 +400,11 @@ normal instance key and application path. Configure the S3 bucket and
 credentials in PodNest first. Use an HTTPS endpoint and allow the node to read
 and write objects in its prefix under `disaster-recovery/`. Application
 retention also needs permission to delete Restic objects in that prefix.
+Reusing ordinary S3 site backups requires read access to their repositories.
 
 - Run `podnest dr-enroll --app-path /opt/podnest` from an interactive terminal.
+  For a container installation, run it through `podman exec -it podnest`
+  as the user that owns the PodNest container.
   Use a strong passphrase and keep it in an independent password manager or
   recovery vault. Each node has a random ID. Enrollment writes its encrypted
   key envelope to `disaster-recovery/<node-id>/key` and verifies it by reading
@@ -433,7 +437,74 @@ credentials and ordinary backup repository credentials. Encrypted node-link and
 site SMTP credentials still require the original instance key. Treat these
 archives as sensitive because they contain configuration and private keys.
 
-Fresh-host restoration and recovery retries remain pending.
+### Recovering a lost server
+
+Use a fresh Linux host with systemd, rootless Podman prerequisites, and a
+`pdnctl` build and PodNest image that support disaster recovery. Have the S3
+endpoint, bucket, region, access credentials, and independent recovery
+passphrase available. Your S3 credentials need bucket listing and access to
+the source node's objects. The original host, IP address, and hostname are
+unnecessary. Install against an unused dedicated Linux user and data
+directory.
+
+```bash
+sudo pdnctl recover --user podnest --endpoint https://s3.example.net \
+  --bucket podnest-backups --region us-east-1 --version latest
+```
+
+The command prompts for S3 credentials without echoing them and lists sources
+with a published recovery point. Select by server name and node ID, or pass
+`--source NODE_ID`. Enter the recovery passphrase when prompted. The installer
+restores the original instance key to the service account's `~/.pn.env`,
+provisions the target using its local host settings, and starts the
+recovery-only interface.
+
+The initial recovery interface listens on loopback. Forward its port from
+your workstation, then open `http://127.0.0.1:9000/recovery` and sign in with
+an existing PodNest administrator account.
+
+```bash
+ssh -L 9000:127.0.0.1:9000 administrator@replacement-host
+```
+
+The Dashboard, site administration, normal APIs, proxy startup, and
+background jobs are unavailable during initial recovery. Choose **Resume
+recovery** to process the restored site's files, database, and Podman
+resources. An interruption leaves the recovery lock and site progress in
+SQLite. Resume from the panel or rerun `sudo pdnctl recover --full` on the
+replacement host. Completed sites are skipped. Once every site has been
+attempted, PodNest restarts into normal administration, even if some sites
+failed.
+
+Add `--full` to the fresh-host command to perform site recovery from the
+CLI. The CLI waits for the result. Closing the CLI after the operation starts
+does not cancel the server's recovery worker. After initial recovery finishes,
+retry failed sites without repeating the bootstrap.
+
+```bash
+sudo pdnctl recover --retry-failed
+sudo pdnctl recover --retry-failed --site example
+```
+
+The **Disaster Recovery** panel also shows failed sites and offers both retry
+actions. Other sites remain available during a retry.
+
+### Recovery troubleshooting
+
+- If the source is absent from the list, confirm it has a published
+  `latest.json` in the selected bucket and that the credentials can list
+  and read the node's objects.
+- If key unlock fails, verify the selected node ID and the independently
+  retained passphrase. Preserve the original key envelope.
+- If a backup or verification fails, inspect the latest operation result in
+  the panel. Fix the indicated S3, Restic, file, or database issue and rerun
+  DR. A failed candidate leaves the previous published point in place.
+- If site restoration fails, review the site's stored error and retry after
+  correcting the host or repository issue. Site domains are preserved. The
+  replacement host uses its own network configuration.
+- Recover parent and child nodes independently using their own node IDs and
+  passphrases. Their associations remain in the restored database. Review
+  node endpoint settings and reauthenticate links if a peer's address changed.
 
 ## Directory Structure
 

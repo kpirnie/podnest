@@ -82,6 +82,13 @@ export async function viewDisasterRecovery(root) {
                     <button type="button" class="kp-btn-secondary" id="kp-dr-refresh">Refresh</button>
                 </div>
             </form>
+            ${status.site_backups?.length ? `
+                <div class="uk-margin-top">
+                    <h4 class="kp-view-title">Site backup results</h4>
+                    <ul class="uk-list uk-list-divider">${status.site_backups.map(site => `
+                        <li>${escapeHtml(site.name)} — ${escapeHtml(site.state)}
+                        ${site.error ? `: ${escapeHtml(site.error)}` : ""}</li>`).join("")}</ul>
+                </div>` : ""}
             <div class="uk-margin-top" id="kp-dr-restore" hidden>
                 <h4 class="kp-view-title">Site restoration</h4>
                 <button type="button" class="kp-btn-secondary" id="kp-dr-retry-all">Retry Failed Sites</button>

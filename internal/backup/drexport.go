@@ -88,7 +88,7 @@ func (m *Manager) ExportDRApplication(ctx context.Context, w io.Writer) error {
 	defer os.RemoveAll(dir)
 	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+point.Node+"/server")
 	cmd := exec.CommandContext(ctx, resticBin, "-r", repo, "restore", point.Snapshot, "--target", dir, "--verify")
-	cmd.Env = stripDRInstanceKey(resticEnv(password, s3))
+	cmd.Env = resticEnv(password, s3)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("restore application checkpoint for export: %w", err)
 	}
@@ -205,8 +205,12 @@ func (m *Manager) ExportDRSite(ctx context.Context, siteID int64, w io.Writer) e
 			continue
 		}
 		repo, env := drSiteRepo(s3, point.Node, password, siteID)
-		return m.exportSiteSnapshots(ctx, &models.Site{ID: siteID, Name: site.Name}, &models.Backup{Created: point.Verified},
-			repo, env, site.Files, site.DB, w)
+		archiveRoot, err := drSiteSnapshotRoot(ctx, repo, env, site.Files, site.Name, site.DB != "")
+		if err != nil {
+			return err
+		}
+		return m.exportSiteSnapshots(ctx, &models.Site{ID: siteID, Name: site.Name}, &models.Backup{Created: point.Verified, Domains: site.Domains},
+			repo, env, site.Files, site.DB, archiveRoot, w)
 	}
 	return errors.New("site is absent from the latest disaster recovery point")
 }
@@ -214,7 +218,7 @@ func (m *Manager) ExportDRSite(ctx context.Context, siteID int64, w io.Writer) e
 func readDRManifest(ctx context.Context, s3 *s3Config, point drApplicationPoint, password string) ([]drSitePoint, error) {
 	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+point.Node+"/server")
 	cmd := exec.CommandContext(ctx, resticBin, "-r", repo, "dump", point.Snapshot, "/recovery-sites.json")
-	cmd.Env = stripDRInstanceKey(resticEnv(password, s3))
+	cmd.Env = resticEnv(password, s3)
 	output, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

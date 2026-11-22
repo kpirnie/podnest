@@ -29,10 +29,11 @@ type drSettings struct {
 }
 
 type drStatus struct {
-	Result       string    `json:"result"`
-	Started      time.Time `json:"started"`
-	LastVerified time.Time `json:"last_verified"`
-	Error        string    `json:"error,omitempty"`
+	Result       string                      `json:"result"`
+	Started      time.Time                   `json:"started"`
+	LastVerified time.Time                   `json:"last_verified"`
+	Error        string                      `json:"error,omitempty"`
+	Sites        []backup.DRSiteBackupStatus `json:"site_backups,omitempty"`
 }
 
 func (s *Server) drSettings() (drSettings, error) {
@@ -160,6 +161,7 @@ func (s *Server) runDisasterRecovery() {
 		return
 	}
 	status.Result, status.Error, status.Started = "running", "", time.Now().UTC()
+	status.Sites = nil
 	if err := s.writeDRStatus(status); err != nil {
 		logger.Error("write disaster recovery status: %v", err)
 		return
@@ -167,7 +169,18 @@ func (s *Server) runDisasterRecovery() {
 
 	ctx, cancel := context.WithTimeout(s.ctx, 12*time.Hour)
 	defer cancel()
-	id, err := s.backup.SnapshotDisasterRecovery(ctx)
+	siteIndex := make(map[int64]int)
+	id, err := s.backup.SnapshotDisasterRecovery(ctx, func(progress backup.DRSiteBackupStatus) {
+		if index, ok := siteIndex[progress.ID]; ok {
+			status.Sites[index] = progress
+		} else {
+			siteIndex[progress.ID] = len(status.Sites)
+			status.Sites = append(status.Sites, progress)
+		}
+		if err := s.writeDRStatus(status); err != nil {
+			logger.Error("write site disaster recovery progress: %v", err)
+		}
+	})
 	if id != "" {
 		status.LastVerified = time.Now().UTC()
 	}

@@ -29,7 +29,7 @@ import (
 
 // SnapshotDisasterRecovery captures an application checkpoint and verified
 // snapshots for every hosted site as one recovery point.
-func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) {
+func (m *Manager) SnapshotDisasterRecovery(ctx context.Context, report func(DRSiteBackupStatus)) (string, error) {
 	if err := db.ValidateNodeKey(); err != nil {
 		return "", err
 	}
@@ -73,7 +73,7 @@ func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) 
 		return "", err
 	}
 	password := drRepositoryPassword(strings.TrimSpace(os.Getenv(db.NodeKeyEnv)), id)
-	sites, err := m.captureDRSites(ctx, s3, id, password)
+	sites, err := m.captureDRSites(ctx, s3, id, password, report)
 	if err != nil {
 		return "", err
 	}
@@ -84,7 +84,7 @@ func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) 
 		return "", err
 	}
 	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+id+"/server")
-	env := stripDRInstanceKey(resticEnv(password, s3))
+	env := resticEnv(password, s3)
 	if err := initRepo(ctx, repo, env); err != nil {
 		return "", err
 	}
@@ -222,7 +222,7 @@ func pruneDRApplication(ctx context.Context, repo string, env []string, keep str
 	return forget.Run()
 }
 
-func stripDRInstanceKey(env []string) []string {
+func withoutInstanceKey(env []string) []string {
 	var clean []string
 	for _, item := range env {
 		if !strings.HasPrefix(item, db.NodeKeyEnv+"=") {
@@ -326,9 +326,34 @@ func writeDRManifest(ctx context.Context, payload string, sites []drSitePoint) e
 	if err := validateDRSiteInventory(ctx, snapshot, sites); err != nil {
 		return err
 	}
+	index := make(map[int64]*drSitePoint, len(sites))
+	for i := range sites {
+		index[sites[i].SiteID] = &sites[i]
+	}
+	rows, err := snapshot.QueryContext(ctx, "SELECT siteid, domain FROM kppn_domains ORDER BY siteid, domain")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var domain string
+		if err := rows.Scan(&id, &domain); err != nil {
+			return err
+		}
+		if site := index[id]; site != nil {
+			site.Domains = append(site.Domains, domain)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	manifest, err := json.Marshal(sites)
 	if err != nil {
 		return err
+	}
+	if len(manifest) > drManifestLimit {
+		return errors.New("site recovery manifest exceeds the supported size")
 	}
 	return os.WriteFile(filepath.Join(payload, "recovery-sites.json"), manifest, 0600)
 }
