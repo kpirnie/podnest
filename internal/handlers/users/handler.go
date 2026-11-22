@@ -185,7 +185,6 @@ func (h *Handler) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("created user %d: %s", user.ID, user.UName)
-	user.PWord = ""
 	apiutil.JSON(w, http.StatusCreated, user)
 }
 
@@ -304,7 +303,6 @@ func (h *Handler) apiUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("updated user %d: %s", target.ID, target.UName)
-	target.PWord = ""
 	apiutil.JSON(w, http.StatusOK, target)
 }
 

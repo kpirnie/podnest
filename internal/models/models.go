@@ -208,15 +208,15 @@ type NodeUser struct {
 type User struct {
 	ID          int64
 	UName       string
-	PWord       string
+	PWord       string `json:"-"`
 	UHash       string
 	FName       string
 	LName       string
 	Email       string
 	Phone       string
 	Role        int
-	TOTPSecret  string
-	TOTPSalt    string
+	TOTPSecret  string `json:"-"`
+	TOTPSalt    string `json:"-"`
 	TOTPEnabled bool
 	NotifyEmail bool
 	NotifySMS   bool
