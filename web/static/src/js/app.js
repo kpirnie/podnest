@@ -10,6 +10,7 @@ import { parseHash, router } from './router.js';
 import { toast } from './toast.js';
 import { viewAdminLogs } from './views/admin-logs.js';
 import { viewAuditLog } from './views/audit-log.js';
+import { refreshDRWarning, viewDisasterRecovery } from './views/disaster-recovery.js';
 import { viewDashboard } from './views/dashboard.js';
 import { viewNodes } from './views/nodes.js';
 import { viewSecurity } from './views/security.js';
@@ -21,6 +22,11 @@ import { viewWAF } from './views/waf.js';
 
 /* -- register routes ------------------------------------------------------- */
 router.register("dashboard", (root) => viewDashboard(root));
+if (window.KP?.user?.role === 99) {
+    router.register("disaster-recovery", viewDisasterRecovery);
+    refreshDRWarning();
+    setInterval(refreshDRWarning, 30000);
+}
 router.register("sites", (root) => viewSites(root));
 router.register("site-detail", (root, params) => viewSiteDetail(root, params));
 router.register("users", (root) => viewUsers(root));

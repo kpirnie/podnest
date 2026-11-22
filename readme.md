@@ -392,7 +392,7 @@ If you used `podnest init`, log in with the credentials you provided during setu
 
 ---
 
-## Application recovery snapshots
+## Disaster Recovery
 
 The maintenance commands below run in the PodNest application context with its
 normal instance key and application path. Configure the S3 bucket and
@@ -405,19 +405,28 @@ retention also needs permission to delete Restic objects in that prefix.
   recovery vault. Each node has a random ID. Enrollment writes its encrypted
   key envelope to `disaster-recovery/<node-id>/key` and verifies it by reading
   it back from S3. Re-running enrollment verifies the existing envelope.
-- Run `podnest dr-snapshot-application --app-path /opt/podnest` to create an
-  application checkpoint. It captures the SQLite database, certificates, SFTP
-  host keys and SSH directives, and malware quarantine. The database contains
-  settings and credentials, including values encrypted with the original
-  instance key.
-- The command verifies the new Restic snapshot before updating
-  `latest-application.json` and retiring older application snapshots. If
-  verification fails, the previous published checkpoint remains available.
-  A retention error after publication indicates that older snapshots may need
-  cleanup on the next run.
-- These checkpoints cover application state only. Continue using ordinary site
-  backups for hosted files and databases. Full-host restore, scheduling, and
-  recovery controls are pending.
+
+The application checkpoint captures the SQLite database, certificates, SFTP host
+keys and SSH directives, the panel stylesheet override, and malware quarantine.
+The database contains settings and credentials, including values encrypted with
+the original instance key.
+
+### Server recovery points
+
+After key enrollment, the admin-only **Disaster Recovery** panel can run a
+server backup immediately or configure automatic runs. The default schedule is
+04:00 in the PodNest process timezone. The panel reports the latest run and last
+verified checkpoint. Failed runs notify administrators with notification delivery
+enabled.
+
+A server backup makes independent DR copies of usable ordinary S3 site backups.
+When a site has no usable S3 backup, PodNest creates a fresh DR backup without
+changing its ordinary backup settings. Individual site errors are collected while
+other sites are attempted. A run with missing sites keeps the previous published
+server recovery point. Successful runs publish `latest.json` and retire the
+previous application and site snapshots after publication.
+
+Fresh-host restoration, recovery retries, and archive downloads remain pending.
 
 ## Directory Structure
 

@@ -117,6 +117,7 @@
                     More
                 </button>
                 <div class="kp-pill-dropdown kp-bn-more-menu" id="kp-bn-more-menu" hidden>
+                    <a href="#" data-view="disaster-recovery"><span uk-icon="icon: database; ratio: 0.85"></span> Disaster Recovery</a>
                     <a href="#" data-view="nodes"><span uk-icon="icon: git-fork; ratio: 0.85"></span> Nodes</a>
                     <a href="#" data-view="settings"><span uk-icon="icon: cog; ratio: 0.85"></span> Settings</a>
                     <a href="#" data-view="waf"><span uk-icon="icon: lifesaver; ratio: 0.85"></span> WAF</a>
@@ -158,6 +159,14 @@
                         <button class="kp-btn-icon kp-btn-sm kp-panel-update-btn" type="button" aria-label="Update PodNest now" uk-tooltip="Update PodNest now">
                             <span uk-icon="icon: download"></span>
                         </button>
+                    </div>
+                </div>
+                {{end}}
+
+                {{if eq .User.Role 99}}
+                <div id="kp-dr-warning" class="uk-alert-warning kp-update-banner" role="status" hidden>
+                    <div class="kp-update-banner-row">
+                        <p><span uk-icon="icon: warning"></span> <strong></strong> <a></a></p>
                     </div>
                 </div>
                 {{end}}
@@ -271,6 +280,12 @@
             <span class="kp-nav-icon" uk-icon="icon: home; ratio: 0.9"></span>
             Dashboard
         </a>
+        {{if eq .User.Role 99}}
+        <a href="#" data-view="disaster-recovery" class="kp-nav-link">
+            <span class="kp-nav-icon" uk-icon="icon: database; ratio: 0.9"></span>
+            Disaster Recovery
+        </a>
+        {{end}}
         <a href="#" data-view="sites" class="kp-nav-link">
             <span class="kp-nav-icon" uk-icon="icon: world; ratio: 0.9"></span>
             Sites
