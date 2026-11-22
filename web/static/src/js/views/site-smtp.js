@@ -4,6 +4,7 @@
 
 "use strict";
 
+import { exportMigration, importMigration } from '../migration.js';
 import { api } from '../api.js';
 import { confirm } from '../helpers.js';
 import { toast } from '../toast.js';
@@ -18,6 +19,12 @@ export function renderSMTPTab(isApp) {
             <button class="uk-button kp-btn-ghost kp-btn-sm" type="button" id="site-smtp-retry" hidden>Retry</button>
 
             <fieldset class="uk-fieldset" id="site-smtp-actions" disabled>
+                <div class="uk-flex uk-grid-small uk-margin-small-bottom" uk-grid>
+                    <div><button class="uk-button kp-btn-ghost kp-btn-sm" type="button" id="site-smtp-export">Export encrypted SMTP</button></div>
+                    <div><label class="uk-button kp-btn-ghost kp-btn-sm">Import encrypted SMTP
+                        <input type="file" id="site-smtp-import" accept=".pnm" hidden>
+                    </label></div>
+                </div>
                 <form class="uk-form-stacked" id="site-smtp-settings">
                     <label class="kp-label">
                         <input class="uk-checkbox" type="checkbox" name="enabled">
@@ -105,6 +112,30 @@ export function wireSMTPTab(panel, link, id) {
         remove.disabled = !passwordSet;
         send.disabled = !savedEnabled || !passwordSet;
     };
+
+    panel.querySelector("#site-smtp-export").addEventListener("click", async () => {
+        try {
+            await exportMigration(`/api${endpoint}/export`, `site-${id}-smtp.pnm`);
+        } catch (err) {
+            toast.error(err.message);
+        }
+    });
+
+    const importInput = panel.querySelector("#site-smtp-import");
+    importInput.addEventListener("change", async () => {
+        const file = importInput.files[0];
+        if (!file) return;
+        try {
+            if (!await importMigration(`/api${endpoint}/import`, file)) return;
+            loaded = false;
+            await load();
+            toast.success("SMTP settings imported");
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            importInput.value = "";
+        }
+    });
 
     const load = async () => {
         if (loaded || busy) return;

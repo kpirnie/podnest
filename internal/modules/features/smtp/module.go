@@ -44,6 +44,23 @@ func (m Module) Tabs(_ *models.Site) []modules.TabDescriptor { return nil }
 // RegisterRoutes registers the SMTP management API routes.
 func (m Module) RegisterRoutes(mux *http.ServeMux, resolve modules.SiteResolver) {
 
+	for route, handler := range map[string]func(http.ResponseWriter, *http.Request, *models.Site){
+		"POST /sites/{id}/smtp/export": m.exportSMTP,
+		"POST /sites/{id}/smtp/import": m.importSMTP,
+	} {
+		mux.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
+			site, ok := resolve(w, r)
+			if !ok {
+				return
+			}
+			if !m.AppliesTo(site.SiteType) {
+				http.NotFound(w, r)
+				return
+			}
+			handler(w, r, site)
+		})
+	}
+
 	// Return SMTP settings for supported site types.
 	mux.HandleFunc("GET /sites/{id}/smtp", func(w http.ResponseWriter, r *http.Request) {
 		site, ok := resolve(w, r)

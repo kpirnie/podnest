@@ -46,52 +46,8 @@ func (m Module) apiSaveSMTP(w http.ResponseWriter, r *http.Request, site *models
 		return
 	}
 
-	// Validate allowed values before persisting any changes.
-	if len(settings) == 0 {
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "SMTP settings are required")
+	if !validateSMTPSettings(w, settings) {
 		return
-	}
-
-	if enabled, ok := settings["enabled"]; ok && enabled != "true" && enabled != "false" {
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP enabled value")
-		return
-	}
-
-	if host, ok := settings["host"]; ok {
-		if strings.ContainsAny(host, "\r\n\t /\\") {
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP host")
-			return
-		}
-	}
-
-	if port, ok := settings["port"]; ok {
-		value, err := strconv.Atoi(port)
-		if err != nil || value < 1 || value > 65535 {
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP port")
-			return
-		}
-	}
-
-	if encryption, ok := settings["encryption"]; ok {
-		if encryption != "starttls" && encryption != "tls" {
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP encryption mode")
-			return
-		}
-	}
-
-	if address, ok := settings["from_email"]; ok && address != "" {
-		parsed, err := mail.ParseAddress(address)
-		if err != nil || parsed.Address != address {
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP sender email")
-			return
-		}
-	}
-
-	for _, key := range []string{"username", "from_name"} {
-		if strings.ContainsAny(settings[key], "\r\n") {
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP setting")
-			return
-		}
 	}
 
 	// Keep the saved settings stable through validation and persistence.
@@ -239,4 +195,56 @@ func (m Module) apiDeleteSMTPPassword(w http.ResponseWriter, r *http.Request, si
 		"status":       "ok",
 		"password_set": "false",
 	})
+}
+
+func validateSMTPSettings(w http.ResponseWriter, settings map[string]string) bool {
+	// Validate allowed values before persisting any changes.
+	if len(settings) == 0 {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "SMTP settings are required")
+		return false
+	}
+
+	if enabled, ok := settings["enabled"]; ok && enabled != "true" && enabled != "false" {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP enabled value")
+		return false
+	}
+
+	if host, ok := settings["host"]; ok {
+		if strings.ContainsAny(host, "\r\n\t /\\") {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP host")
+			return false
+		}
+	}
+
+	if port, ok := settings["port"]; ok {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP port")
+			return false
+		}
+	}
+
+	if encryption, ok := settings["encryption"]; ok {
+		if encryption != "starttls" && encryption != "tls" {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP encryption mode")
+			return false
+		}
+	}
+
+	if address, ok := settings["from_email"]; ok && address != "" {
+		parsed, err := mail.ParseAddress(address)
+		if err != nil || parsed.Address != address {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP sender email")
+			return false
+		}
+	}
+
+	for _, key := range []string{"username", "from_name"} {
+		if strings.ContainsAny(settings[key], "\r\n") {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid SMTP setting")
+			return false
+		}
+	}
+
+	return true
 }

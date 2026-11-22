@@ -142,3 +142,16 @@ func SaveSMTPSettings(database *sql.DB, siteID int64, settings map[string]string
 
 	return tx.Commit()
 }
+
+// ReplaceSMTPMigration encrypts portable SMTP credentials for the destination
+// site before atomically replacing its settings.
+func ReplaceSMTPMigration(database *sql.DB, siteID int64, settings map[string]string, password string) error {
+	if password != "" {
+		sealed, err := sealSMTPPassword(siteID, password)
+		if err != nil {
+			return err
+		}
+		settings["password"] = sealed
+	}
+	return SetConfigs(database, siteID, models.ConfigSMTP, settings)
+}
