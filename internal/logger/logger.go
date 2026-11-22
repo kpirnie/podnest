@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -57,11 +56,6 @@ var (
 		"WARN":  colorYellow,
 		"ERROR": colorRed,
 		"INFO":  colorBlue,
-	}
-
-	// -- patterns to obfuscate in log output --------------------------------
-	sensitivePatterns = []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(password|pass|passwd|pwd|secret|token|key)([=:\s"]+)([^\s"&,]+)`),
 	}
 )
 
@@ -234,23 +228,9 @@ func colorizeLevel(level string) string {
 	return fmt.Sprintf("[%-5s]", level)
 }
 
-// obfuscate replaces sensitive values in a string with ***
-func obfuscate(s string) string {
-	for _, re := range sensitivePatterns {
-		s = re.ReplaceAllStringFunc(s, func(match string) string {
-			sub := re.FindStringSubmatch(match)
-			if len(sub) < 4 {
-				return match
-			}
-			return sub[1] + sub[2] + "***"
-		})
-	}
-	return s
-}
-
 // logMessage formats and outputs a log message to stdout and the buffer
 func logMessage(level string, format string, v ...interface{}) {
-	message := fmt.Sprintf(format, v...)
+	message := RedactText(fmt.Sprintf(format, v...))
 	log.Printf("%s %s", colorizeLevel(level), message)
 	addToBuffer(level, message)
 }
@@ -322,26 +302,10 @@ func DebugSafe(format string, v ...interface{}) {
 	if !IsDebug() {
 		return
 	}
-	safe := make([]interface{}, len(v))
-	for i, a := range v {
-		if s, ok := a.(string); ok {
-			safe[i] = obfuscate(s)
-		} else {
-			safe[i] = a
-		}
-	}
-	logMessage("DEBUG", obfuscate(format), safe...)
+	logMessage("DEBUG", format, v...)
 }
 
 // InfoSafe logs an info message with sensitive values obfuscated
 func InfoSafe(format string, v ...interface{}) {
-	safe := make([]interface{}, len(v))
-	for i, a := range v {
-		if s, ok := a.(string); ok {
-			safe[i] = obfuscate(s)
-		} else {
-			safe[i] = a
-		}
-	}
-	logMessage("INFO", obfuscate(format), safe...)
+	logMessage("INFO", format, v...)
 }

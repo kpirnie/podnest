@@ -8,21 +8,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"regexp"
 	"time"
 
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
 )
-
-// sensitiveKeys matches JSON key names whose values must be masked before persistence.
-// Two alternations: separator-bounded generic words, and compound forms that carry no
-// separator (apikey, secretkey) which the bounded pattern would otherwise miss.
-var sensitiveKeys = regexp.MustCompile(`(?i)((^|[_\-.])(password|pass|passwd|pwd|secret|token|key|auth|credential|credentials|totp|otp|mfa|seed|salt|signature|private|cert|certificate|cookie|bearer|dsn|passphrase|recovery)([_\-.]|$))|(apikey|apitoken|apisecret|accesskey|secretkey|privatekey|authtoken|sessiontoken|refreshtoken|connectionstring)`)
-
-// sensitiveRegex is the fallback pattern for non-JSON bodies — same terms as the logger.
-var sensitiveRegex = regexp.MustCompile(`(?i)(password|pass|passwd|pwd|secret|token|key|auth|credential|credentials|totp|otp|mfa|seed|salt|signature|passphrase|recovery|apikey|apitoken|accesskey|secretkey|privatekey|authtoken|connectionstring)([=:\s"]+)([^\s"&,]+)`)
 
 // auditCh is the async drain channel — callers enqueue and return immediately.
 var auditCh = make(chan models.AuditEntry, 2048)
@@ -84,7 +75,7 @@ func Record(e models.AuditEntry) {
 }
 
 // MaskString masks sensitive values in a string.
-// If the string is valid JSON, masks by key name; otherwise falls back to regex.
+// If the string is valid JSON, masks by key name; otherwise uses the diagnostic redactor.
 func MaskString(s string) string {
 	if s == "" {
 		return s
@@ -94,7 +85,7 @@ func MaskString(s string) string {
 		return masked
 	}
 	// fallback: regex replacement on raw string
-	return maskLeafString(s)
+	return logger.RedactText(s)
 }
 
 // maskJSON unmarshals a JSON string, redacts values for sensitive keys at any
@@ -119,7 +110,7 @@ func maskValue(v interface{}) interface{} {
 		// walk every key; mask the value if the key matches sensitiveKeys
 		out := make(map[string]interface{}, len(val))
 		for k, child := range val {
-			if sensitiveKeys.MatchString(k) {
+			if logger.CredentialName(k) {
 				out[k] = "*****"
 			} else {
 				out[k] = maskValue(child)
@@ -134,10 +125,10 @@ func maskValue(v interface{}) interface{} {
 		}
 		return out
 	case string:
-		// a non-JSON request body arrives as a string leaf under "body", which
-		// makes maskJSON succeed and short-circuit the fallback in MaskString —
-		// run the pattern here so form and CSV bodies are not stored in the clear
-		return maskLeafString(val)
+		if logger.CredentialURL(val) {
+			return "*****"
+		}
+		return logger.RedactText(val)
 	default:
 		return val
 	}
@@ -150,16 +141,4 @@ func RecordWithState(e models.AuditEntry, priorState, newState string) {
 	e.PriorState = priorState
 	e.NewState = newState
 	Record(e)
-}
-
-// maskLeafString applies the fallback pattern to a single string value.
-// Shared by MaskString and the string case in maskValue.
-func maskLeafString(s string) string {
-	return sensitiveRegex.ReplaceAllStringFunc(s, func(match string) string {
-		sub := sensitiveRegex.FindStringSubmatch(match)
-		if len(sub) < 4 {
-			return match
-		}
-		return sub[1] + sub[2] + "*****"
-	})
 }
