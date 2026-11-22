@@ -27,9 +27,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// SnapshotDRApplication builds and verifies an application-only DR checkpoint.
-// A complete server recovery point also needs the hosted-site recovery manifest.
-func (m *Manager) SnapshotDRApplication(ctx context.Context) (string, error) {
+// SnapshotDisasterRecovery captures an application checkpoint and verified
+// snapshots for every hosted site as one recovery point.
+func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) {
 	if err := db.ValidateNodeKey(); err != nil {
 		return "", err
 	}
@@ -79,13 +79,19 @@ func (m *Manager) SnapshotDRApplication(ctx context.Context) (string, error) {
 	if err := os.Mkdir(payload, 0700); err != nil {
 		return "", err
 	}
+	password := drRepositoryPassword(strings.TrimSpace(os.Getenv(db.NodeKeyEnv)), id)
+	sites, err := m.captureDRSites(ctx, s3, id, password)
+	if err != nil {
+		return "", err
+	}
 	if err := m.stageDRApplication(ctx, payload); err != nil {
 		return "", err
 	}
-
-	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+id+"/application")
-	env := resticEnv(drRepositoryPassword(strings.TrimSpace(os.Getenv(db.NodeKeyEnv)), id), s3)
-	env = stripDRInstanceKey(env)
+	if err := writeDRManifest(ctx, payload, sites); err != nil {
+		return "", err
+	}
+	repo := s3RepoURL(s3.endpoint, s3.bucket, drPrefix+id+"/server")
+	env := stripDRInstanceKey(resticEnv(password, s3))
 	if err := initRepo(ctx, repo, env); err != nil {
 		return "", err
 	}
@@ -124,8 +130,9 @@ func (m *Manager) SnapshotDRApplication(ctx context.Context) (string, error) {
 	if err := publishDRApplication(ctx, s3, point); err != nil {
 		return "", err
 	}
-	if err := pruneDRApplication(ctx, repo, env, summary.ID); err != nil {
-		return summary.ID, fmt.Errorf("verified snapshot %s published; application retention failed: %w", summary.ID, err)
+	retentionErr := errors.Join(pruneDRApplication(ctx, repo, env, summary.ID), pruneDRSites(ctx, s3, id, password, sites))
+	if retentionErr != nil {
+		return summary.ID, fmt.Errorf("verified snapshot %s published; disaster recovery retention failed: %w", summary.ID, retentionErr)
 	}
 	return summary.ID, nil
 }
@@ -151,7 +158,7 @@ func publishDRApplication(ctx context.Context, s3 *s3Config, point drApplication
 	if err != nil {
 		return err
 	}
-	resp, err := drS3Request(ctx, s3, http.MethodPut, drPrefix+point.Node+"/latest-application.json", raw, false)
+	resp, err := drS3Request(ctx, s3, http.MethodPut, drPrefix+point.Node+"/latest.json", raw, false)
 	if err != nil {
 		return err
 	}
@@ -240,7 +247,7 @@ func (m *Manager) stageDRApplication(ctx context.Context, payload string) error 
 		return err
 	}
 	defer root.Close()
-	for _, name := range []string{"certs", "sftp/keys", "sftp/etc-ssh/sshd_config.d", "malscan/quarantine"} {
+	for _, name := range []string{"custom.css", "certs", "sftp/keys", "sftp/etc-ssh/sshd_config.d", "malscan/quarantine"} {
 		if _, err := root.Lstat(name); os.IsNotExist(err) {
 			continue
 		} else if err != nil {
@@ -291,4 +298,45 @@ func copyDRState(ctx context.Context, root *os.Root, destination, name string) e
 		_, copyErr := io.Copy(dst, src)
 		return errors.Join(copyErr, dst.Close())
 	})
+}
+
+func writeDRManifest(ctx context.Context, payload string, sites []drSitePoint) error {
+	// Compare against the staged database, not a second live read. Concurrent
+	// creation, deletion or rename must not publish an incompatible manifest.
+	snapshot, err := sql.Open("sqlite3", filepath.Join(payload, "podnest.db")+"?mode=ro")
+	if err != nil {
+		return err
+	}
+	defer snapshot.Close()
+	rows, err := snapshot.QueryContext(ctx, "SELECT id, name FROM kppn_sites")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	index := make(map[int64]string, len(sites))
+	for _, site := range sites {
+		index[site.SiteID] = site.Name
+	}
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		if index[id] != name {
+			return errors.New("site inventory changed during disaster recovery capture")
+		}
+		delete(index, id)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(index) > 0 {
+		return errors.New("site inventory changed during disaster recovery capture")
+	}
+	manifest, err := json.Marshal(sites)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(payload, "recovery-sites.json"), manifest, 0600)
 }
