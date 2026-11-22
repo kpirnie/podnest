@@ -27,6 +27,8 @@ import (
 
 const drManifestLimit = 16 << 20
 
+var errDRPointMissing = errors.New("no published recovery point found")
+
 func readDRLatest(ctx context.Context, s3 *s3Config, id string) (drApplicationPoint, error) {
 	var point drApplicationPoint
 	resp, err := drS3Request(ctx, s3, http.MethodGet, drPrefix+id+"/latest.json", nil, false)
@@ -34,6 +36,9 @@ func readDRLatest(ctx context.Context, s3 *s3Config, id string) (drApplicationPo
 		return point, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return point, errDRPointMissing
+	}
 	if resp.StatusCode != http.StatusOK {
 		return point, fmt.Errorf("read latest recovery point: S3 returned HTTP %d", resp.StatusCode)
 	}
@@ -196,7 +201,7 @@ func (m *Manager) ExportDRSite(ctx context.Context, siteID int64, w io.Writer) e
 		return err
 	}
 	for _, site := range sites {
-		if site.SiteID != siteID {
+		if site.SiteID != siteID || site.Files == "" {
 			continue
 		}
 		repo, env := drSiteRepo(s3, point.Node, password, siteID)
@@ -230,7 +235,8 @@ func readDRManifest(ctx context.Context, s3 *s3Config, point drApplicationPoint,
 	}
 	for _, site := range sites {
 		if site.SiteID <= 0 || !filepath.IsLocal(site.Name) || filepath.Base(site.Name) != site.Name ||
-			site.Name == "." || !validDRSnapshotID(site.Files) || (site.DB != "" && !validDRSnapshotID(site.DB)) {
+			site.Name == "." || (site.Files != "" && !validDRSnapshotID(site.Files)) ||
+			(site.DB != "" && (site.Files == "" || !validDRSnapshotID(site.DB))) {
 			return nil, errors.New("invalid site recovery metadata")
 		}
 	}
@@ -270,7 +276,9 @@ func (m *Manager) ListDRSiteArchives(ctx context.Context) ([]DRSiteArchive, erro
 	}
 	archives := make([]DRSiteArchive, 0, len(sites))
 	for _, site := range sites {
-		archives = append(archives, DRSiteArchive{ID: site.SiteID, Name: site.Name})
+		if site.Files != "" {
+			archives = append(archives, DRSiteArchive{ID: site.SiteID, Name: site.Name})
+		}
 	}
 	return archives, nil
 }

@@ -317,6 +317,17 @@ func writeDRManifest(ctx context.Context, payload string, sites []drSitePoint) e
 		return err
 	}
 	defer snapshot.Close()
+	if err := validateDRSiteInventory(ctx, snapshot, sites); err != nil {
+		return err
+	}
+	manifest, err := json.Marshal(sites)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(payload, "recovery-sites.json"), manifest, 0600)
+}
+
+func validateDRSiteInventory(ctx context.Context, snapshot *sql.DB, sites []drSitePoint) error {
 	rows, err := snapshot.QueryContext(ctx, "SELECT id, name FROM kppn_sites")
 	if err != nil {
 		return err
@@ -343,9 +354,5 @@ func writeDRManifest(ctx context.Context, payload string, sites []drSitePoint) e
 	if len(index) > 0 {
 		return errors.New("site inventory changed during disaster recovery capture")
 	}
-	manifest, err := json.Marshal(sites)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(payload, "recovery-sites.json"), manifest, 0600)
+	return nil
 }

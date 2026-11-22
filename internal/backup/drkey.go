@@ -248,7 +248,11 @@ func readDRKey(ctx context.Context, s3 *s3Config, path string) ([]byte, error) {
 }
 
 func drS3Request(ctx context.Context, s3 *s3Config, method, path string, data []byte, createOnly bool) (*http.Response, error) {
-	u, err := s3ObjectURL(s3, path, nil)
+	return drS3RequestQuery(ctx, s3, method, path, data, createOnly, nil)
+}
+
+func drS3RequestQuery(ctx context.Context, s3 *s3Config, method, path string, data []byte, createOnly bool, query url.Values) (*http.Response, error) {
+	u, err := s3ObjectURL(s3, path, query)
 	if err != nil {
 		return nil, errors.New("cannot construct disaster recovery S3 request")
 	}

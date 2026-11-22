@@ -56,6 +56,10 @@ func (m *Manager) captureDRSite(ctx context.Context, s3 *s3Config, nodeID, passw
 	if siteType == nil {
 		return point, errors.New("site type is unavailable")
 	}
+	// A reverse-proxy definition is fully represented by the application DB.
+	if !siteType.HasPod() {
+		return point, nil
+	}
 	claim, err := m.WaitClaim(ctx, site.ID, ClaimScheduled)
 	if err != nil {
 		return point, err
@@ -191,6 +195,9 @@ func (m *Manager) backupDRSite(ctx context.Context, site *models.Site, repo stri
 func pruneDRSites(ctx context.Context, s3 *s3Config, nodeID, password string, points []drSitePoint) error {
 	var failures error
 	for _, point := range points {
+		if point.Files == "" {
+			continue
+		}
 		repo, env := drSiteRepo(s3, nodeID, password, point.SiteID)
 		if err := pruneDRSite(ctx, repo, env, point); err != nil {
 			failures = errors.Join(failures, fmt.Errorf("retain site %s recovery point: %w", point.Name, err))

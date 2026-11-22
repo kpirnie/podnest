@@ -73,9 +73,7 @@ func VerifyNodeKey(database *sql.DB) error {
 	)`); err != nil {
 		return err
 	}
-	mac := hmac.New(sha256.New, nodeKEK())
-	mac.Write([]byte("podnest:instance-key-verifier:v1"))
-	expected := mac.Sum(nil)
+	expected := nodeKeyVerifier(nodeKEK())
 	var stored []byte
 	switch err := tx.QueryRow(`SELECT verifier FROM kppn_instance_key WHERE id = 1`).Scan(&stored); err {
 	case nil:
@@ -121,6 +119,25 @@ func VerifyNodeKey(database *sql.DB) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// VerifyRecoveredNodeKey checks the sealed key verifier in a recovered database.
+func VerifyRecoveredNodeKey(database *sql.DB, key string) error {
+	var stored []byte
+	if err := database.QueryRow(`SELECT verifier FROM kppn_instance_key WHERE id = 1`).Scan(&stored); err != nil {
+		return fmt.Errorf("read recovered instance key verifier: %w", err)
+	}
+	digest := sha256.Sum256([]byte(key))
+	if !hmac.Equal(stored, nodeKeyVerifier(digest[:])) {
+		return ErrNodeKeyUnavailable
+	}
+	return nil
+}
+
+func nodeKeyVerifier(kek []byte) []byte {
+	mac := hmac.New(sha256.New, kek)
+	mac.Write([]byte("podnest:instance-key-verifier:v1"))
+	return mac.Sum(nil)
 }
 
 // nodeGCM returns the AES-256-GCM AEAD for the given key-encryption key.
