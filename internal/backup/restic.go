@@ -56,10 +56,10 @@ func initRepo(ctx context.Context, repoPath string, env []string) error {
 			strings.Contains(string(out), "config file already exists") {
 			return nil
 		}
-		logger.Error("initRepo: %s: %v — %s", repoPath, err, string(out))
-		return fmt.Errorf("restic init: %w — %s", err, string(out))
+		logger.Error("initRepo: restic failed: %v", err)
+		return fmt.Errorf("restic init: %w", err)
 	}
-	logger.Debug("initRepo: initialized repo at %s", repoPath)
+	logger.Debug("initRepo: initialized repository")
 	return nil
 }
 
@@ -259,15 +259,10 @@ func (m *Manager) backupFiles(ctx context.Context, repoPath string, env, paths, 
 	cmd := exec.CommandContext(ctx, resticBin, args...)
 	cmd.Env = env
 
-	// capture restic stdout for parsing the summary of bytes added, and
-	// stderr so a failure carries restic's actual reason
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	// Parse the summary without forwarding subprocess diagnostics.
 	out, err := cmd.Output()
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		logger.Error("backupFiles: restic backup failed for %s: %v — %s", repoPath, err, msg)
-		return 0, fmt.Errorf("restic backup files: %w — %s", err, msg)
+		return 0, fmt.Errorf("restic backup files: %w", err)
 	}
 
 	// restic --json outputs one JSON object per line; the last is the summary
@@ -279,7 +274,7 @@ func (m *Manager) backupFiles(ctx context.Context, repoPath string, env, paths, 
 		_ = json.Unmarshal(lines[len(lines)-1], &summary)
 	}
 
-	logger.Debug("backupFiles: %d bytes added to %s", summary.DataAdded, repoPath)
+	logger.Debug("backupFiles: %d bytes added", summary.DataAdded)
 	return summary.DataAdded, nil
 }
 
@@ -311,10 +306,6 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	)
 	resticCmd.Env = env
 
-	// capture restic stderr for error reporting
-	var resticStderr bytes.Buffer
-	resticCmd.Stderr = &resticStderr
-
 	// stream mysqldump from the MariaDB container via podman exec CLI;
 	// CONTAINER_HOST points the CLI at the correct socket
 	dbContainer := podman.ContainerName(site.Name, "db")
@@ -330,10 +321,6 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	// MYSQL_PWD passed via -e (name only) so the password is in neither the host
 	// nor the container process list (it lives only in this command's env)
 	dumpCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
-
-	// capture dump stderr for error reporting
-	var dumpStderr bytes.Buffer
-	dumpCmd.Stderr = &dumpStderr
 
 	// connect: dumpCmd.Stdout → resticCmd.Stdin
 	resticCmd.Stdin, err = dumpCmd.StdoutPipe()
@@ -351,14 +338,12 @@ func (m *Manager) backupDB(ctx context.Context, site *models.Site, repoPath stri
 	// then start the restic command to read from the dump's stdout
 	if err := resticCmd.Run(); err != nil {
 		dumpCmd.Wait()
-		return fmt.Errorf("backupDB: restic: %w — restic_stderr: %s — dump_stderr: %s",
-			err, resticStderr.String(), dumpStderr.String())
+		return fmt.Errorf("backupDB: restic: %w", err)
 	}
 
 	// wait for the dump command to finish and check for errors
 	if err := dumpCmd.Wait(); err != nil {
-		return fmt.Errorf("backupDB: mysqldump wait: %w — dump_stderr: %s",
-			err, dumpStderr.String())
+		return fmt.Errorf("backupDB: mysqldump wait: %w", err)
 	}
 
 	logger.Debug("backupDB: DB snapshot complete for site %s", site.Name)
@@ -562,10 +547,8 @@ func (m *Manager) restoreDB(ctx context.Context, site *models.Site, repoPath str
 	)
 	mysqlCmd.Env = append(os.Environ(), "CONTAINER_HOST=unix://"+m.podmanSock, "MYSQL_PWD="+rootPass)
 
-	var mysqlStderr bytes.Buffer
-	mysqlCmd.Stderr = &mysqlStderr
 	if err := mysqlCmd.Run(); err != nil {
-		return fmt.Errorf("restoreDB: mariadb: %w — %s", err, mysqlStderr.String())
+		return fmt.Errorf("restoreDB: mariadb: %w", err)
 	}
 
 	logger.Debug("restoreDB: DB restored for site %s from snapshot %s", site.Name, snapID)
@@ -654,12 +637,11 @@ func (m *Manager) forgetPrune(ctx context.Context, repoPath string, env []string
 	cmd.Env = env
 
 	// capture stderr for error reporting
-	if out, err := cmd.CombinedOutput(); err != nil {
-		logger.Error("forgetPrune: %s: %v — %s", repoPath, err, string(out))
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("restic forget: %w", err)
 	}
 
-	logger.Debug("forgetPrune: pruned %s with %sd retention", repoPath, retainDays)
+	logger.Debug("forgetPrune: pruned repository with %sd retention", retainDays)
 	return nil
 }
 
@@ -809,7 +791,7 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 			ID string `json:"id"`
 		}
 		if err := json.Unmarshal(out, &snaps); err != nil || len(snaps) == 0 {
-			logger.Debug("DeleteSnapshot: no snapshots found for tag %s in %s", b.SnapshotID, repoPath)
+			logger.Debug("DeleteSnapshot: no snapshots found for tag %s", b.SnapshotID)
 			return nil
 		}
 
@@ -823,8 +805,7 @@ func (m *Manager) DeleteSnapshot(ctx context.Context, site *models.Site, b *mode
 		cmd.Env = env
 
 		// capture stderr for error reporting
-		if out, err := cmd.CombinedOutput(); err != nil {
-			logger.Error("DeleteSnapshot: forget %s: %v — %s", repoPath, err, string(out))
+		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("restic forget: %w", err)
 		}
 		return nil
@@ -900,7 +881,7 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		}
 	}
 
-	logger.Debug("Export: fileSnapID=%q repoPath=%q", fileSnapID, repoPath)
+	logger.Debug("Export: fileSnapID=%q", fileSnapID)
 
 	// restore the file snapshot to a temp directory — avoids relying on
 	// restic's --archive tar flag which is not available in all versions
@@ -918,13 +899,9 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 	)
 	restoreCmd.Env = env
 
-	// capture stderr for error reporting
-	var restoreStderr bytes.Buffer
-	restoreCmd.Stderr = &restoreStderr
-
 	// run the restic restore command
 	if err := restoreCmd.Run(); err != nil {
-		return fmt.Errorf("export: restic restore: %w — %s", err, restoreStderr.String())
+		return fmt.Errorf("export: restic restore: %w", err)
 	}
 
 	// restic restores to tmpDir + original absolute path, e.g.
@@ -1001,13 +978,9 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		dbCmd.Env = env
 		dbCmd.Stdout = spill
 
-		// capture stderr for error reporting
-		var dbStderr bytes.Buffer
-		dbCmd.Stderr = &dbStderr
-
 		// run the restic dump command, streaming the SQL to the spill file
 		if err := dbCmd.Run(); err != nil {
-			return fmt.Errorf("export: restic dump db: %w — %s", err, dbStderr.String())
+			return fmt.Errorf("export: restic dump db: %w", err)
 		}
 
 		// size the tar entry from the spilled file
