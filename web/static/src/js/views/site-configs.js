@@ -4,6 +4,7 @@
 
 "use strict";
 
+import { exportMigration, importMigration } from '../migration.js';
 import { api } from '../api.js';
 import { confirm } from '../helpers.js';
 import { toast } from '../toast.js';
@@ -28,12 +29,12 @@ export function renderConfigTab(siteId, type, cfg) {
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="${type}" data-site="${siteId}" uk-tooltip="Reset to Defaults">
                         <span uk-icon="refresh"></span>
                     </button>
-                    <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${siteId}/configs/${type}/export" download="${siteId}-config-${type}.csv" uk-tooltip="Export config as CSV">
+                    <button type="button" class="uk-button kp-btn-ghost kp-btn-sm cfg-export" data-site="${siteId}" data-type="${type}" uk-tooltip="Export encrypted configuration">
                         <span uk-icon="download"></span>
-                    </a>
-                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="${type}" data-site="${siteId}" uk-tooltip="Import config from CSV" style="cursor:pointer">
+                    </button>
+                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="${type}" data-site="${siteId}" uk-tooltip="Import encrypted configuration" style="cursor:pointer">
                         <span uk-icon="upload"></span>
-                        <input type="file" class="cfg-import-input" accept=".csv" style="display:none" data-type="${type}" data-site="${siteId}">
+                        <input type="file" class="cfg-import-input" accept=".pnm" style="display:none" data-type="${type}" data-site="${siteId}">
                     </label>
                 </div>
             </div>
@@ -63,12 +64,12 @@ export function renderVarnishTab(siteId, cfg) {
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="5" data-site="${siteId}" uk-tooltip="Reset to Defaults">
                         <span uk-icon="refresh"></span>
                     </button>
-                    <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${siteId}/configs/5/export" download="${siteId}-config-5.csv" uk-tooltip="Export config as CSV">
+                    <button type="button" class="uk-button kp-btn-ghost kp-btn-sm cfg-export" data-site="${siteId}" data-type="5" uk-tooltip="Export encrypted configuration">
                         <span uk-icon="download"></span>
-                    </a>
-                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="5" data-site="${siteId}" uk-tooltip="Import config from CSV" style="cursor:pointer">
+                    </button>
+                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="5" data-site="${siteId}" uk-tooltip="Import encrypted configuration" style="cursor:pointer">
                         <span uk-icon="upload"></span>
-                        <input type="file" class="cfg-import-input" accept=".csv" style="display:none" data-type="5" data-site="${siteId}">
+                        <input type="file" class="cfg-import-input" accept=".pnm" style="display:none" data-type="5" data-site="${siteId}">
                     </label>
                 </div>
             </div>
@@ -108,12 +109,12 @@ export function renderProxyCacheTab(siteId, cfg) {
                     <button class="uk-button kp-btn-ghost kp-btn-sm cfg-reset" data-type="6" data-site="${siteId}" uk-tooltip="Reset to Defaults">
                         <span uk-icon="refresh"></span>
                     </button>
-                    <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/sites/${siteId}/configs/6/export" download="${siteId}-config-6.csv" uk-tooltip="Export config as CSV">
+                    <button type="button" class="uk-button kp-btn-ghost kp-btn-sm cfg-export" data-site="${siteId}" data-type="6" uk-tooltip="Export encrypted configuration">
                         <span uk-icon="download"></span>
-                    </a>
-                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="6" data-site="${siteId}" uk-tooltip="Import config from CSV" style="cursor:pointer">
+                    </button>
+                    <label class="uk-button kp-btn-ghost kp-btn-sm cfg-import-label" data-type="6" data-site="${siteId}" uk-tooltip="Import encrypted configuration" style="cursor:pointer">
                         <span uk-icon="upload"></span>
-                        <input type="file" class="cfg-import-input" accept=".csv" style="display:none" data-type="6" data-site="${siteId}">
+                        <input type="file" class="cfg-import-input" accept=".pnm" style="display:none" data-type="6" data-site="${siteId}">
                     </label>
                 </div>
             </div>
@@ -215,7 +216,17 @@ export function wireConfigTabs(root, siteId, signal) {
         } catch (e) { toast.error(e.message); }
     }, { signal });
 
-    // handle csv import file selection
+    root.addEventListener("click", async (e) => {
+        const btn = e.target.closest(".cfg-export");
+        if (!btn) return;
+        const { site, type } = btn.dataset;
+        try {
+            await exportMigration(`/api/sites/${site}/configs/${type}/export`, `${site}-config-${type}.pnm`);
+        } catch (err) {
+            toast.error(err.message);
+        }
+    }, { signal });
+
     root.addEventListener("change", async (e) => {
         const input = e.target.closest(".cfg-import-input");
         if (!input) return;
@@ -223,13 +234,9 @@ export function wireConfigTabs(root, siteId, signal) {
         const file = input.files[0];
         if (!file) return;
 
-        const fd = new FormData();
-        fd.append("file", file);
-
         try {
-            const res = await fetch(`/api/sites/${site}/configs/${type}/import`, { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
-            const data = res.status === 204 ? null : await res.json().catch(() => null);
-            if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+            const data = await importMigration(`/api/sites/${site}/configs/${type}/import`, file);
+            if (!data) return;
 
             // refresh the grid rows with the returned merged config
             const grid = root.querySelector(`.cfg-rows[data-type="${type}"]`);

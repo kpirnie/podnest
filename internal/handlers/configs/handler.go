@@ -7,13 +7,10 @@ package configs
 import (
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"podnest/internal/apiutil"
 	"podnest/internal/audit"
@@ -58,7 +55,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 	api.HandleFunc("GET /sites/{id}/configs", h.apiGetConfigs)
 	api.HandleFunc("PUT /sites/{id}/configs/{type}", h.apiUpdateConfig)
 	api.HandleFunc("POST /sites/{id}/configs/{type}/reset", h.apiResetConfig)
-	api.HandleFunc("GET /sites/{id}/configs/{type}/export", h.apiExportConfig)
+	api.HandleFunc("POST /sites/{id}/configs/{type}/export", h.apiExportConfig)
 	api.HandleFunc("POST /sites/{id}/configs/{type}/import", h.apiImportConfig)
 }
 
@@ -69,7 +66,7 @@ func (h *Handler) sitesBase() string {
 func (h *Handler) apiGetConfigs(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site for config fetch: %v", r)
+		logger.Error("failed to resolve site for config fetch")
 		return
 	}
 
@@ -84,20 +81,8 @@ func (h *Handler) apiGetConfigs(w http.ResponseWriter, r *http.Request) {
 		out = make(map[int]map[string]string)
 	}
 
-	// Remove sensitive configuration values before returning the response.
-	for _, settings := range out {
-		for key := range settings {
-			normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
-
-			if strings.Contains(normalized, "password") ||
-				strings.Contains(normalized, "passwd") ||
-				normalized == "pass" ||
-				normalized == "pwd" ||
-				strings.HasSuffix(normalized, "_pass") ||
-				strings.HasSuffix(normalized, "_pwd") {
-				delete(settings, key)
-			}
-		}
+	for kind, settings := range out {
+		out[kind] = publicConfig(settings)
 	}
 
 	// SMTP configuration is managed through its dedicated API.
@@ -108,10 +93,40 @@ func (h *Handler) apiGetConfigs(w http.ResponseWriter, r *http.Request) {
 	apiutil.JSON(w, http.StatusOK, out)
 }
 
+// publicConfig removes credentials at the HTTP boundary so renderers still
+// receive the full configuration.
+func publicConfig(values map[string]string) map[string]string {
+	out := make(map[string]string, len(values))
+	for key, value := range values {
+		if !logger.CredentialName(key) && !logger.CredentialURL(value) {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func preserveConfigCredentials(incoming, existing map[string]string) {
+	for key, value := range existing {
+		if logger.CredentialName(key) || logger.CredentialURL(value) {
+			if _, ok := incoming[key]; !ok {
+				incoming[key] = value
+			}
+		}
+	}
+}
+
+func discardConfigPlaceholders(values map[string]string) {
+	for key, value := range values {
+		if value == "*****" || value == "••••••••" {
+			delete(values, key)
+		}
+	}
+}
+
 func (h *Handler) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site for config update: %v", r)
+		logger.Error("failed to resolve site for config update")
 		return
 	}
 
@@ -135,7 +150,17 @@ func (h *Handler) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// capture prior state before mutating
+	if incoming == nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "configuration must be an object")
+		return
+	}
+	discardConfigPlaceholders(incoming)
+	existing, err := db.GetConfigsBySiteAndType(h.DB, site.ID, configType)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not load configuration")
+		return
+	}
+	preserveConfigCredentials(incoming, existing)
 	prior := db.SnapshotConfigs(h.DB, site.ID, configType)
 
 	if err := db.SetConfigs(h.DB, site.ID, configType, incoming); err != nil {
@@ -161,13 +186,13 @@ func (h *Handler) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("updated config for site %d type %d", site.ID, configType)
-	apiutil.JSON(w, http.StatusOK, incoming)
+	apiutil.JSON(w, http.StatusOK, publicConfig(incoming))
 }
 
 func (h *Handler) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 	site, ok := h.Resolve(w, r)
 	if !ok {
-		logger.Error("failed to resolve site for config reset: %v", r)
+		logger.Error("failed to resolve site for config reset")
 		return
 	}
 
@@ -186,6 +211,12 @@ func (h *Handler) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 		defaults = config.NginxDefaultsForSiteType(site.SiteType)
 	}
 
+	existing, err := db.GetConfigsBySiteAndType(h.DB, site.ID, configType)
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not load configuration")
+		return
+	}
+	preserveConfigCredentials(defaults, existing)
 	prior := db.SnapshotConfigs(h.DB, site.ID, configType)
 
 	if err := db.SetConfigs(h.DB, site.ID, configType, defaults); err != nil {
@@ -210,7 +241,7 @@ func (h *Handler) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("reset site config for site %d type %d", site.ID, configType)
-	apiutil.JSON(w, http.StatusOK, defaults)
+	apiutil.JSON(w, http.StatusOK, publicConfig(defaults))
 }
 
 func (h *Handler) apiExportConfig(w http.ResponseWriter, r *http.Request) {
@@ -232,18 +263,8 @@ func (h *Handler) apiExportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := fmt.Sprintf("%s-config-%d.csv", site.Name, configType)
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-
-	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"key", "value"})
-	for k, v := range kv {
-		_ = cw.Write([]string{k, v})
-	}
-	cw.Flush()
-
-	logger.Debug("apiExportConfig: exported config for site %d type %d", site.ID, configType)
+	filename := fmt.Sprintf("%s-config-%d.pnm", site.Name, configType)
+	apiutil.ExportMigration(w, r, filename, fmt.Sprintf("config:%d", configType), kv)
 }
 
 func (h *Handler) apiImportConfig(w http.ResponseWriter, r *http.Request) {
@@ -258,58 +279,20 @@ func (h *Handler) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		logger.Error("apiImportConfig: failed to parse multipart form: %v", err)
-		apiutil.Error(w, http.StatusBadRequest, err)
-		return
-	}
-
-	f, _, err := r.FormFile("file")
+	values, err := apiutil.ImportMigration(w, r, fmt.Sprintf("config:%d", configType))
 	if err != nil {
-		logger.Error("apiImportConfig: missing file field: %v", err)
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "file field is required")
+		apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	defer f.Close()
-
 	base, err := db.GetConfigsBySiteAndType(h.DB, site.ID, configType)
 	if err != nil {
 		logger.Error("apiImportConfig: failed to fetch existing config: %v", err)
-		apiutil.Error(w, http.StatusInternalServerError, err)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not load configuration")
 		return
 	}
-	if base == nil {
-		base = make(map[string]string)
-	}
-
-	cr := csv.NewReader(io.LimitReader(f, 1<<20))
-	cr.FieldsPerRecord = 2
-	cr.Comment = '#'
-
-	header, err := cr.Read()
-	if err != nil {
-		logger.Error("apiImportConfig: failed to read CSV: %v", err)
-		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid CSV")
-		return
-	}
-	if strings.ToLower(header[0]) != "key" {
-		if header[1] == "" {
-			delete(base, header[0])
-		} else {
-			base[header[0]] = header[1]
-		}
-	}
-
-	for {
-		rec, err := cr.Read()
-		if err != nil {
-			break
-		}
-		if rec[1] == "" {
-			delete(base, rec[0])
-		} else {
-			base[rec[0]] = rec[1]
-		}
+	discardConfigPlaceholders(values)
+	for key, value := range values {
+		base[key] = value
 	}
 
 	if configType == models.ConfigProxyCache {
@@ -340,7 +323,7 @@ func (h *Handler) apiImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Debug("apiImportConfig: imported config for site %d type %d", site.ID, configType)
-	apiutil.JSON(w, http.StatusOK, base)
+	apiutil.JSON(w, http.StatusOK, publicConfig(base))
 }
 
 func (h *Handler) rewriteConfigFile(site *models.Site, configType int, blob string) error {
