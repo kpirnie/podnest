@@ -86,6 +86,16 @@ Changes to active SMTP settings refresh the site’s PHP or app container. Stopp
 - `gcc` and `musl-dev` (CGO is required for SQLite)
 - Podman installed and accessible via socket on the host
 
+### Restoring the instance key at startup
+
+If PodNest reports that `PN_SECRET_KEY` is missing, malformed, or cannot unlock
+the database, restore the original value from the service account's
+`~/.pn.env` or your protected copy. Set the environment file's mode to
+`0600` and give the service account ownership. Use a newly generated key for
+a fresh database or a legacy installation that has never stored encrypted
+credentials. Once the database has been bound to a key, keep that original
+value, including the case of its hexadecimal characters.
+
 ### Podman Socket Notes
 
 PodNest communicates with the host Podman daemon through its Unix socket. The socket path varies depending on how Podman is running:
@@ -128,7 +138,7 @@ pdnctl install --user USER --version latest|dev|beta
 
 The timezone is pulled from the host, site data lives at `/home/<user>/sites`, and the install details are stored in `/etc/podnest/install.json` — every command after `install` needs zero flags.
 
-`install` also generates `/home/<user>/.pn.env`, holding the `PN_SECRET_KEY` used to encrypt node link private keys and per-site SMTP passwords. Back up the key separately from the site data. If you lose it, paired child nodes must be re-paired and saved SMTP passwords must be re-entered.
+`install` also generates `/home/<user>/.pn.env`, holding the `PN_SECRET_KEY` used to encrypt node link private keys and per-site SMTP passwords. Keep a protected copy of the original key separately from the site data. Startup rejects missing or malformed keys and checks that the supplied key matches an initialized database.
 
 Once running, the UI is available at: `http://your-host:9000`
 
@@ -220,7 +230,7 @@ podman-compose up -d
 
 **Volume mount and the `:z` label** — the `:z` flag on the `/opt/podnest` mount is a SELinux relabeling option required on systems running SELinux in enforcing mode. It is safe to omit on systems that do not use SELinux.
 
-**Secret key (`PN_SECRET_KEY`)** — PodNest uses this key to encrypt node link private keys and per-site SMTP passwords at rest. Keep the env file outside the `/opt/podnest` volume, so a copy of the data directory alone does not carry it. Create it once before the first start:
+**Secret key (`PN_SECRET_KEY`)** — PodNest requires a random 32-byte key encoded as 64 hexadecimal characters. It encrypts node link private keys and per-site SMTP passwords at rest. Keep the env file outside the `/opt/podnest` volume, so a copy of the data directory alone does not carry it. Create it once before the first start:
 
 ```bash
 printf 'PN_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" > ~/.pn.env
@@ -381,6 +391,33 @@ podman logs podnest 2>&1 | grep "default admin created"
 If you used `podnest init`, log in with the credentials you provided during setup. The `serve` command only auto-seeds the generated admin account above if no admin account exists at startup.
 
 ---
+
+## Application recovery snapshots
+
+The maintenance commands below run in the PodNest application context with its
+normal instance key and application path. Configure the S3 bucket and
+credentials in PodNest first. Use an HTTPS endpoint and allow the node to read
+and write objects in its prefix under `disaster-recovery/`. Application
+retention also needs permission to delete Restic objects in that prefix.
+
+- Run `podnest dr-enroll --app-path /opt/podnest` from an interactive terminal.
+  Use a strong passphrase and keep it in an independent password manager or
+  recovery vault. Each node has a random ID. Enrollment writes its encrypted
+  key envelope to `disaster-recovery/<node-id>/key` and verifies it by reading
+  it back from S3. Re-running enrollment verifies the existing envelope.
+- Run `podnest dr-snapshot-application --app-path /opt/podnest` to create an
+  application checkpoint. It captures the SQLite database, certificates, SFTP
+  host keys and SSH directives, and malware quarantine. The database contains
+  settings and credentials, including values encrypted with the original
+  instance key.
+- The command verifies the new Restic snapshot before updating
+  `latest-application.json` and retiring older application snapshots. If
+  verification fails, the previous published checkpoint remains available.
+  A retention error after publication indicates that older snapshots may need
+  cleanup on the next run.
+- These checkpoints cover application state only. Continue using ordinary site
+  backups for hosted files and databases. Full-host restore, scheduling, and
+  recovery controls are pending.
 
 ## Directory Structure
 

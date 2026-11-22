@@ -28,9 +28,11 @@ import (
 )
 
 const (
-	drKeyVersion = "PNDR1"
-	drKeySaltLen = 16
-	drKeyTextLen = 64
+	drKeyVersion     = "PNDR1"
+	drKeySaltLen     = 16
+	drKeyTextLen     = 64
+	drKeyHeaderLen   = len(drKeyVersion) + drKeySaltLen
+	drKeyEnvelopeLen = drKeyHeaderLen + 12 + drKeyTextLen + 16
 )
 
 var errDRKey = errors.New("cannot unlock recovery key with the supplied recovery passphrase")
@@ -73,17 +75,15 @@ func sealDRKey(id, key, passphrase string) ([]byte, error) {
 }
 
 func openDRKey(id, passphrase string, sealed []byte) (string, error) {
-	const headerLen = len(drKeyVersion) + drKeySaltLen
-	const envelopeLen = headerLen + 12 + drKeyTextLen + 16
 	if !validDRIdentity(id) || !validDRPassphrase(passphrase) ||
-		len(sealed) != envelopeLen || string(sealed[:len(drKeyVersion)]) != drKeyVersion {
+		len(sealed) != drKeyEnvelopeLen || string(sealed[:len(drKeyVersion)]) != drKeyVersion {
 		return "", errDRKey
 	}
-	aead, err := drKeyAEAD(passphrase, sealed[len(drKeyVersion):headerLen])
+	aead, err := drKeyAEAD(passphrase, sealed[len(drKeyVersion):drKeyHeaderLen])
 	if err != nil {
 		return "", errDRKey
 	}
-	plain, err := aead.Open(nil, nil, sealed[headerLen:], []byte(drKeyVersion+":"+id))
+	plain, err := aead.Open(nil, nil, sealed[drKeyHeaderLen:], []byte(drKeyVersion+":"+id))
 	defer clear(plain)
 	if err != nil || !validDRKey(string(plain)) {
 		return "", errDRKey
@@ -152,7 +152,7 @@ func (m *Manager) EnrollDRKey(ctx context.Context, passphrase string) (string, e
 		}
 		// Conditional creation ensures concurrent enrollment cannot replace the
 		// only copy recoverable with the first administrator's passphrase.
-		resp, err := drS3Request(ctx, s3, http.MethodPut, path, sealed)
+		resp, err := drS3Request(ctx, s3, http.MethodPut, path, sealed, true)
 		if err != nil {
 			return "", err
 		}
@@ -173,6 +173,16 @@ func (m *Manager) EnrollDRKey(ctx context.Context, passphrase string) (string, e
 	}
 	if !hmac.Equal([]byte(unlocked), []byte(key)) {
 		return "", errors.New("recovery envelope belongs to a different instance key")
+	}
+	digest := sha256.Sum256(sealed)
+	if _, err := m.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS kppn_dr_escrow (
+		id INTEGER PRIMARY KEY CHECK (id = 1), digest BLOB NOT NULL
+	)`); err != nil {
+		return "", err
+	}
+	if _, err := m.db.ExecContext(ctx, `INSERT INTO kppn_dr_escrow (id, digest) VALUES (1, ?)
+		ON CONFLICT (id) DO UPDATE SET digest = excluded.digest`, digest[:]); err != nil {
+		return "", err
 	}
 	return id, nil
 }
@@ -216,7 +226,7 @@ func validateDRS3(s3 *s3Config) error {
 }
 
 func readDRKey(ctx context.Context, s3 *s3Config, path string) ([]byte, error) {
-	resp, err := drS3Request(ctx, s3, http.MethodGet, path, nil)
+	resp, err := drS3Request(ctx, s3, http.MethodGet, path, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +246,7 @@ func readDRKey(ctx context.Context, s3 *s3Config, path string) ([]byte, error) {
 	return sealed, nil
 }
 
-func drS3Request(ctx context.Context, s3 *s3Config, method, path string, data []byte) (*http.Response, error) {
+func drS3Request(ctx context.Context, s3 *s3Config, method, path string, data []byte, createOnly bool) (*http.Response, error) {
 	u, err := s3ObjectURL(s3, path, nil)
 	if err != nil {
 		return nil, errors.New("cannot construct disaster recovery S3 request")
@@ -245,7 +255,7 @@ func drS3Request(ctx context.Context, s3 *s3Config, method, path string, data []
 	if err != nil {
 		return nil, errors.New("cannot construct disaster recovery S3 request")
 	}
-	if method == http.MethodPut {
+	if createOnly {
 		req.Header.Set("If-None-Match", "*")
 	}
 	hash := sha256.Sum256(data)
