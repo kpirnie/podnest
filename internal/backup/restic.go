@@ -929,6 +929,15 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 			return fmt.Errorf("export: rel path: %w", err)
 		}
 
+		// The destination keeps its own Podnest environment during import.
+		// Avoid duplicating the source site's managed credentials in the download.
+		if rel == ".env" {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		// build the tar header from the file's metadata
 		hdr, err := tar.FileInfoHeader(info, "")
 		if err != nil {
