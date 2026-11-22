@@ -441,9 +441,19 @@ func (s *Server) reconcilePods() {
 		return
 	}
 
+	restore, err := s.backup.DRRestoreStatus(s.ctx)
+	if err != nil {
+		logger.Warn("reconcilePods: failed to read site recovery state: %v", err)
+		return
+	}
+	recoveryBlocked := make(map[int64]bool)
+	for _, site := range restore.Sites {
+		recoveryBlocked[site.SiteID] = site.State != "restored"
+	}
+
 	states := make(map[string][]models.ContainerHealth, len(sites))
 	for _, site := range sites {
-		if !modules.TypeModule(site.SiteType).HasPod() {
+		if recoveryBlocked[site.ID] || s.backup.IsDRSiteRestoring(site.ID) || !modules.TypeModule(site.SiteType).HasPod() {
 			continue
 		}
 

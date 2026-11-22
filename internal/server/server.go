@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"podnest/internal/audit"
@@ -78,6 +79,8 @@ type Server struct {
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	drRun    chan struct{}
+	restoreRun chan drRestoreRequest
+	restoreBusy atomic.Bool
 }
 
 // New initialises the server and registers all routes
@@ -98,6 +101,7 @@ func New(cfg Config) *Server {
 		ctx:      ctx,
 		cancel:   cancel,
 		drRun:    make(chan struct{}),
+		restoreRun: make(chan drRestoreRequest),
 	}
 
 	s.http = &http.Server{
@@ -128,6 +132,24 @@ func (s *Server) Start() error {
 	s.sftp.SetHostAppPath(s.cfg.HostAppPath)
 	s.fail2ban.SetHostAppPath(s.cfg.HostAppPath)
 	s.malware.SetHostAppPath(s.cfg.HostAppPath)
+
+	restoreStatus, err := s.backup.DRRestoreStatus(s.ctx)
+	if err != nil {
+		return fmt.Errorf("read disaster recovery lock: %w", err)
+	}
+	if restoreStatus.Active || len(restoreStatus.Sites) > 0 {
+		if err := s.startRecoverySocket(); err != nil {
+			return err
+		}
+	}
+	if restoreStatus.Active {
+		s.http.Addr = fmt.Sprintf("127.0.0.1:%d", s.cfg.Port)
+		s.http.Handler = s.recoveryRoutes()
+		s.goTracked(s.recoveryWorker)
+		return s.http.ListenAndServe()
+	}
+
+	s.goTracked(s.recoveryWorker)
 
 	// ensure the sites directory exists before the SFTP container tries to mount it
 	if err := os.MkdirAll(s.cfg.AppPath+"/sites", 0755); err != nil {

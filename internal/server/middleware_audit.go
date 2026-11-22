@@ -5,6 +5,7 @@
 package server
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -119,5 +120,12 @@ func isNumeric(s string) bool {
 // auditClientIP resolves the real client IP via the proxy's trusted-proxy logic
 // so audit-log attribution cannot be spoofed through X-Forwarded-For.
 func (s *Server) auditClientIP(r *http.Request) string {
-	return s.proxy.ClientIP(r)
+	if s.proxy != nil {
+		return s.proxy.ClientIP(r)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

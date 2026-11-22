@@ -164,6 +164,12 @@ func (h *Handler) ResolveSite(w http.ResponseWriter, r *http.Request) (*models.S
 		}
 	}
 
+	if r.Method != http.MethodGet && r.Method != http.MethodHead &&
+		h.Backup != nil && h.Backup.IsDRSiteRestoring(site.ID) {
+		apiutil.ErrorMsg(w, http.StatusConflict, "site recovery is active")
+		return nil, false
+	}
+
 	// log the resolved site for debugging purposes and return it
 	logger.Debug("resolved site %d: %s", site.ID, site.Name)
 	return site, true

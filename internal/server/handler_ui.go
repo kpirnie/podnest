@@ -91,7 +91,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		// resolve the real client IP via the proxy's trusted-proxy logic so the
 		// per-IP lockout cannot be bypassed by spoofing X-Forwarded-For
-		ip := s.proxy.ClientIP(r)
+		ip := s.auditClientIP(r)
 
 		// reject the request immediately if this IP is locked out
 		if !auth.LoginAllowed(ip) {
@@ -218,7 +218,7 @@ func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 
 		// resolve the real client IP via the proxy's trusted-proxy logic so the
 		// per-IP lockout cannot be bypassed by spoofing X-Forwarded-For
-		ip := s.proxy.ClientIP(r)
+		ip := s.auditClientIP(r)
 		if !auth.LoginAllowed(ip) {
 			audit.Record(models.AuditEntry{
 				IP:      ip,

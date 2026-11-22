@@ -82,6 +82,11 @@ export async function viewDisasterRecovery(root) {
                     <button type="button" class="kp-btn-secondary" id="kp-dr-refresh">Refresh</button>
                 </div>
             </form>
+            <div class="uk-margin-top" id="kp-dr-restore" hidden>
+                <h4 class="kp-view-title">Site restoration</h4>
+                <button type="button" class="kp-btn-secondary" id="kp-dr-retry-all">Retry Failed Sites</button>
+                <ul class="uk-list uk-list-divider" id="kp-dr-restore-sites"></ul>
+            </div>
             ${lastVerified !== "None" ? `
                 <div class="uk-margin-top" id="kp-dr-archives">
                     <h4 class="kp-view-title">Recovery archives</h4>
@@ -120,6 +125,8 @@ export async function viewDisasterRecovery(root) {
         }
     });
 
+    updateRestoreResults(panel);
+
     const run = panel.querySelector("#kp-dr-run");
     run.addEventListener("click", async () => {
         run.disabled = true;
@@ -133,4 +140,47 @@ export async function viewDisasterRecovery(root) {
         }
     });
     if (status.result === "running") setTimeout(refresh, 5000);
+}
+
+async function updateRestoreResults(panel) {
+    if (!panel.isConnected) return;
+    const endpoint = path + "/restore";
+    const section = panel.querySelector("#kp-dr-restore");
+    const list = panel.querySelector("#kp-dr-restore-sites");
+    const all = panel.querySelector("#kp-dr-retry-all");
+    const retry = async (site) => {
+        try {
+            await api.post(endpoint, { retry: true, site });
+            toast.success("Site recovery queued");
+            await updateRestoreResults(panel);
+        } catch (err) {
+            toast.error(err.message);
+        }
+    };
+    try {
+        const status = await api.get(endpoint);
+        if (!panel.isConnected || !status || !status.sites.length) return;
+        section.hidden = false;
+        all.disabled = status.busy || !status.sites.some(site => ["failed", "running"].includes(site.state));
+        all.onclick = () => retry("");
+        list.replaceChildren(...status.sites.map(site => {
+            const item = document.createElement("li");
+            const label = document.createElement("span");
+            label.textContent = site.name + " — " + site.state + (site.error ? ": " + site.error : "");
+            item.append(label);
+            if (["failed", "running"].includes(site.state)) {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "kp-btn-secondary kp-btn-sm uk-margin-small-left";
+                button.textContent = "Retry";
+                button.disabled = status.busy;
+                button.onclick = () => retry(site.name);
+                item.append(button);
+            }
+            return item;
+        }));
+        if (status.busy) setTimeout(() => updateRestoreResults(panel), 3000);
+    } catch (err) {
+        if (panel.isConnected) toast.error(err.message);
+    }
 }
