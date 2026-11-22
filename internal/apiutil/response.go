@@ -20,7 +20,7 @@ func JSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		logger.Error("failed to encode JSON response: %v", err)
 	}
-	logger.Debug("api json response %d: %v", status, v)
+	logger.Debug("api json response %d", status)
 }
 
 // Error writes a JSON error response derived from an error value.
