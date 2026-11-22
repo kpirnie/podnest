@@ -185,7 +185,7 @@ func (h *Handler) apiImportSettings(w http.ResponseWriter, r *http.Request) {
 			apiutil.ErrorMsg(w, http.StatusBadRequest, "migration package contains an unknown setting")
 			return
 		}
-		if value == "••••••••" || value == "*****" {
+		if maskedSetting(value) {
 			delete(values, key)
 		}
 	}
@@ -218,9 +218,7 @@ func (h *Handler) apiGetBackupSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		out[k] = val
 	}
-	if out["s3_secret_key"] != "" {
-		out["s3_secret_key"] = "••••••••"
-	}
+	maskSettings(out, "s3_access_key", "s3_secret_key")
 	logger.Debug("apiGetBackupSettings: retrieved backup settings")
 	apiutil.JSON(w, http.StatusOK, out)
 }
@@ -243,7 +241,7 @@ func (h *Handler) apiUpdateBackupSettings(w http.ResponseWriter, r *http.Request
 			logger.Warn("apiUpdateBackupSettings: rejected unknown key '%s'", k)
 			continue
 		}
-		if k == "s3_secret_key" && v == "••••••••" {
+		if (k == "s3_access_key" || k == "s3_secret_key") && maskedSetting(v) {
 			continue
 		}
 		if err := db.SetSetting(h.DB, k, v); err != nil {
@@ -377,6 +375,7 @@ func (h *Handler) apiGetResourceSettings(w http.ResponseWriter, r *http.Request)
 		}
 		out[k] = val
 	}
+	maskSettings(out, "resource_webhook_url")
 	logger.Debug("apiGetResourceSettings: retrieved resource watcher settings")
 	apiutil.JSON(w, http.StatusOK, out)
 }
@@ -399,6 +398,9 @@ func (h *Handler) apiUpdateResourceSettings(w http.ResponseWriter, r *http.Reque
 	for k, v := range incoming {
 		if !allowed[k] {
 			logger.Warn("apiUpdateResourceSettings: rejected unknown key '%s'", k)
+			continue
+		}
+		if k == "resource_webhook_url" && maskedSetting(v) {
 			continue
 		}
 		if err := db.SetSetting(h.DB, k, v); err != nil {
@@ -501,13 +503,7 @@ func (h *Handler) apiGetNotificationSettings(w http.ResponseWriter, r *http.Requ
 		out[k] = val
 	}
 
-	// mask secrets before returning to the client
-	if out["smtp_password"] != "" {
-		out["smtp_password"] = "••••••••"
-	}
-	if out["aws_secret_key"] != "" {
-		out["aws_secret_key"] = "••••••••"
-	}
+	maskSettings(out, "smtp_password", "aws_access_key", "aws_secret_key")
 
 	logger.Debug("apiGetNotificationSettings: retrieved notification settings")
 	apiutil.JSON(w, http.StatusOK, out)
@@ -533,7 +529,7 @@ func (h *Handler) apiUpdateNotificationSettings(w http.ResponseWriter, r *http.R
 			continue
 		}
 		// skip masked placeholder values — preserve the existing secret in DB
-		if (k == "smtp_password" || k == "aws_secret_key") && v == "••••••••" {
+		if (k == "smtp_password" || k == "aws_access_key" || k == "aws_secret_key") && maskedSetting(v) {
 			continue
 		}
 		if err := db.SetSetting(h.DB, k, v); err != nil {
@@ -545,4 +541,16 @@ func (h *Handler) apiUpdateNotificationSettings(w http.ResponseWriter, r *http.R
 
 	logger.Debug("apiUpdateNotificationSettings: updated notification settings")
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func maskSettings(values map[string]string, keys ...string) {
+	for _, key := range keys {
+		if values[key] != "" {
+			values[key] = "••••••••"
+		}
+	}
+}
+
+func maskedSetting(value string) bool {
+	return value == "••••••••" || value == "*****"
 }

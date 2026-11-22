@@ -147,8 +147,8 @@ export async function viewSettings(root, params = {}) {
                         <div class="uk-width-1-1">
                             <label class="kp-label" for="resource-webhook-url">Webhook URL <span class="kp-muted">(optional)</span></label>
                             <input class="uk-input kp-input kp-mono" id="resource-webhook-url" name="resource_webhook_url" type="url"
-                                placeholder="https://hooks.example.com/notify"
-                                value="${resourceSettings.resource_webhook_url ?? ''}">
+                                placeholder="${resourceSettings.resource_webhook_url ? 'saved — enter a URL to replace it' : 'https://hooks.example.com/notify'}">
+                            <label><input type="checkbox" name="clear_webhook"> Remove saved webhook</label>
                             <p class="kp-muted uk-text-small uk-margin-small-top">
                                 HTTP POST with JSON payload on threshold breach and resolution. Compatible with Uptime Kuma, PagerDuty, Slack, etc.
                             </p>
@@ -246,8 +246,7 @@ export async function viewSettings(root, params = {}) {
                                     id="s3-access-key"
                                     name="s3_access_key"
                                     type="text"
-                                    placeholder="AKIAIOSFODNN7EXAMPLE"
-                                    value="${backupSettings.s3_access_key ?? ''}">
+                                    placeholder="${backupSettings.s3_access_key ? 'saved — enter a new ID to change' : 'AKIAIOSFODNN7EXAMPLE'}">
                             </div>
                             <div class="uk-margin">
                                 <label class="kp-label" for="s3-secret-key">Secret Access Key</label>
@@ -326,7 +325,7 @@ export async function viewSettings(root, params = {}) {
                             <div class="uk-margin">
                                 <label class="kp-label" for="aws-access-key">Access Key ID</label>
                                 <input class="uk-input kp-input kp-mono" id="aws-access-key" name="aws_access_key" type="text"
-                                    placeholder="AKIAIOSFODNN7EXAMPLE" value="${notificationSettings.aws_access_key ?? ''}">
+                                    placeholder="${notificationSettings.aws_access_key ? 'saved — enter a new ID to change' : 'AKIAIOSFODNN7EXAMPLE'}">
                             </div>
                             <div class="uk-margin">
                                 <label class="kp-label" for="aws-secret-key">Secret Access Key</label>
@@ -476,9 +475,12 @@ export async function viewSettings(root, params = {}) {
             resource_ram_reserve_gb: fd.get("resource_ram_reserve_gb").trim(),
             resource_poll_interval: fd.get("resource_poll_interval").trim(),
             resource_throttle_pct: fd.get("resource_throttle_pct").trim(),
-            resource_webhook_url: fd.get("resource_webhook_url").trim(),
             shutdown_job_timeout: fd.get("shutdown_job_timeout").trim(),
         };
+
+        const webhook = fd.get("resource_webhook_url").trim();
+        if (fd.has("clear_webhook")) resourceBody.resource_webhook_url = "";
+        else if (webhook) resourceBody.resource_webhook_url = webhook;
 
         try {
             await api.put("/settings", body);
@@ -508,10 +510,11 @@ export async function viewSettings(root, params = {}) {
             s3_endpoint: fd.get("s3_endpoint").trim(),
             s3_bucket: fd.get("s3_bucket").trim(),
             s3_region: fd.get("s3_region").trim(),
-            s3_access_key: fd.get("s3_access_key").trim(),
         };
 
         // only include the secret key if the user actually typed a new value
+        const accessKey = fd.get("s3_access_key").trim();
+        if (accessKey) body.s3_access_key = accessKey;
         const secret = fd.get("s3_secret_key").trim();
         if (secret) body.s3_secret_key = secret;
 
@@ -541,7 +544,6 @@ export async function viewSettings(root, params = {}) {
             smtp_username: fd.get("smtp_username").trim(),
             smtp_from: fd.get("smtp_from").trim(),
             smtp_tls: fd.get("smtp_tls") ? "true" : "false",
-            aws_access_key: fd.get("aws_access_key").trim(),
             aws_region: fd.get("aws_region").trim(),
             aws_sns_sender_id: fd.get("aws_sns_sender_id").trim(),
         };
@@ -549,6 +551,8 @@ export async function viewSettings(root, params = {}) {
         // only include secrets if a new value was entered
         const pass = fd.get("smtp_password").trim();
         if (pass) body.smtp_password = pass;
+        const accessKey = fd.get("aws_access_key").trim();
+        if (accessKey) body.aws_access_key = accessKey;
         const secret = fd.get("aws_secret_key").trim();
         if (secret) body.aws_secret_key = secret;
 
