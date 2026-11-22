@@ -87,20 +87,20 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		u, err := url.ParseRequestURI(routes[i].Upstream)
 		if err != nil || routes[i].Upstream == "" {
-			logger.Error("apiUpdateRPRoutes: invalid upstream '%s' at index %d: %v", routes[i].Upstream, i, err)
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid upstream URL: "+routes[i].Upstream)
+			logger.Error("apiUpdateRPRoutes: invalid upstream URL at index %d", i)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid upstream URL")
 			return
 		}
 		// the RP layer proxies over http.Transport, which registers no other
 		// scheme — anything else stores fine and then fails at dial
 		if u.Scheme != "http" && u.Scheme != "https" {
 			logger.Error("apiUpdateRPRoutes: unsupported upstream scheme '%s' at index %d", u.Scheme, i)
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must be http or https: "+routes[i].Upstream)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must be http or https")
 			return
 		}
 		if u.Host == "" {
-			logger.Error("apiUpdateRPRoutes: upstream missing host at index %d: '%s'", i, routes[i].Upstream)
-			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must include a host: "+routes[i].Upstream)
+			logger.Error("apiUpdateRPRoutes: upstream missing host at index %d", i)
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream must include a host")
 			return
 		}
 
@@ -111,9 +111,9 @@ func (h *Handler) apiUpdateRPRoutes(w http.ResponseWriter, r *http.Request) {
 			var dnsErr *net.DNSError
 			switch {
 			case errors.Is(err, proxy.ErrForeignUpstream):
-				apiutil.ErrorMsg(w, http.StatusForbidden, "upstream targets a site you do not own: "+routes[i].Upstream)
+				apiutil.ErrorMsg(w, http.StatusForbidden, "upstream targets a site you do not own: ")
 			case errors.As(err, &dnsErr):
-				apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream host could not be resolved: "+routes[i].Upstream)
+				apiutil.ErrorMsg(w, http.StatusBadRequest, "upstream host could not be resolved: ")
 			default:
 				apiutil.Error(w, http.StatusInternalServerError, err)
 			}

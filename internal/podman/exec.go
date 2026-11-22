@@ -41,7 +41,7 @@ func (c *Client) ExecCapture(ctx context.Context, container, user string, cmd []
 		ID string `json:"Id"`
 	}
 	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+container+"/exec", spec, &execResp); err != nil {
-		logger.Error("ExecCapture: failed to create exec in %s ", container)
+		logger.Error("ExecCapture: failed to create exec in %s", container)
 		return nil, err
 	}
 
@@ -139,7 +139,7 @@ func (c *Client) ExecStream(ctx context.Context, container, user string, cmd []s
 		ID string `json:"Id"`
 	}
 	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+container+"/exec", spec, &execResp); err != nil {
-		logger.Error("ExecStream: failed to create exec in %s ", container)
+		logger.Error("ExecStream: failed to create exec in %s", container)
 		return nil, err
 	}
 
@@ -244,7 +244,7 @@ func (c *Client) ExecStreamOut(ctx context.Context, container, user string, cmd 
 		ID string `json:"Id"`
 	}
 	if err := c.post(ctx, "/v4.0.0/libpod/containers/"+container+"/exec", spec, &execResp); err != nil {
-		logger.Error("ExecStreamOut: failed to create exec in %s ", container)
+		logger.Error("ExecStreamOut: failed to create exec in %s", container)
 		return nil, err
 	}
 

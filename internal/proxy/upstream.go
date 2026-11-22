@@ -57,19 +57,19 @@ func newUpstreamPool(routes []upstreamEntry) (*UpstreamPool, error) {
 		parsed, err := url.Parse(r.upstream)
 		if err != nil {
 			// skip the bad upstream but keep the rest of the pool alive
-			logger.Error("upstream: skipping unparseable upstream '%s': %v", r.upstream, err)
+			logger.Error("upstream: skipping unparseable upstream URL")
 			continue
 		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			logger.Error("upstream: skipping upstream '%s': unsupported scheme '%s'", r.upstream, parsed.Scheme)
+			logger.Error("upstream: skipping upstream with unsupported scheme")
 			continue
 		}
 		if parsed.Host == "" {
-			logger.Error("upstream: skipping upstream '%s': missing host", r.upstream)
+			logger.Error("upstream: skipping upstream with missing host")
 			continue
 		}
 		if r.skipVerify && parsed.Scheme == "https" {
-			logger.Warn("upstream: TLS verification is disabled for '%s' by route setting", r.upstream)
+			logger.Warn("upstream: TLS verification is disabled for host %q by route setting", parsed.Host)
 		}
 		target := UpstreamTarget{URL: parsed, PassHost: r.passHost, SkipVerify: r.skipVerify}
 		if ap, err := netip.ParseAddrPort(upstreamTLSKey(parsed)); err == nil {

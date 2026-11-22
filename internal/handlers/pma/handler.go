@@ -219,7 +219,7 @@ func (h *Handler) handlePMA(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(loc, "/") && !strings.HasPrefix(loc, "//") && !strings.HasPrefix(loc, `/\`) && !strings.HasPrefix(loc, "/pma/") {
 					loc = fmt.Sprintf("/pma/%d%s", id, loc)
 					resp.Header.Set("Location", loc)
-					logger.Debug("PMA proxy rewrote Location header: %s", loc)
+					logger.Debug("PMA proxy rewrote a redirect")
 				}
 			}
 
