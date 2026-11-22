@@ -103,8 +103,6 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 			return err
 		}
 
-		// container create specs carry DB_ROOT_PASS, DB_PASS, and REDIS_PASS as env values
-		logger.DebugSafe("POST %s with body: %s", path, string(b))
 		r = bytes.NewReader(b)
 	}
 
@@ -130,28 +128,25 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 
 	// check for non-2xx status codes
 	if err := checkStatus(resp); err != nil {
-		logger.Error("Podman API returned error for POST %s: %v", path, err)
+		logger.Error("Podman API returned status %d for POST %s", resp.StatusCode, path)
 		return err
 	}
 
 	// decode the JSON response if an output struct was provided
 	if out != nil {
 
-		// read the entire response body for debugging
+		// Handle successful responses with an optional body.
 		b, err := io.ReadAll(resp.Body)
 		if err != nil {
 			logger.Error("Failed to read response body for POST %s: %v", path, err)
 			return err
 		}
 
-		// log the raw response body for debugging
 		if len(b) == 0 {
 			logger.Debug("POST %s completed successfully with empty response body", path)
 			return nil
 		}
 
-		// log the raw response body for debugging
-		logger.DebugSafe("POST %s response body: %s", path, string(b))
 		return json.Unmarshal(b, out)
 	}
 
