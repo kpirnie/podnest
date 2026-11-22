@@ -20,6 +20,7 @@ import (
 	"podnest/internal/cron"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+	"podnest/internal/models"
 	"podnest/internal/malware"
 	"podnest/internal/modules/platform/fail2ban"
 	"podnest/internal/notifications"
@@ -76,6 +77,7 @@ type Server struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
+	drRun    chan struct{}
 }
 
 // New initialises the server and registers all routes
@@ -95,6 +97,7 @@ func New(cfg Config) *Server {
 		audit:    audit.New(cfg.DB),
 		ctx:      ctx,
 		cancel:   cancel,
+		drRun:    make(chan struct{}),
 	}
 
 	s.http = &http.Server{
@@ -197,6 +200,7 @@ func (s *Server) Start() error {
 
 	// start the backup scheduler
 	s.backup.StartScheduler(s.ctx)
+	s.goTracked(s.disasterRecoveryWorker)
 
 	// start the per-site cron scheduler
 	s.cron.Start(s.ctx)
@@ -314,6 +318,14 @@ func (s *Server) ensureGlobalContainers() {
 // email and SMS alerts to every user with the corresponding notification flag enabled.
 // subject/body are used for email; message is the SMS payload (keep under 160 chars).
 func (s *Server) notify(subject, body, message string) {
+	s.dispatchNotification(subject, body, message, false)
+}
+
+func (s *Server) notifyAdmins(subject, body, message string) {
+	s.dispatchNotification(subject, body, message, true)
+}
+
+func (s *Server) dispatchNotification(subject, body, message string, adminsOnly bool) {
 	users, err := db.GetAllUsers(s.cfg.DB)
 	if err != nil {
 		logger.Error("notify: failed to load users: %v", err)
@@ -335,6 +347,15 @@ func (s *Server) notify(subject, body, message string) {
 	smtpCfg := notifications.SMTPConfigFromMap(smtpMap)
 	snsCfg := notifications.SNSConfigFromMap(snsMap)
 
+	if adminsOnly {
+		admins := users[:0]
+		for _, user := range users {
+			if user.Role == models.RoleAdmin {
+				admins = append(admins, user)
+			}
+		}
+		users = admins
+	}
 	notifications.Dispatch(users, smtpCfg, snsCfg, subject, body, message)
 }
 

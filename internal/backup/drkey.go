@@ -12,6 +12,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -273,4 +274,26 @@ func drS3Request(ctx context.Context, s3 *s3Config, method, path string, data []
 		return nil, errors.New("disaster recovery S3 request failed")
 	}
 	return resp, nil
+}
+
+// DRReadiness reports whether S3 is configured and key enrollment is recorded.
+func (m *Manager) DRReadiness(ctx context.Context) (configured, enrolled bool, err error) {
+	s3, err := m.loadS3Config()
+	if err != nil {
+		return false, false, err
+	}
+	if validateDRS3(s3) != nil {
+		return false, false, nil
+	}
+	var table int
+	if err := m.db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema
+		WHERE type = 'table' AND name = 'kppn_dr_escrow'`).Scan(&table); err != nil || table == 0 {
+		return true, false, err
+	}
+	var digest []byte
+	err = m.db.QueryRowContext(ctx, `SELECT digest FROM kppn_dr_escrow WHERE id = 1`).Scan(&digest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, false, nil
+	}
+	return true, len(digest) == sha256.Size, err
 }

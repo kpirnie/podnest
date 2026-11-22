@@ -160,6 +160,11 @@ func (m *Manager) runScheduledBackups(ctx context.Context) {
 	logger.Debug("scheduler: backup run complete")
 }
 
+// NextScheduledRun resolves the next run for a backup or recovery schedule.
+func NextScheduledRun(expr string, from time.Time) (time.Time, error) {
+	return nextCronTime(expr, from)
+}
+
 // nextCronTime returns the next time after 'from' that satisfies the 5-field
 // cron expression (minute hour dom month dow).
 // Supported field syntax: * | N | */N | N-M | N,M,...
