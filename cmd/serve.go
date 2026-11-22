@@ -57,6 +57,9 @@ func init() {
 
 // runServe is the main function that executes when "podnest serve" is called. It initializes logging, checks the Podman socket, opens/migrates the database, and starts the server.
 func runServe(cmd *cobra.Command, args []string) error {
+	if err := db.ValidateNodeKey(); err != nil {
+		return err
+	}
 
 	// initialize the logger
 	logger.Init()
@@ -98,9 +101,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if err := db.VerifyNodeKey(database); err != nil {
+		return err
+	}
+
 	// encrypt any node link private keys still at rest in plaintext
 	if err := db.SealNodeKeys(database); err != nil {
-		logger.Error("failed to seal node keys: %v", err)
+		return fmt.Errorf("failed to seal node keys: %w", err)
 	}
 
 	// seed the default admin user if it doesn't exist

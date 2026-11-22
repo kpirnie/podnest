@@ -7,15 +7,19 @@ package db
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"podnest/internal/logger"
+	"podnest/internal/models"
 )
 
 // NodeKeyEnv names the environment variable holding the secret that encrypts
@@ -30,14 +34,93 @@ const nodeKeyPrefix = "enc:nk1:"
 // because PN_SECRET_KEY is missing or no longer matches.
 var ErrNodeKeyUnavailable = errors.New("node key unavailable: PN_SECRET_KEY missing or changed")
 
-// nodeKEK derives the 256-bit key-encryption key from PN_SECRET_KEY, or nil when unset.
+// ValidateNodeKey checks the installation key without exposing it in errors.
+func ValidateNodeKey() error {
+	if nodeKEK() == nil {
+		return fmt.Errorf("PN_SECRET_KEY must contain 64 hexadecimal characters from a random 32-byte key; restore the original key from ~/.pn.env or your protected copy. Generate a new key only for an installation without encrypted state")
+	}
+	return nil
+}
+
+// nodeKEK preserves the original text-based derivation used by stored secrets.
 func nodeKEK() []byte {
 	v := strings.TrimSpace(os.Getenv(NodeKeyEnv))
-	if v == "" {
+	if len(v) != 64 {
+		return nil
+	}
+	if _, err := hex.DecodeString(v); err != nil {
 		return nil
 	}
 	sum := sha256.Sum256([]byte(v))
 	return sum[:]
+}
+
+// VerifyNodeKey checks existing encrypted credentials before binding the database
+// to its key. The verifier also detects replacement when no credentials exist.
+func VerifyNodeKey(database *sql.DB) error {
+	if err := ValidateNodeKey(); err != nil {
+		return err
+	}
+	mismatch := errors.New("PN_SECRET_KEY cannot unlock this database; restore the original key from ~/.pn.env or your protected copy")
+	tx, err := database.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS kppn_instance_key (
+		id INTEGER PRIMARY KEY CHECK (id = 1), verifier BLOB NOT NULL
+	)`); err != nil {
+		return err
+	}
+	mac := hmac.New(sha256.New, nodeKEK())
+	mac.Write([]byte("podnest:instance-key-verifier:v1"))
+	expected := mac.Sum(nil)
+	var stored []byte
+	switch err := tx.QueryRow(`SELECT verifier FROM kppn_instance_key WHERE id = 1`).Scan(&stored); err {
+	case nil:
+		if !hmac.Equal(stored, expected) {
+			return mismatch
+		}
+		return tx.Commit()
+	case sql.ErrNoRows:
+	default:
+		return err
+	}
+
+	rows, err := tx.Query(`SELECT 0, priv_key FROM kppn_nodes WHERE substr(priv_key, 1, ?) = ?
+		UNION ALL SELECT 0, new_key FROM kppn_node_ops WHERE substr(new_key, 1, ?) = ?
+		UNION ALL SELECT site_id, value FROM kppn_configs WHERE type = ? AND key = 'password'`,
+		len(nodeKeyPrefix), nodeKeyPrefix, len(nodeKeyPrefix), nodeKeyPrefix, models.ConfigSMTP)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var siteID int64
+		var value string
+		if err := rows.Scan(&siteID, &value); err != nil {
+			return err
+		}
+		if siteID == 0 {
+			_, err = openNodeKey(value)
+		} else {
+			_, err = openSMTPPassword(siteID, value)
+		}
+		if err != nil {
+			return mismatch
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO kppn_instance_key (id, verifier) VALUES (1, ?)`, expected); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // nodeGCM returns the AES-256-GCM AEAD for the given key-encryption key.

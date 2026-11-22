@@ -33,6 +33,9 @@ func init() {
 
 // runInit executes the initialization process, including database setup and admin account creation.
 func runInit(cmd *cobra.Command, args []string) error {
+	if err := db.ValidateNodeKey(); err != nil {
+		return err
+	}
 
 	// make sure the database directory exists and has appropriate permissions (0750)
 	if err := os.MkdirAll(filepath.Dir(dbPath()), 0750); err != nil {
@@ -51,6 +54,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// run database migrations to set up the necessary tables and schema
 	if err := db.Migrate(database); err != nil {
 		logger.Error("database migration failed: %v", err)
+		return err
+	}
+
+	if err := db.VerifyNodeKey(database); err != nil {
 		return err
 	}
 
