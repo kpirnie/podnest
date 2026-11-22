@@ -881,6 +881,11 @@ func (m *Manager) Export(ctx context.Context, site *models.Site, backup *models.
 		}
 	}
 
+	return m.exportSiteSnapshots(ctx, site, backup, repoPath, env, fileSnapID, dbSnapID, w)
+}
+
+func (m *Manager) exportSiteSnapshots(ctx context.Context, site *models.Site, backup *models.Backup, repoPath string, env []string, fileSnapID, dbSnapID string, w io.Writer) error {
+
 	logger.Debug("Export: fileSnapID=%q", fileSnapID)
 
 	// restore the file snapshot to a temp directory — avoids relying on

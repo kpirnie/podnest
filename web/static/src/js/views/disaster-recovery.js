@@ -82,9 +82,28 @@ export async function viewDisasterRecovery(root) {
                     <button type="button" class="kp-btn-secondary" id="kp-dr-refresh">Refresh</button>
                 </div>
             </form>
+            ${lastVerified !== "None" ? `
+                <div class="uk-margin-top" id="kp-dr-archives">
+                    <h4 class="kp-view-title">Recovery archives</h4>
+                    <a href="/api/disaster-recovery/download">Download application archive</a>
+                    <ul class="uk-list" id="kp-dr-site-archives"></ul>
+                </div>` : ""}
         </section>`;
 
     const panel = root.querySelector("[data-dr-panel]");
+    const archives = panel.querySelector("#kp-dr-site-archives");
+    if (archives && status.result !== "running") {
+        api.get(path + "/archives").then((sites) => {
+            for (const site of sites ?? []) {
+                const item = document.createElement("li");
+                const link = document.createElement("a");
+                link.href = "/api/disaster-recovery/download/" + encodeURIComponent(site.id);
+                link.textContent = "Download " + site.name;
+                item.append(link);
+                archives.append(item);
+            }
+        }).catch(() => { archives.textContent = "The site archive list is temporarily unavailable."; });
+    }
     const refresh = () => {
         if (panel.isConnected) viewDisasterRecovery(root).catch((err) => toast.error(err.message));
     };

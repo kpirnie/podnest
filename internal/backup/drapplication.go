@@ -57,18 +57,11 @@ func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) 
 
 	// Hold an advisory lock across staging, verification and retention. The
 	// kernel releases it if the process is killed.
-	work := filepath.Join(m.appPath, ".disaster-recovery")
-	if err := os.MkdirAll(work, 0700); err != nil {
-		return "", err
-	}
-	lock, err := os.OpenFile(filepath.Join(work, "lock"), os.O_CREATE|os.O_RDWR, 0600)
+	work, lock, err := m.lockDRStorage(unix.LOCK_EX)
 	if err != nil {
 		return "", err
 	}
 	defer lock.Close()
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		return "", fmt.Errorf("acquire disaster recovery lock: %w", err)
-	}
 
 	dir, err := os.MkdirTemp(work, "stage-")
 	if err != nil {
@@ -135,6 +128,22 @@ func (m *Manager) SnapshotDisasterRecovery(ctx context.Context) (string, error) 
 		return summary.ID, fmt.Errorf("verified snapshot %s published; disaster recovery retention failed: %w", summary.ID, retentionErr)
 	}
 	return summary.ID, nil
+}
+
+func (m *Manager) lockDRStorage(mode int) (string, *os.File, error) {
+	work := filepath.Join(m.appPath, ".disaster-recovery")
+	if err := os.MkdirAll(work, 0700); err != nil {
+		return "", nil, err
+	}
+	lock, err := os.OpenFile(filepath.Join(work, "lock"), os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW, 0600)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := unix.Flock(int(lock.Fd()), mode|unix.LOCK_NB); err != nil {
+		lock.Close()
+		return "", nil, fmt.Errorf("acquire disaster recovery lock: %w", err)
+	}
+	return work, lock, nil
 }
 
 type drApplicationPoint struct {

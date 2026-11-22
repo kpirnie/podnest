@@ -231,6 +231,9 @@ func (s *Server) routes() http.Handler {
 	api.Handle("GET /disaster-recovery", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDisasterRecovery)))
 	api.Handle("PUT /disaster-recovery", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSetDisasterRecovery)))
 	api.Handle("POST /disaster-recovery/run", auth.RequireAPIAdmin(http.HandlerFunc(s.apiRunDisasterRecovery)))
+	api.Handle("GET /disaster-recovery/archives", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRSiteArchives)))
+	api.Handle("GET /disaster-recovery/download", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRDownload)))
+	api.Handle("GET /disaster-recovery/download/{site}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRDownload)))
 
 	// panel self-update — queues an update for the host's root pdnctl timer
 	api.Handle("POST /settings/panel-update", auth.RequireAPIAdmin(http.HandlerFunc(s.apiQueuePanelUpdate)))

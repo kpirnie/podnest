@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -187,5 +189,50 @@ func (s *Server) finishDisasterRecovery(status drStatus) {
 		s.notifyAdmins("PodNest disaster recovery failed",
 			fmt.Sprintf("Server: %s\n\n%s", hostname, status.Error),
 			"PodNest disaster recovery failed. Check the recovery status for details.")
+	}
+}
+
+func (s *Server) apiDRSiteArchives(w http.ResponseWriter, r *http.Request) {
+	archives, err := s.backup.ListDRSiteArchives(r.Context())
+	if err != nil {
+		apiutil.ErrorMsg(w, http.StatusServiceUnavailable, "could not read the latest recovery manifest")
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, archives)
+}
+
+type drDownloadWriter struct {
+	http.ResponseWriter
+	filename string
+	started  bool
+}
+
+func (w *drDownloadWriter) ExportReady() {
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": w.filename}))
+	w.Header().Set("Cache-Control", "no-store")
+	w.started = true
+}
+
+func (s *Server) apiDRDownload(w http.ResponseWriter, r *http.Request) {
+	download := &drDownloadWriter{ResponseWriter: w, filename: "podnest-application.tar.gz"}
+	var err error
+	if raw := r.PathValue("site"); raw != "" {
+		id, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || id <= 0 {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid site ID")
+			return
+		}
+		download.filename = fmt.Sprintf("podnest-site-%d.tar.gz", id)
+		err = s.backup.ExportDRSite(r.Context(), id, download)
+	} else {
+		err = s.backup.ExportDRApplication(r.Context(), download)
+	}
+	if err != nil {
+		logger.Warn("disaster recovery archive export: %v", err)
+		if download.started {
+			panic(http.ErrAbortHandler)
+		}
+		apiutil.ErrorMsg(w, http.StatusServiceUnavailable, "the recovery archive could not be prepared")
 	}
 }
