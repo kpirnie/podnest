@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/netip"
 	"podnest/internal/logger"
-	"strings"
 	"time"
 )
 
@@ -217,10 +216,8 @@ func checkStatus(resp *http.Response) error {
 		return nil
 	}
 
-	// read the response body for error details
-	body, _ := io.ReadAll(resp.Body)
-	logger.Error("Podman API error %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	return fmt.Errorf("podman API error %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	// Podman can echo container environment variables and command arguments.
+	return fmt.Errorf("podman API error %d", resp.StatusCode)
 }
 
 // StreamRaw is a public wrapper around the stream method for streaming endpoints
