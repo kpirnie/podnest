@@ -37,7 +37,7 @@ func loadState() (*State, error) {
 	b, err := os.ReadFile(statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("no install found at %s — run: pdnctl install --user <username> --version <latest|dev|beta>", statePath)
+			return nil, fmt.Errorf("no install found at %s — run: pdnctl install --user <username> --version <latest|dev|beta>: %w", statePath, err)
 		}
 		return nil, err
 	}

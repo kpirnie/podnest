@@ -40,7 +40,7 @@ var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install PodNest rootless under a dedicated user",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runInstall()
+		return runInstall(nil)
 	},
 }
 
@@ -107,7 +107,7 @@ func validVersion(v string) bool {
 }
 
 // runInstall carries out the full fresh setup
-func runInstall() error {
+func runInstall(recoverData func(*user.User, int, string) error) error {
 	if !validVersion(installVersion) {
 		return fmt.Errorf("--version must be one of: latest, dev, beta")
 	}
@@ -165,7 +165,11 @@ func runInstall() error {
 	if err := os.MkdirAll(dataPath, 0o755); err != nil {
 		return err
 	}
-	if err := run("chown", "-R", installUser+":"+installUser, dataPath); err != nil {
+	chownArgs := []string{installUser + ":" + installUser, dataPath}
+	if recoverData == nil {
+		chownArgs = append([]string{"-R"}, chownArgs...)
+	}
+	if err := run("chown", chownArgs...); err != nil {
 		return err
 	}
 
@@ -211,8 +215,13 @@ func runInstall() error {
 	fmt.Println("OK:", sock)
 
 	// 4. secret env file + podnest user service unit
+	if recoverData != nil {
+		if err := recoverData(u, uid, dataPath); err != nil {
+			return err
+		}
+	}
 	if err := ensurePNEnv(installUser, home); err != nil {
-		return fmt.Errorf("could not create %s: %w", pnEnvName, err)
+		return fmt.Errorf("could not prepare %s: %w", pnEnvName, err)
 	}
 	unitPath := home + "/.config/systemd/user/podnest.service"
 	if err := os.WriteFile(unitPath, []byte(buildUnit(installVersion, tz)), 0o644); err != nil {
@@ -250,6 +259,9 @@ func runInstall() error {
 		return err
 	}
 
+	if recoverData != nil {
+		return nil
+	}
 	fmt.Printf(`
 >>> Done. PodNest is running — UI at http://<this-host>:%d
 
@@ -283,6 +295,7 @@ ExecStart=/usr/bin/podman run \
     -v %%h/sites:/opt/podnest:z \
     --tmpfs /tmp \
     --env-file %%h/.pn.env \
+    -e PN_SERVER_HOST=%%H \
     -e TZ=%s \
     -e LOG_LEVEL=INFO \
     ghcr.io/kpirnie/podnest:%s serve --app-path /opt/podnest --port %d --socket /run/podman/podman.sock
