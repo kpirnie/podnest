@@ -1322,17 +1322,20 @@ ${p}`:p),s.hide(),d.success(`${p} added to blacklist \u2014 save to apply`)})}ca
             Blacklist always wins \u2014 except for IP rules, where a whitelist match
             in either scope allows the request outright.
         </p>
-        ${Ee(null)}`,Ke(e),Ve(e,t.tab),se(e)}function Ps(e){return new Promise(t=>{let s=document.createElement("dialog");s.innerHTML=`
-            <form method="dialog" class="uk-padding-small">
-                <label class="uk-form-label">
-                    <span></span>
-                    <input class="uk-input" type="password" required autofocus>
-                </label>
-                <div class="uk-margin-small-top">
-                    <button class="uk-button uk-button-default" value="cancel" formnovalidate>Cancel</button>
-                    <button class="uk-button uk-button-primary" value="submit">Continue</button>
-                </div>
-            </form>`,s.querySelector("span").textContent=e,s.addEventListener("close",()=>{t(s.returnValue==="submit"?s.querySelector("input").value:null),s.remove()},{once:!0}),document.body.append(s),s.showModal()})}async function Is(e,t,s){let a={"X-CSRF-Token":window.KP?.csrf??""};s&&(a["Content-Type"]=s);let n=await fetch(e,{method:"POST",headers:a,body:t});if(!n.ok){let i=await n.json().catch(()=>null);throw new Error(i?.error||`HTTP ${n.status}`)}return n}async function me(e,t){let s=await Ps("Export passphrase (at least 12 characters)");if(s===null)return;let a=await Is(e,JSON.stringify({passphrase:s}),"application/json"),n=URL.createObjectURL(await a.blob()),i=document.createElement("a");i.href=n,i.download=t,i.click(),setTimeout(()=>URL.revokeObjectURL(n),1e3)}async function ke(e,t){let s=await Ps("Import passphrase");if(s===null)return null;let a=new FormData;return a.append("file",t),a.append("passphrase",s),(await Is(e,a)).json()}function ii(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';case"expired":return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Expired certificate"></span>';case"mismatch":return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Certificate does not match this domain"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function _s(e){let t=document.getElementById("admin-domain-ssl");if(!(!t||!e))try{let s=await k.get(`/ssl-status?domain=${encodeURIComponent(e)}`);t.outerHTML=ii(s.status)}catch{}}var Bs=["general","backups","notifications","malware"];function Je(e){return`
+        ${Ee(null)}`,Ke(e),Ve(e,t.tab),se(e)}function Ps(e,t){return new Promise(s=>{let a=document.createElement("div");a.className="uk-flex-top",a.innerHTML=`
+            <div class="uk-modal-dialog uk-modal-body kp-modal uk-margin-auto-vertical" style="max-width:420px">
+                <h3 class="uk-modal-title"></h3>
+                <form class="uk-form-stacked">
+                    <label class="kp-label">
+                        <span></span>
+                        <input class="uk-input kp-input" type="password" autocomplete="off" required autofocus>
+                    </label>
+                    <div class="uk-flex uk-flex-right uk-margin-top" style="gap:8px">
+                        <button class="uk-button kp-btn-ghost uk-modal-close" type="button">Cancel</button>
+                        <button class="uk-button kp-btn-primary" type="submit">Continue</button>
+                    </div>
+                </form>
+            </div>`,a.querySelector(".uk-modal-title").textContent=e,a.querySelector("label span").textContent=t;let n=a.querySelector("input");document.body.append(a);let i=UIkit.modal(a),o=null;a.querySelector("form").addEventListener("submit",l=>{l.preventDefault(),o=n.value,n.value="",i.hide()}),a.addEventListener("hidden",()=>{n.value="",i.$destroy(!0),s(o)},{once:!0}),i.show()})}async function Is(e,t,s){let a={"X-CSRF-Token":window.KP?.csrf??""};s&&(a["Content-Type"]=s);let n=await fetch(e,{method:"POST",headers:a,body:t});if(!n.ok){let i=await n.json().catch(()=>null);throw new Error(i?.error||`HTTP ${n.status}`)}return n}async function me(e,t){let s=await Ps("Export Encrypted Settings","Passphrase (at least 12 characters)");if(s===null)return;let a=await Is(e,JSON.stringify({passphrase:s}),"application/json"),n=URL.createObjectURL(await a.blob()),i=document.createElement("a");i.href=n,i.download=t,i.click(),setTimeout(()=>URL.revokeObjectURL(n),1e3)}async function ke(e,t){let s=await Ps("Import Encrypted Settings","Passphrase");if(s===null)return null;let a=new FormData;return a.append("file",t),a.append("passphrase",s),(await Is(e,a)).json()}function ii(e){switch(e){case"valid":return'<span class="kp-ssl-valid" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Valid SSL certificate"></span>';case"self-signed":return'<span class="kp-ssl-self-signed" uk-icon="icon: lock; ratio: 0.85" uk-tooltip="Self-signed certificate"></span>';case"expired":return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Expired certificate"></span>';case"mismatch":return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="Certificate does not match this domain"></span>';default:return'<span class="kp-ssl-none" uk-icon="icon: warning; ratio: 0.85" uk-tooltip="No SSL certificate"></span>'}}async function _s(e){let t=document.getElementById("admin-domain-ssl");if(!(!t||!e))try{let s=await k.get(`/ssl-status?domain=${encodeURIComponent(e)}`);t.outerHTML=ii(s.status)}catch{}}var Bs=["general","backups","notifications","malware"];function Je(e){return`
         <div class="uk-flex" style="gap:8px">
             <button type="button" class="uk-button kp-btn-ghost kp-btn-sm kp-settings-export" data-group="${e}" uk-tooltip="Export encrypted settings">
                 <span uk-icon="download"></span>
