@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 
@@ -167,7 +168,6 @@ func (h *Handler) apiUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	blob, err := json.Marshal(incoming)
 	if err != nil {
 		logger.Error("failed to marshal config for site %d type %d: %v", site.ID, configType, err)
@@ -212,6 +212,8 @@ func (h *Handler) apiResetConfig(w http.ResponseWriter, r *http.Request) {
 		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not load configuration")
 		return
 	}
+	// The defaults maps are shared across sites. Never add site credentials to them.
+	defaults = maps.Clone(defaults)
 	preserveConfigCredentials(defaults, existing)
 
 	if err := db.SetConfigs(h.DB, site.ID, configType, defaults); err != nil {
