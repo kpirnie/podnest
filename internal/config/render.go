@@ -127,8 +127,8 @@ http {
     real_ip_recursive on;
 
     log_format main '$remote_addr - $remote_user [$time_local] '
-                    '"$request" $status $body_bytes_sent '
-                    '"$http_referer" "$http_user_agent" '
+                    '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                    '"-" "$http_user_agent" '
                     'rt=$request_time';
     access_log 	/dev/stdout main;
 
