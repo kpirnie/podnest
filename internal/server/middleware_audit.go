@@ -5,9 +5,6 @@
 package server
 
 import (
-	"bytes"
-	"encoding/json"
-	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -25,20 +22,8 @@ type auditStatusWriter struct {
 	status int
 }
 
-// auditMaxBodyBytes is the maximum request body size captured for the details field.
-const auditMaxBodyBytes = 1 << 20 // 1 MB
-
 // numericSegment matches path segments that are purely numeric (e.g. /sites/42/configs)
 var numericSegment = regexp.MustCompile(`/\d+`)
-
-// auditBodySkipSuffixes are route suffixes whose request bodies must not be
-// captured, including multipart uploads and SMTP credentials.
-var auditBodySkipSuffixes = []string{
-	"/files/upload",
-	"/backups/import/upload",
-	"/smtp/password",
-	"/smtp/test",
-}
 
 // auditMiddleware is the outermost wrapper for /api/ — it records every non-GET/HEAD
 // request (including unauthenticated ones) to the audit log.
@@ -69,16 +54,6 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			username = user.UName
 		}
 
-		// cap the captured body for the audit record, but restore the full
-		// stream to the handler — the unread remainder is chained on after the
-		// captured prefix so large uploads are not silently truncated
-		var bodyBytes []byte
-		if r.Body != nil && !skipAuditBody(r.URL.Path) {
-			limited := io.LimitReader(r.Body, auditMaxBodyBytes)
-			bodyBytes, _ = io.ReadAll(limited)
-			r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), r.Body))
-		}
-
 		// wrap the ResponseWriter to capture the status code after the handler runs
 		sw := &auditStatusWriter{ResponseWriter: w, status: http.StatusOK}
 
@@ -94,9 +69,6 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		// parse target type and id from the path segments
 		targetType, targetID := parseTarget(r.URL.Path)
 
-		// build the details blob: masked body + query string
-		details := buildDetails(bodyBytes, r.URL.RawQuery)
-
 		audit.Record(models.AuditEntry{
 			UID:        uid,
 			Username:   username,
@@ -107,7 +79,6 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			TargetType: targetType,
 			TargetID:   targetID,
 			Status:     sw.status,
-			Details:    details,
 			PriorState: priorState,
 			NewState:   newState,
 		})
@@ -151,40 +122,8 @@ func isNumeric(s string) bool {
 	return err == nil
 }
 
-// buildDetails marshals the request body and query string into a single JSON blob.
-// Masking is applied by audit.Record before the entry hits the channel.
-func buildDetails(body []byte, rawQuery string) string {
-	m := make(map[string]interface{})
-	if len(body) > 0 {
-		var parsed interface{}
-		if err := json.Unmarshal(body, &parsed); err == nil {
-			m["body"] = parsed
-		} else {
-			m["body"] = string(body)
-		}
-	}
-	if rawQuery != "" {
-		m["query"] = rawQuery
-	}
-	if len(m) == 0 {
-		return ""
-	}
-	b, _ := json.Marshal(m)
-	return string(b)
-}
-
 // auditClientIP resolves the real client IP via the proxy's trusted-proxy logic
 // so audit-log attribution cannot be spoofed through X-Forwarded-For.
 func (s *Server) auditClientIP(r *http.Request) string {
 	return s.proxy.ClientIP(r)
-}
-
-// skipAuditBody reports whether the request body should be left uncaptured.
-func skipAuditBody(path string) bool {
-	for _, s := range auditBodySkipSuffixes {
-		if strings.HasSuffix(path, s) {
-			return true
-		}
-	}
-	return false
 }
