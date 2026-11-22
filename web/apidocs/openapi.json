@@ -1598,19 +1598,58 @@
       }
     },
     "/settings/export": {
-      "get": {
+      "post": {
         "tags": [
           "Settings"
         ],
-        "summary": "Get export",
-        "operationId": "get_settings_export",
+        "summary": "Export encrypted settings group",
+        "description": "Requires an authenticated session and the X-CSRF-Token header.",
+        "operationId": "post_settings_export",
+        "parameters": [
+          {
+            "name": "group",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "general",
+                "backups",
+                "notifications",
+                "malware"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "passphrase"
+                ],
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "description": "12 to 1024 UTF-8 bytes."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Encrypted .pnm attachment",
             "content": {
-              "application/json": {
+              "application/octet-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/Success"
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -1663,18 +1702,55 @@
         "tags": [
           "Settings"
         ],
-        "summary": "Create import",
+        "summary": "Import encrypted settings group",
+        "description": "Requires an authenticated session and the X-CSRF-Token header.",
         "operationId": "post_settings_import",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
+        "parameters": [
+          {
+            "name": "group",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "general",
+                "backups",
+                "notifications",
+                "malware"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "passphrase",
+                  "file"
+                ],
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "description": "12 to 1024 UTF-8 bytes."
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Encrypted .pnm package of the same scope."
+                  }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings imported"
           },
           "400": {
             "description": "Bad request",
@@ -1716,18 +1792,6 @@
               }
             }
           }
-        },
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          },
-          "description": "TODO: document request body."
         }
       }
     },
@@ -4654,19 +4718,63 @@
       }
     },
     "/sites/{id}/configs/{type}/export": {
-      "get": {
+      "post": {
         "tags": [
           "Configs"
         ],
-        "summary": "Get export",
-        "operationId": "get_sites_id_configs_type_export",
+        "summary": "Export encrypted site configuration",
+        "description": "Requires an authenticated session and the X-CSRF-Token header.",
+        "operationId": "post_sites_id_configs_type_export",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "passphrase"
+                ],
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "description": "12 to 1024 UTF-8 bytes."
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Encrypted .pnm attachment",
             "content": {
-              "application/json": {
+              "application/octet-stream": {
                 "schema": {
-                  "$ref": "#/components/schemas/Success"
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4711,27 +4819,7 @@
               }
             }
           }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Site ID (or user ID under the Users tag).",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "in": "path",
-            "required": true,
-            "description": "Config type key (e.g. nginx, php).",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ]
+        }
       }
     },
     "/sites/{id}/configs/{type}/import": {
@@ -4739,18 +4827,60 @@
         "tags": [
           "Configs"
         ],
-        "summary": "Create import",
+        "summary": "Import encrypted site configuration",
+        "description": "Requires an authenticated session and the X-CSRF-Token header.",
         "operationId": "post_sites_id_configs_type_import",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Success"
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "passphrase",
+                  "file"
+                ],
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "description": "12 to 1024 UTF-8 bytes."
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Encrypted .pnm package of the same scope."
+                  }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings imported"
           },
           "400": {
             "description": "Bad request",
@@ -4792,38 +4922,6 @@
               }
             }
           }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "description": "Site ID (or user ID under the Users tag).",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "in": "path",
-            "required": true,
-            "description": "Config type key (e.g. nginx, php).",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          },
-          "description": "TODO: document request body."
         }
       }
     },
@@ -9450,6 +9548,138 @@
             }
           },
           "description": "TODO: document request body."
+        }
+      }
+    },
+    "/sites/{id}/smtp/export": {
+      "post": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Export encrypted site SMTP",
+        "description": "Requires an authenticated session and the X-CSRF-Token header.",
+        "operationId": "post_sites_id_smtp_export",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "passphrase"
+                ],
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "description": "12 to 1024 UTF-8 bytes."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Encrypted .pnm attachment",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or package"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/sites/{id}/smtp/import": {
+      "post": {
+        "tags": [
+          "Outbound SMTP"
+        ],
+        "summary": "Import encrypted site SMTP",
+        "description": "Requires an authenticated session and the X-CSRF-Token header.",
+        "operationId": "post_sites_id_smtp_import",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "passphrase",
+                  "file"
+                ],
+                "properties": {
+                  "passphrase": {
+                    "type": "string",
+                    "format": "password",
+                    "writeOnly": true,
+                    "description": "12 to 1024 UTF-8 bytes."
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Encrypted .pnm package of the same scope."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings imported"
+          },
+          "400": {
+            "description": "Invalid request or package"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not found"
+          }
         }
       }
     },
