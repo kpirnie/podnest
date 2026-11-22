@@ -305,13 +305,13 @@ func (s *Server) dispatchWebhook(url string, payload map[string]any) {
 		}
 		req, err := http.NewRequestWithContext(s.ctx, http.MethodPost, url, bytes.NewReader(b))
 		if err != nil {
-			logger.Error("dispatchWebhook: request: %v", err)
+			logger.Error("dispatchWebhook: could not create request")
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := webhookClient.Do(req)
 		if err != nil {
-			logger.Error("dispatchWebhook: POST %s: %v", url, err)
+			logger.Error("dispatchWebhook: POST failed")
 			return
 		}
 		defer resp.Body.Close()
@@ -319,6 +319,6 @@ func (s *Server) dispatchWebhook(url string, payload map[string]any) {
 		// drain a bounded amount so the connection is reusable without letting a
 		// hostile receiver stream an unbounded body into the process
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, webhookMaxRespBytes))
-		logger.Debug("dispatchWebhook: POST %s → %d", url, resp.StatusCode)
+		logger.Debug("dispatchWebhook: POST status %d", resp.StatusCode)
 	})
 }
