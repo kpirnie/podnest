@@ -160,3 +160,25 @@ func SetTrustedProxiesAuto(db *sql.DB, value string) error {
 func SetTrustedProxiesCustom(db *sql.DB, value string) error {
 	return SetSetting(db, "trusted_proxies_custom", value)
 }
+
+// SetSettings applies a settings import atomically.
+func SetSettings(database *sql.DB, values map[string]string) error {
+	tx, err := database.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	now := time.Now().UTC()
+	for key, value := range values {
+		if _, err := tx.Exec(`
+			INSERT INTO kppn_settings (key, value, updated)
+			VALUES (?, ?, ?)
+			ON CONFLICT (key) DO UPDATE SET value=excluded.value, updated=excluded.updated`,
+			key, value, now,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

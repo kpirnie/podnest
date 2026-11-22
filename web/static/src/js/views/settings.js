@@ -4,6 +4,7 @@
 
 "use strict";
 
+import { exportMigration, importMigration } from "../migration.js";
 import { api } from "../api.js";
 import { errorState, isAdmin } from "../helpers.js";
 import { toast } from "../toast.js";
@@ -45,12 +46,12 @@ const SETTINGS_TABS = ["general", "backups", "notifications", "malware"];
 function settingsIO(group) {
     return `
         <div class="uk-flex" style="gap:8px">
-            <a class="uk-button kp-btn-ghost kp-btn-sm" href="/api/settings/export?group=${group}" download="podnest-settings-${group}.csv" uk-tooltip="Export these settings">
+            <button type="button" class="uk-button kp-btn-ghost kp-btn-sm kp-settings-export" data-group="${group}" uk-tooltip="Export encrypted settings">
                 <span uk-icon="download"></span>
-            </a>
-            <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import these settings from CSV">
+            </button>
+            <label class="uk-button kp-btn-ghost kp-btn-sm" style="cursor:pointer" uk-tooltip="Import encrypted settings">
                 <span uk-icon="upload"></span>
-                <input type="file" class="kp-settings-import" data-group="${group}" accept=".csv" style="display:none">
+                <input type="file" class="kp-settings-import" data-group="${group}" accept=".pnm" style="display:none">
             </label>
         </div>`;
 }
@@ -430,18 +431,25 @@ export async function viewSettings(root, params = {}) {
         loadAdminDomainSSL(settings.admin_domain);
     }
 
-    // -- per-card CSV import — re-renders on the same tab so the new values show
+    root.querySelectorAll(".kp-settings-export").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const group = button.dataset.group;
+            try {
+                await exportMigration(`/api/settings/export?group=${encodeURIComponent(group)}`, `podnest-settings-${group}.pnm`);
+            } catch (err) {
+                toast.error(err.message);
+            }
+        });
+    });
+
     root.querySelectorAll(".kp-settings-import").forEach((input) => {
         input.addEventListener("change", async (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const group = e.target.dataset.group;
-            const fd = new FormData();
-            fd.append("file", file);
             try {
-                const res = await fetch(`/api/settings/import?group=${encodeURIComponent(group)}`, { method: "POST", headers: { "X-CSRF-Token": window.KP?.csrf ?? "" }, body: fd });
-                const data = res.status === 204 ? null : await res.json().catch(() => null);
-                if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+                const data = await importMigration(`/api/settings/import?group=${encodeURIComponent(group)}`, file);
+                if (!data) return;
                 toast.success("Settings imported");
                 await viewSettings(root, { tab: group });
             } catch (err) {

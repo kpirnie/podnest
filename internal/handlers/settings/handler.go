@@ -83,7 +83,7 @@ func (h *Handler) RegisterRoutes(api *http.ServeMux) {
 
 	api.Handle("GET /settings", admin(h.apiGetSettings))
 	api.Handle("PUT /settings", admin(h.apiUpdateSettings))
-	api.Handle("GET /settings/export", admin(h.apiExportSettings))
+	api.Handle("POST /settings/export", admin(h.apiExportSettings))
 	api.Handle("POST /settings/import", admin(h.apiImportSettings))
 	api.Handle("GET /settings/backup", admin(h.apiGetBackupSettings))
 	api.Handle("PUT /settings/backup", admin(h.apiUpdateBackupSettings))
@@ -154,7 +154,7 @@ func (h *Handler) apiExportSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows := make([][]string, 0, len(keys))
+	values := make(map[string]string, len(keys))
 	for _, k := range keys {
 		v, err := db.GetSetting(h.DB, k)
 		if err != nil {
@@ -162,11 +162,10 @@ func (h *Handler) apiExportSettings(w http.ResponseWriter, r *http.Request) {
 			apiutil.Error(w, http.StatusInternalServerError, err)
 			return
 		}
-		rows = append(rows, []string{k, v})
+		values[k] = v
 	}
 
-	apiutil.ExportCSV(w, fmt.Sprintf("podnest-settings-%s.csv", group), []string{"key", "value"}, rows)
-	logger.Debug("apiExportSettings: exported %d %s settings", len(rows), group)
+	apiutil.ExportMigration(w, r, fmt.Sprintf("podnest-settings-%s.pnm", group), "settings:"+group, values)
 }
 
 func (h *Handler) apiImportSettings(w http.ResponseWriter, r *http.Request) {
@@ -181,34 +180,31 @@ func (h *Handler) apiImportSettings(w http.ResponseWriter, r *http.Request) {
 		allowed[k] = true
 	}
 
-	records, err := apiutil.ImportCSV(r)
+	values, err := apiutil.ImportMigration(w, r, "settings:"+group)
 	if err != nil {
-		logger.Error("apiImportSettings: %v", err)
 		apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	imported := 0
-	for _, rec := range records {
-		k := strings.TrimSpace(rec[0])
-		v := rec[1]
-		if k == "" {
-			continue
-		}
-		if !allowed[k] {
-			logger.Warn("apiImportSettings: skipped '%s', not in group '%s'", logger.SafeValue(k), group)
-			continue
-		}
-		if err := db.SetSetting(h.DB, k, v); err != nil {
-			logger.Error("apiImportSettings: failed to set '%s': %v", k, err)
-			apiutil.Error(w, http.StatusInternalServerError, err)
+	for key, value := range values {
+		if !allowed[key] {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, "migration package contains an unknown setting")
 			return
 		}
-		h.applySettingLive(k, v)
-		imported++
+		if value == "••••••••" || value == "*****" {
+			delete(values, key)
+		}
 	}
 
-	logger.Debug("apiImportSettings: imported %d %s settings", imported, group)
+	if err := db.SetSettings(h.DB, values); err != nil {
+		logger.Error("apiImportSettings: failed to persist settings group %s", group)
+		apiutil.ErrorMsg(w, http.StatusInternalServerError, "could not save settings")
+		return
+	}
+	for key, value := range values {
+		h.applySettingLive(key, value)
+	}
+
+	logger.Debug("apiImportSettings: imported %d %s settings", len(values), group)
 	apiutil.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
