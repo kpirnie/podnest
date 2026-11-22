@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -296,32 +297,64 @@ WantedBy=default.target
 // exist. An existing file is never touched — replacing the key would leave
 // every sealed node key undecryptable.
 func ensurePNEnv(uname, home string) error {
-	path := home + "/" + pnEnvName
+	path := filepath.Join(home, pnEnvName)
 	if _, err := os.Lstat(path); err == nil {
-		return nil
+		return checkPNEnv(path)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
 
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	account, err := user.Lookup(uname)
 	if err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(f, "PN_SECRET_KEY=%s\n", hex.EncodeToString(b)); err != nil {
-		f.Close()
+	uid, err := strconv.Atoi(account.Uid)
+	if err != nil {
 		return err
 	}
-	if err := f.Close(); err != nil {
+	gid, err := strconv.Atoi(account.Gid)
+	if err != nil {
 		return err
 	}
-	if err := run("chown", uname+":"+uname, path); err != nil {
+	var key [32]byte
+	if _, err := rand.Read(key[:]); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(home, ".pn-env-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if _, err := fmt.Fprintf(file, "PN_SECRET_KEY=%s\n", hex.EncodeToString(key[:])); err != nil {
+		return err
+	}
+	if err := file.Chown(uid, gid); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	// Publish only a complete owner-readable file and never replace a key
+	// installed by another run.
+	if err := os.Link(file.Name(), path); err != nil {
 		return err
 	}
 	fmt.Println("OK:", path)
+	return nil
+}
+
+func checkPNEnv(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+		return fmt.Errorf("%s must be a regular file with mode 0600", path)
+	}
 	return nil
 }
 

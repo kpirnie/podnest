@@ -10,6 +10,7 @@ package main
 import (
 	"fmt"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,13 +39,13 @@ func runUpgrade() error {
 		return err
 	}
 
-	// installs that predate the secret env file get one before the restart below
+	// Verify the original key file before updating the service.
 	u, err := user.Lookup(s.User)
 	if err != nil {
 		return err
 	}
-	if err := ensurePNEnv(s.User, u.HomeDir); err != nil {
-		return fmt.Errorf("could not create %s: %w", pnEnvName, err)
+	if err := checkPNEnv(filepath.Join(u.HomeDir, pnEnvName)); err != nil {
+		return fmt.Errorf("restore the original PN_SECRET_KEY before upgrading: %w", err)
 	}
 	if err := ensureUnitEnvFile(s.UnitPath); err != nil {
 		return err

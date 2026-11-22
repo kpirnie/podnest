@@ -150,7 +150,7 @@ Once running, the UI is available at: `http://your-host:9000`
 | `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
 | `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
 | `pdnctl pull-images` | Pull updated versions of every image already on the host |
-| `pdnctl upgrade` | Create `~/.pn.env` and add it to the service unit if missing, run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
+| `pdnctl upgrade` | Verify `~/.pn.env` and ensure the service unit loads it, run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
 | `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
 | `pdnctl status` | Show the install summary and service status |
 | `pdnctl images` | Show the current Podman images |
