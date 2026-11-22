@@ -6,7 +6,6 @@ package server
 
 import (
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,9 +20,6 @@ type auditStatusWriter struct {
 	http.ResponseWriter
 	status int
 }
-
-// numericSegment matches path segments that are purely numeric (e.g. /sites/42/configs)
-var numericSegment = regexp.MustCompile(`/\d+`)
 
 // auditMiddleware is the outermost wrapper for /api/ — it records every non-GET/HEAD
 // request (including unauthenticated ones) to the audit log.
@@ -63,11 +59,15 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		// retrieve any before/after state snapshots attached to the context by the handler
 		priorState, newState := audit.StateFromContext(r.Context())
 
-		// derive the normalised action string: METHOD /path/{id}/sub
-		action := r.Method + " " + normalizePath(r.URL.Path)
-
-		// parse target type and id from the path segments
-		targetType, targetID := parseTarget(r.URL.Path)
+		// The matched pattern contains route names and placeholders only.
+		action := r.Pattern
+		_, route, matched := strings.Cut(action, " ")
+		if !matched {
+			route = "/api"
+			action = r.Method + " " + route
+		}
+		targetType, _ := parseTarget(route)
+		_, targetID := parseTarget(r.URL.Path)
 
 		audit.Record(models.AuditEntry{
 			UID:        uid,
@@ -94,12 +94,6 @@ func (sw *auditStatusWriter) WriteHeader(code int) {
 // Unwrap exposes the underlying ResponseWriter for Hijacker/Flusher delegation
 func (sw *auditStatusWriter) Unwrap() http.ResponseWriter {
 	return sw.ResponseWriter
-}
-
-// normalizePath replaces purely numeric path segments with {id} for grouping.
-// e.g. /sites/42/configs → /sites/{id}/configs
-func normalizePath(path string) string {
-	return numericSegment.ReplaceAllString(path, "/{id}")
 }
 
 // parseTarget extracts the resource type and id from the first two meaningful

@@ -158,9 +158,8 @@ func RequireAPIAuth(database *sql.DB, next http.Handler) http.Handler {
 		}
 
 		// Add the authenticated user to the request context and call the next handler.
-		next.ServeHTTP(w, r.WithContext(
-			context.WithValue(r.Context(), ctxUser, user),
-		))
+		*r = *r.WithContext(context.WithValue(r.Context(), ctxUser, user))
+		next.ServeHTTP(w, r)
 	})
 }
 
