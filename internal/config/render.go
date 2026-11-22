@@ -32,7 +32,7 @@ func RenderNginxMain(configJSON string, siteType int) (string, error) {
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultNginx) }
 
-	logger.Debug("rendering nginx.conf with config: %v", cfg)
+	logger.Debug("rendering nginx.conf (%d config entries)", len(cfg))
 
 	fv := func(key string) string { return get(cfg, key, DefaultNginxFastCGI) }
 	fcgiCachePath := ""
@@ -211,7 +211,7 @@ func RenderPHPFPM(configJSON string, siteUID int) (string, error) {
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultPHP) }
 
-	logger.Debug("rendering php-fpm.conf with config: %v", cfg)
+	logger.Debug("rendering php-fpm.conf (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`[www]
 user  = %d
@@ -262,7 +262,7 @@ func RenderPHPIni(configJSON string) (string, error) {
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultPHP) }
 
-	logger.Debug("rendering php.ini with config: %v", cfg)
+	logger.Debug("rendering php.ini (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`expose_php             = %s
 display_errors         = %s
@@ -349,7 +349,7 @@ func RenderMariaDB(configJSON string) (string, error) {
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultMariaDB) }
 
-	logger.Debug("rendering my.cnf with config: %v", cfg)
+	logger.Debug("rendering my.cnf (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`[mysqld]
 bind-address        = 127.0.0.1
@@ -445,7 +445,7 @@ func RenderRedis(configJSON, redisPassword string) (string, error) {
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultRedis) }
 
-	logger.Debug("rendering redis.conf with config: %v", cfg)
+	logger.Debug("rendering redis.conf (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`bind 127.0.0.1
 requirepass %s
@@ -541,7 +541,7 @@ func RenderVarnish(configJSON string) (string, error) {
 		))
 	}
 
-	logger.Debug("rendering varnish VCL with config: %v", cfg)
+	logger.Debug("rendering varnish VCL (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`vcl 4.1;
 
@@ -627,7 +627,7 @@ func renderNginxPHP(configJSON string, listenPort int, burst int) (string, error
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultNginx) }
 
-	logger.Debug("rendering Nginx PHP server block with config: %v", cfg)
+	logger.Debug("rendering Nginx PHP server block (%d config entries)", len(cfg))
 
 	// wp-admin, logged-in users and PHP session holders always bypass so
 	// user-specific output is never cached and served to anyone else
@@ -749,7 +749,7 @@ func renderNginxProxy(configJSON string, upstreamPort int, listenPort int) (stri
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultNginx) }
 
-	logger.Debug("rendering Nginx proxy server block with config: %v", cfg)
+	logger.Debug("rendering Nginx proxy server block (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`server {
     listen %d;
@@ -820,7 +820,7 @@ func renderNginxStatic(configJSON string, listenPort int) (string, error) {
 	// Helper function to get a value from the config, falling back to defaults
 	v := func(key string) string { return get(cfg, key, DefaultNginx) }
 
-	logger.Debug("rendering Nginx static server block with config: %v", cfg)
+	logger.Debug("rendering Nginx static server block (%d config entries)", len(cfg))
 
 	return fmt.Sprintf(`server {
     listen %d;
@@ -883,7 +883,7 @@ func unmarshal(configJSON string) (map[string]string, error) {
 	}
 
 	// Log the config values at debug level
-	logger.Debug("unmarshaled config JSON: %v", cfg)
+	logger.Debug("unmarshaled config (%d config entries)", len(cfg))
 	return cfg, nil
 }
 
