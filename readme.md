@@ -402,10 +402,11 @@ and write objects in its prefix under `disaster-recovery/`. Application
 retention also needs permission to delete Restic objects in that prefix.
 Reusing ordinary S3 site backups requires read access to their repositories.
 
-- Run `podnest dr-enroll --app-path /opt/podnest` from an interactive terminal.
-  For a container installation, run it through `podman exec -it podnest`
-  as the user that owns the PodNest container.
-  Use a strong passphrase and keep it in an independent password manager or
+- An administrator can select **Enroll recovery key** in the **Disaster Recovery**
+  panel. On a managed host, run `sudo pdnctl dr-enroll` from an interactive
+  terminal. For a standalone PodNest binary, run `podnest dr-enroll` in the
+  application's environment.
+  Use a strong passphrase of at least 8 characters and keep it in an independent password manager or
   recovery vault. Each node has a random ID. Enrollment writes its encrypted
   key envelope to `disaster-recovery/<node-id>/key` and verifies it by reading
   it back from S3. Re-running enrollment verifies the existing envelope.

@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"podnest/internal/db"
 
@@ -36,7 +37,8 @@ const (
 	drKeyEnvelopeLen = drKeyHeaderLen + 12 + drKeyTextLen + 16
 )
 
-var errDRKey = errors.New("cannot unlock recovery key with the supplied recovery passphrase")
+// ErrDRKeyUnlock indicates that the stored key could not be unlocked.
+var ErrDRKeyUnlock = errors.New("cannot unlock recovery key with the supplied recovery passphrase")
 
 func validDRIdentity(id string) bool {
 	if len(id) != 32 {
@@ -61,7 +63,7 @@ func sealDRKey(id, key, passphrase string) ([]byte, error) {
 		return nil, errors.New("invalid disaster recovery identity or instance key")
 	}
 	if !validDRPassphrase(passphrase) {
-		return nil, errors.New("use a recovery passphrase between 16 and 1024 bytes")
+		return nil, ErrDRPassphraseLength
 	}
 	header := make([]byte, len(drKeyVersion)+drKeySaltLen)
 	copy(header, drKeyVersion)
@@ -78,22 +80,26 @@ func sealDRKey(id, key, passphrase string) ([]byte, error) {
 func openDRKey(id, passphrase string, sealed []byte) (string, error) {
 	if !validDRIdentity(id) || !validDRPassphrase(passphrase) ||
 		len(sealed) != drKeyEnvelopeLen || string(sealed[:len(drKeyVersion)]) != drKeyVersion {
-		return "", errDRKey
+		return "", ErrDRKeyUnlock
 	}
 	aead, err := drKeyAEAD(passphrase, sealed[len(drKeyVersion):drKeyHeaderLen])
 	if err != nil {
-		return "", errDRKey
+		return "", ErrDRKeyUnlock
 	}
 	plain, err := aead.Open(nil, nil, sealed[drKeyHeaderLen:], []byte(drKeyVersion+":"+id))
 	defer clear(plain)
 	if err != nil || !validDRKey(string(plain)) {
-		return "", errDRKey
+		return "", ErrDRKeyUnlock
 	}
 	return string(plain), nil
 }
 
+// ErrDRPassphraseLength indicates that the passphrase is outside the supported character range.
+var ErrDRPassphraseLength = errors.New("use a recovery passphrase between 8 and 1024 characters")
+
 func validDRPassphrase(passphrase string) bool {
-	return len(passphrase) >= 16 && len(passphrase) <= 1024
+	length := utf8.RuneCountInString(passphrase)
+	return length >= 8 && length <= 1024
 }
 
 func drKeyAEAD(passphrase string, salt []byte) (cipher.AEAD, error) {
@@ -126,7 +132,7 @@ func (m *Manager) EnrollDRKey(ctx context.Context, passphrase string) (string, e
 		return "", err
 	}
 	if !validDRPassphrase(passphrase) {
-		return "", errors.New("use a recovery passphrase between 16 and 1024 bytes")
+		return "", ErrDRPassphraseLength
 	}
 	s3, err := m.loadS3Config()
 	if err != nil {

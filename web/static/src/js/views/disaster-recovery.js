@@ -13,7 +13,7 @@ const path = "/disaster-recovery";
 function warning(status) {
     if (!status.s3_configured) return ["Configure S3 to enable disaster recovery.", "#settings/backups", "Backup settings"];
     if (status.disabled) return ["Automatic disaster recovery is disabled.", "#disaster-recovery", "Disaster Recovery"];
-    if (!status.key_enrolled) return ["Enroll the instance key before creating a recovery point.", "#disaster-recovery", "Disaster Recovery"];
+    if (!status.key_enrolled) return ["Recovery key enrollment required", "#disaster-recovery", "Enroll recovery key"];
     if (status.result === "failed") return ["The latest disaster recovery run failed.", "#disaster-recovery", "View details"];
     if (!status.last_verified || status.last_verified.startsWith("0001")) {
         return ["A verified recovery point is missing.", "#disaster-recovery", "Disaster Recovery"];
@@ -29,7 +29,7 @@ function renderWarning(status) {
     if (content) {
         const [message, href, label] = content;
         banner.querySelector("strong").textContent = message;
-        const link = banner.querySelector("a");
+        const link = banner.querySelector(".kp-update-banner-row a");
         link.href = href;
         link.textContent = label;
     }
@@ -64,7 +64,17 @@ export async function viewDisasterRecovery(root) {
             </dl>
             ${status.error ? `<div class="uk-alert-danger uk-padding-small" role="alert"><div class="uk-text-break">${escapeHtml(status.error)}</div></div>` : ""}
             ${status.s3_configured && !status.key_enrolled
-                ? '<p>Run <code>podnest dr-enroll --app-path /opt/podnest</code> in the application environment to protect the instance key.</p>' : ""}
+                ? `
+                    <form class="uk-form-stacked uk-margin-small-bottom" id="kp-dr-enroll">
+                        <label class="kp-label" for="kp-dr-passphrase">Recovery passphrase</label>
+                        <input class="uk-input kp-input" type="password" id="kp-dr-passphrase"
+                            name="passphrase" autocomplete="new-password" required>
+                        <label class="kp-label uk-margin-small-top" for="kp-dr-confirmation">Confirm recovery passphrase</label>
+                        <input class="uk-input kp-input" type="password" id="kp-dr-confirmation"
+                            name="confirmation" autocomplete="new-password" required>
+                        <p>Use at least 8 characters and save the passphrase outside PodNest and S3. You’ll need it to recover this server.</p>
+                        <button type="submit" class="kp-btn-primary">Enroll recovery key</button>
+                    </form>` : ""}
             <form class="uk-form-stacked uk-margin-small-top" id="kp-dr-form">
                 <label class="uk-display-block uk-margin-small-bottom">
                     <input type="checkbox" class="uk-checkbox" name="automatic" ${status.disabled ? "" : "checked"}>
@@ -120,6 +130,27 @@ export async function viewDisasterRecovery(root) {
         if (panel.isConnected) viewDisasterRecovery(root).catch((err) => toast.error(err.message));
     };
     panel.querySelector("#kp-dr-refresh").addEventListener("click", refresh);
+    panel.querySelector("#kp-dr-enroll")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const passphrase = form.elements.passphrase.value;
+        if (passphrase !== form.elements.confirmation.value) {
+            toast.error("Recovery passphrases do not match");
+            return;
+        }
+        const button = form.querySelector("button");
+        button.disabled = true;
+        form.reset();
+        try {
+            await api.post(path + "/enroll", { passphrase });
+            toast.success("Recovery key enrolled");
+            refresh();
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            button.disabled = false;
+        }
+    });
     panel.querySelector("#kp-dr-form").addEventListener("submit", async (event) => {
         event.preventDefault();
         const values = new FormData(event.currentTarget);

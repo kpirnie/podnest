@@ -7,6 +7,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -248,4 +249,30 @@ func (s *Server) apiDRDownload(w http.ResponseWriter, r *http.Request) {
 		}
 		apiutil.ErrorMsg(w, http.StatusServiceUnavailable, "the recovery archive could not be prepared")
 	}
+}
+
+func (s *Server) apiEnrollDisasterRecovery(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Passphrase string `json:"passphrase"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&input); err != nil {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid recovery enrollment request")
+		return
+	}
+	if !s.drEnrollMu.TryLock() {
+		apiutil.ErrorMsg(w, http.StatusConflict, "recovery key enrollment is already running")
+		return
+	}
+	defer s.drEnrollMu.Unlock()
+
+	if _, err := s.backup.EnrollDRKey(r.Context(), input.Passphrase); err != nil {
+		if errors.Is(err, backup.ErrDRPassphraseLength) || errors.Is(err, backup.ErrDRKeyUnlock) {
+			apiutil.ErrorMsg(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		logger.Warn("disaster recovery key enrollment failed: %v", err)
+		apiutil.ErrorMsg(w, http.StatusServiceUnavailable, "Could not enroll the recovery key. Check the S3 settings and server log.")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

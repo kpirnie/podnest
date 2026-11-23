@@ -232,6 +232,7 @@ func (s *Server) routes() http.Handler {
 	api.Handle("PUT /disaster-recovery", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSetDisasterRecovery)))
 	api.Handle("POST /disaster-recovery/run", auth.RequireAPIAdmin(http.HandlerFunc(s.apiRunDisasterRecovery)))
 	api.Handle("GET /disaster-recovery/archives", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRSiteArchives)))
+	api.Handle("POST /disaster-recovery/enroll", auth.RequireAPIAdmin(http.HandlerFunc(s.apiEnrollDisasterRecovery)))
 	s.registerRecoveryAPI(api)
 	api.Handle("GET /disaster-recovery/download", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRDownload)))
 	api.Handle("GET /disaster-recovery/download/{site}", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRDownload)))

@@ -63,6 +63,10 @@ func run(name string, args ...string) error {
 
 // userRun executes a command as the podnest user with the runtime dir set
 func userRun(uname string, uid int, args ...string) error {
+	return userCommand(uname, uid, args...).Run()
+}
+
+func userCommand(uname string, uid int, args ...string) *exec.Cmd {
 	// sudo leaves HOME pointing at root's unless -H is given; rootless podman
 	// derives its graphroot from HOME, so without this it targets /root and
 	// fails with a permission denied on its own storage
@@ -80,7 +84,7 @@ func userRun(uname string, uid int, args ...string) error {
 	c.Dir = "/tmp"
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
-	return c.Run()
+	return c
 }
 
 // detectTZ pulls the timezone from the host, falling back to UTC with a warning

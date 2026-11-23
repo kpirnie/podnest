@@ -164,9 +164,12 @@
                 {{end}}
 
                 {{if eq .User.Role 99}}
-                <div id="kp-dr-warning" class="uk-alert-warning kp-update-banner" role="status" hidden>
+                <div id="kp-dr-warning" uk-alert class="uk-alert uk-alert-warning kp-update-banner" role="status" hidden>
                     <div class="kp-update-banner-row">
-                        <p><span uk-icon="icon: warning"></span> <strong></strong> <a></a></p>
+                        <p>
+                            <span uk-icon="icon: warning"></span>
+                            <strong></strong> &mdash; <a></a>
+                        </p>
                     </div>
                 </div>
                 {{end}}
