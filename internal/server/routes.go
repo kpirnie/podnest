@@ -228,6 +228,7 @@ func (s *Server) routes() http.Handler {
 	auditHandler := &auditlog.Handler{DB: s.cfg.DB}
 	auditHandler.RegisterRoutes(api)
 
+	api.Handle("GET /disaster-recovery/progress", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDRProgress)))
 	api.Handle("GET /disaster-recovery", auth.RequireAPIAdmin(http.HandlerFunc(s.apiDisasterRecovery)))
 	api.Handle("PUT /disaster-recovery", auth.RequireAPIAdmin(http.HandlerFunc(s.apiSetDisasterRecovery)))
 	api.Handle("POST /disaster-recovery/run", auth.RequireAPIAdmin(http.HandlerFunc(s.apiRunDisasterRecovery)))

@@ -56,10 +56,10 @@ export async function viewDisasterRecovery(root) {
     root.innerHTML = `
         <section class="kp-card uk-padding-small" data-dr-panel>
             <h3 class="kp-view-title">Disaster Recovery</h3>
-            <dl class="uk-description-list">
+            <dl class="uk-description-list kp-dr-status">
                 <dt>S3 configuration</dt><dd>${status.s3_configured ? "Configured" : "Required"}</dd>
                 <dt>Recovery key enrollment</dt><dd>${status.key_enrolled ? "Enrolled" : "Required"}</dd>
-                <dt>Latest run</dt><dd>${results[status.result] ?? "Pending"}</dd>
+                <dt>Latest run</dt><dd data-dr-result>${results[status.result] ?? "Pending"}</dd>
                 <dt>Last verified recovery point</dt><dd>${escapeHtml(lastVerified)}</dd>
             </dl>
             ${status.error ? `<div class="uk-alert-danger uk-padding-small" role="alert"><div class="uk-text-break">${escapeHtml(status.error)}</div></div>` : ""}
@@ -92,7 +92,11 @@ export async function viewDisasterRecovery(root) {
                     <button type="button" class="kp-btn-secondary" id="kp-dr-refresh">Refresh</button>
                 </div>
             </form>
-            ${status.site_backups?.length ? `
+            <div class="uk-margin-top" data-dr-progress hidden>
+                <p id="kp-dr-progress-label" role="status"></p>
+                <progress class="uk-progress" aria-labelledby="kp-dr-progress-label"></progress>
+            </div>
+            ${status.result !== "running" && status.site_backups?.length ? `
                 <div class="uk-margin-top">
                     <h4 class="kp-view-title">Site backup results</h4>
                     <ul class="uk-list uk-list-divider">${status.site_backups.map(site => `
@@ -171,13 +175,12 @@ export async function viewDisasterRecovery(root) {
         try {
             await api.post(path + "/run");
             toast.success("Disaster recovery queued");
-            setTimeout(refresh, 1000);
         } catch (err) {
             toast.error(err.message);
             run.disabled = false;
         }
     });
-    if (status.result === "running") setTimeout(refresh, 5000);
+    watchDRProgress(panel, status, refresh);
 }
 
 async function updateRestoreResults(panel) {
@@ -221,4 +224,65 @@ async function updateRestoreResults(panel) {
     } catch (err) {
         if (panel.isConnected) toast.error(err.message);
     }
+}
+
+function watchDRProgress(panel, initial, refresh) {
+    const progress = panel.querySelector("[data-dr-progress]");
+    const bar = progress.querySelector("progress");
+    const label = progress.querySelector("p");
+    const run = panel.querySelector("#kp-dr-run");
+    const result = panel.querySelector("[data-dr-result]");
+    let previous = initial;
+    let socket;
+
+    function render(status) {
+        progress.hidden = status.result !== "running";
+        if (progress.hidden) return;
+        run.disabled = true;
+        result.textContent = "In progress";
+        const sites = status.site_backups ?? [];
+        const current = sites.find(site => site.state === "running");
+        const completed = sites.filter(site => site.state !== "running").length;
+        if (completed > 0 && completed < status.site_total) {
+            bar.max = status.site_total;
+            bar.value = completed;
+        } else {
+            bar.removeAttribute("value");
+        }
+        label.textContent = current ? `Backing up ${current.name} · ${status.site_total ? `${completed} of ${status.site_total} sites processed` : "In progress"}`
+            : status.site_total && completed === status.site_total ? "Verifying the recovery point" : "Preparing disaster recovery";
+    }
+
+    const observer = new MutationObserver(() => {
+        if (!panel.isConnected) {
+            observer.disconnect();
+            socket?.close();
+        }
+    });
+    observer.observe(panel.parentNode, { childList: true });
+
+    function connect() {
+        if (!panel.isConnected) return;
+        const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+        socket = new WebSocket(`${protocol}//${location.host}/api${path}/progress`);
+        socket.addEventListener("message", event => {
+            if (!panel.isConnected) return;
+            const status = JSON.parse(event.data);
+            if (status.result !== "running" && (status.result !== previous.result || status.started !== previous.started)) {
+                previous = status;
+                refresh();
+                return;
+            }
+            render(status);
+            previous = status;
+        });
+        socket.addEventListener("close", () => {
+            if (!panel.isConnected) return;
+            if (previous.result === "running") label.textContent = "Reconnecting to backup progress…";
+            setTimeout(connect, 2000);
+        });
+    }
+
+    render(initial);
+    connect();
 }

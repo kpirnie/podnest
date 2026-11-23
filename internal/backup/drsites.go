@@ -34,6 +34,7 @@ type DRSiteBackupStatus struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	State string `json:"state"`
+	Total int    `json:"-"`
 	Error string `json:"error,omitempty"`
 }
 
@@ -58,7 +59,7 @@ func (m *Manager) captureDRSites(ctx context.Context, s3 *s3Config, nodeID, pass
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		progress := DRSiteBackupStatus{ID: site.ID, Name: site.Name, State: "running"}
+		progress := DRSiteBackupStatus{ID: site.ID, Name: site.Name, State: "running", Total: len(sites)}
 		if report != nil {
 			report(progress)
 		}

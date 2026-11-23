@@ -79,3 +79,8 @@ Licensed under the MIT License. See LICENSE file in the project root for full li
 /* -- settings view ---------------------------------------------------------- */
 .kp-settings-wrap         { max-width: 100%; }
 .kp-settings-domain-wrap  { align-items: center; gap: 10px; }
+
+.kp-dr-status.uk-description-list > dt {
+    color: #fff;
+    font-weight: 700;
+}

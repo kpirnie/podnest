@@ -82,6 +82,8 @@ type Server struct {
 	restoreRun chan drRestoreRequest
 	restoreBusy atomic.Bool
 	drEnrollMu sync.Mutex
+	drStatusMu sync.Mutex
+	drChanged chan struct{}
 }
 
 // New initialises the server and registers all routes

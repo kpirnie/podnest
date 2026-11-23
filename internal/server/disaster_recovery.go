@@ -20,6 +20,8 @@ import (
 	"podnest/internal/backup"
 	"podnest/internal/db"
 	"podnest/internal/logger"
+
+	"github.com/gorilla/websocket"
 )
 
 const defaultDRSchedule = "0 4 * * *"
@@ -34,6 +36,7 @@ type drStatus struct {
 	Started      time.Time                   `json:"started"`
 	LastVerified time.Time                   `json:"last_verified"`
 	Error        string                      `json:"error,omitempty"`
+	SiteTotal    int                         `json:"site_total,omitempty"`
 	Sites        []backup.DRSiteBackupStatus `json:"site_backups,omitempty"`
 }
 
@@ -61,7 +64,16 @@ func (s *Server) writeDRStatus(status drStatus) error {
 	if err != nil {
 		return err
 	}
-	return db.SetSetting(s.cfg.DB, "dr_status", string(raw))
+	if err := db.SetSetting(s.cfg.DB, "dr_status", string(raw)); err != nil {
+		return err
+	}
+	s.drStatusMu.Lock()
+	if s.drChanged != nil {
+		close(s.drChanged)
+		s.drChanged = nil
+	}
+	s.drStatusMu.Unlock()
+	return nil
 }
 
 func (s *Server) apiDisasterRecovery(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +174,7 @@ func (s *Server) runDisasterRecovery() {
 		return
 	}
 	status.Result, status.Error, status.Started = "running", "", time.Now().UTC()
-	status.Sites = nil
+	status.Sites, status.SiteTotal = nil, 0
 	if err := s.writeDRStatus(status); err != nil {
 		logger.Error("write disaster recovery status: %v", err)
 		return
@@ -172,6 +184,7 @@ func (s *Server) runDisasterRecovery() {
 	defer cancel()
 	siteIndex := make(map[int64]int)
 	id, err := s.backup.SnapshotDisasterRecovery(ctx, func(progress backup.DRSiteBackupStatus) {
+		status.SiteTotal = progress.Total
 		if index, ok := siteIndex[progress.ID]; ok {
 			status.Sites[index] = progress
 		} else {
@@ -275,4 +288,60 @@ func (s *Server) apiEnrollDisasterRecovery(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+var drProgressUpgrader websocket.Upgrader
+
+func (s *Server) apiDRProgress(w http.ResponseWriter, r *http.Request) {
+	conn, err := drProgressUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	const pongWait = 60 * time.Second
+	conn.SetReadLimit(1024)
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
+	ping := time.NewTicker(25 * time.Second)
+	defer ping.Stop()
+	for {
+		s.drStatusMu.Lock()
+		if s.drChanged == nil {
+			s.drChanged = make(chan struct{})
+		}
+		changed := s.drChanged
+		s.drStatusMu.Unlock()
+		status, err := s.drStatus()
+		if err != nil {
+			return
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.WriteJSON(status); err != nil {
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-s.ctx.Done():
+			return
+		case <-changed:
+		case <-ping.C:
+			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
+				return
+			}
+		}
+	}
 }
