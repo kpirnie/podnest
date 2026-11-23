@@ -57,10 +57,10 @@ export async function viewDisasterRecovery(root) {
         <section class="kp-card uk-padding-small" data-dr-panel>
             <h3 class="kp-view-title">Disaster Recovery</h3>
             <dl class="uk-description-list kp-dr-status">
-                <dt>S3 configuration</dt><dd>${status.s3_configured ? "Configured" : "Required"}</dd>
-                <dt>Recovery key enrollment</dt><dd>${status.key_enrolled ? "Enrolled" : "Required"}</dd>
-                <dt>Latest run</dt><dd data-dr-result>${results[status.result] ?? "Pending"}</dd>
-                <dt>Last verified recovery point</dt><dd>${escapeHtml(lastVerified)}</dd>
+                <div><dt>S3 configuration</dt><dd>${status.s3_configured ? "Configured" : "Required"}</dd></div>
+                <div><dt>Recovery key enrollment</dt><dd>${status.key_enrolled ? "Enrolled" : "Required"}</dd></div>
+                <div><dt>Latest run</dt><dd data-dr-result>${results[status.result] ?? "Pending"}</dd></div>
+                <div><dt>Last verified recovery point</dt><dd>${escapeHtml(lastVerified)}</dd></div>
             </dl>
             ${status.error ? `<div class="uk-alert-danger uk-padding-small" role="alert"><div class="uk-text-break">${escapeHtml(status.error)}</div></div>` : ""}
             ${status.s3_configured && !status.key_enrolled
@@ -96,13 +96,11 @@ export async function viewDisasterRecovery(root) {
                 <p id="kp-dr-progress-label" role="status"></p>
                 <progress class="uk-progress" aria-labelledby="kp-dr-progress-label"></progress>
             </div>
-            ${status.result !== "running" && status.site_backups?.length ? `
-                <div class="uk-margin-top">
-                    <h4 class="kp-view-title">Site backup results</h4>
-                    <ul class="uk-list uk-list-divider">${status.site_backups.map(site => `
-                        <li>${escapeHtml(site.name)} — ${escapeHtml(site.state)}
-                        ${site.error ? `: ${escapeHtml(site.error)}` : ""}</li>`).join("")}</ul>
-                </div>` : ""}
+            <div class="uk-margin-top" data-dr-site-results hidden>
+                <h4 class="kp-view-title">Site backup results</h4>
+                <ul class="uk-list uk-list-divider"></ul>
+                <p class="kp-muted" data-dr-archive-error hidden>Site downloads are temporarily unavailable.</p>
+            </div>
             <div class="uk-margin-top" id="kp-dr-restore" hidden>
                 <h4 class="kp-view-title">Site restoration</h4>
                 <button type="button" class="kp-btn-secondary" id="kp-dr-retry-all">Retry Failed Sites</button>
@@ -111,25 +109,13 @@ export async function viewDisasterRecovery(root) {
             ${lastVerified !== "None" ? `
                 <div class="uk-margin-top" id="kp-dr-archives">
                     <h4 class="kp-view-title">Recovery archives</h4>
-                    <a href="/api/disaster-recovery/download">Download application archive</a>
-                    <ul class="uk-list" id="kp-dr-site-archives"></ul>
+                    <a class="kp-btn-secondary kp-btn-sm" href="/api/disaster-recovery/download">Download application archive</a>
                 </div>` : ""}
         </section>`;
 
     const panel = root.querySelector("[data-dr-panel]");
-    const archives = panel.querySelector("#kp-dr-site-archives");
-    if (archives && status.result !== "running") {
-        api.get(path + "/archives").then((sites) => {
-            for (const site of sites ?? []) {
-                const item = document.createElement("li");
-                const link = document.createElement("a");
-                link.href = "/api/disaster-recovery/download/" + encodeURIComponent(site.id);
-                link.textContent = "Download " + site.name;
-                item.append(link);
-                archives.append(item);
-            }
-        }).catch(() => { archives.textContent = "The site archive list is temporarily unavailable."; });
-    }
+    if (status.result !== "running") showSiteBackupResults(panel, status, lastVerified !== "None");
+
     const refresh = () => {
         if (panel.isConnected) viewDisasterRecovery(root).catch((err) => toast.error(err.message));
     };
@@ -181,6 +167,53 @@ export async function viewDisasterRecovery(root) {
         }
     });
     watchDRProgress(panel, status, refresh);
+}
+
+async function showSiteBackupResults(panel, status, hasArchive) {
+    const section = panel.querySelector("[data-dr-site-results]");
+    const list = section.querySelector("ul");
+    const rows = new Map();
+
+    function addSite(site, result) {
+        const row = document.createElement("li");
+        row.className = "kp-dr-site-result";
+
+        const summary = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = site.name;
+        const detail = document.createElement("div");
+        detail.textContent = result;
+        summary.append(name, detail);
+        row.append(summary);
+        list.append(row);
+        rows.set(String(site.id), row);
+        section.hidden = false;
+        return row;
+    }
+
+    for (const site of status.site_backups ?? []) {
+        addSite(site, site.error ? `${site.state} — ${site.error}` : site.state);
+    }
+
+    if (!hasArchive) return;
+    const canShowDownloads = () => panel.isConnected && panel.querySelector("[data-dr-progress]").hidden;
+    try {
+        const archives = await api.get(path + "/archives");
+        if (!canShowDownloads()) return;
+        for (const site of archives ?? []) {
+            const row = rows.get(String(site.id)) ?? addSite(site, "Last verified recovery point");
+            const download = document.createElement("a");
+            download.className = "kp-btn-secondary kp-btn-sm";
+            download.href = "/api/disaster-recovery/download/" + encodeURIComponent(site.id);
+            download.textContent = "Download";
+            download.setAttribute("aria-label", `Download the last verified archive for ${site.name}`);
+            row.append(download);
+        }
+    } catch {
+        if (!canShowDownloads()) return;
+        section.hidden = false;
+        section.querySelector("[data-dr-archive-error]").hidden = false;
+    }
 }
 
 async function updateRestoreResults(panel) {
@@ -239,6 +272,7 @@ function watchDRProgress(panel, initial, refresh) {
         progress.hidden = status.result !== "running";
         if (progress.hidden) return;
         run.disabled = true;
+        panel.querySelector("[data-dr-site-results]").hidden = true;
         result.textContent = "In progress";
         const sites = status.site_backups ?? [];
         const current = sites.find(site => site.state === "running");

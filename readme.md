@@ -431,9 +431,11 @@ other sites are attempted. A run with missing sites keeps the previous published
 server recovery point. Successful runs publish `latest.json` and retire the
 previous application and site snapshots after publication.
 
-Administrators can download individual site archives with files and SQL where
-applicable. An application archive contains a portable SQLite copy, certificates
-and other persistent application files. It excludes the instance key, S3 access
+Administrators can download site archives beside the site backup results. Those
+archives come from the last verified recovery point and include site files and
+SQL where applicable. A failed new run can still show download buttons for the
+previous recovery point. The separate application archive contains a portable
+SQLite copy, certificates, and other persistent application files. It excludes the instance key, S3 access
 credentials and ordinary backup repository credentials. Encrypted node-link and
 site SMTP credentials still require the original instance key. Treat these
 archives as sensitive because they contain configuration and private keys.
