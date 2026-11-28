@@ -30,10 +30,10 @@ cat <<EOF
 >>> Here's the next steps for you:
 
     Fresh install:
-    pdnctl install --user XXXXX --version [latest|dev|beta]
+    pdnctl install --user XXXXX --version [latest|rc|beta|vX.Y.Z]
 
     Update (or switch channels):
-    pdnctl update [--version latest|dev|beta]
+    pdnctl update [--version latest|rc|beta|vX.Y.Z]
 
     Manage the service:
     pdnctl stop|start|restart|status
