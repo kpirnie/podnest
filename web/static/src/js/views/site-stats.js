@@ -408,12 +408,8 @@ function renderPodTable(containers) {
 // renderDrilldownTable builds the paginated, sortable drilldown table HTML
 // sortCol: 'time' | 'method' | 'site' | 'status' | 'ip' — sortDesc: boolean
 // showSite: include the Site column (global dashboard drilldown only)
-function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
-    if (!entries || entries.length === 0) {
-        return `<p class="kp-muted uk-text-small">No matching requests found.</p>`;
-    }
-
-    // sort by the active column
+function renderDrilldownTable(entries, page, hasMore, sortCol, sortDesc, showSite) {
+    // Sorting applies to the currently loaded page.
     const sorted = [...entries].sort((a, b) => {
         let av, bv;
         switch (sortCol) {
@@ -428,11 +424,7 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
         return 0;
     });
 
-    const pageSize = 50;
-    const totalPages = Math.ceil(sorted.length / pageSize);
-    const slice = sorted.slice(page * pageSize, (page + 1) * pageSize);
-
-    const rows = slice.map((e) => {
+    const rows = sorted.map((e) => {
         // show full UA — CSS handles wrapping in the cell; all log-derived
         // values are escaped since they are attacker-controlled request data
         const uaShort = escapeHtml(e.ua);
@@ -449,14 +441,18 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
             </tr>`;
     }).join('');
 
-    const pager = totalPages > 1 ? `
+    const pager = (page > 0 || hasMore) ? `
         <div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-top">
-            <span class="kp-muted uk-text-small">Page ${page + 1} of ${totalPages} — ${entries.length} total</span>
+            <span class="kp-muted uk-text-small">Page ${page + 1} · ${entries.length} entries</span>
             <div>
                 ${page > 0 ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-dd-page="${page - 1}">‹ Prev</button>` : ''}
-                ${page < totalPages - 1 ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-dd-page="${page + 1}">Next ›</button>` : ''}
+                ${hasMore ? `<button class="uk-button kp-btn-ghost kp-btn-sm" data-dd-page="${page + 1}">Next ›</button>` : ''}
             </div>
         </div>` : '';
+
+    if (!entries.length) {
+        return `<p class="kp-muted uk-text-small">No matching requests found.</p>${pager}`;
+    }
 
     return `
         <div class="kp-table-wrap uk-overflow-auto">
@@ -476,6 +472,8 @@ function renderDrilldownTable(entries, page, sortCol, sortDesc, showSite) {
         ${pager}`;
 }
 
+const drilldownRequests = new WeakMap();
+
 // openDrilldown fetches and displays the drilldown modal for a given hour and
 // status class; endpoint is the drilldown API path (per-site or global)
 export async function openDrilldown(endpoint, hour, statusClass, showSite = false) {
@@ -490,13 +488,16 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
     body.innerHTML = `<div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>`;
     UIkit.modal(modal).show();
 
+    const request = {};
+    drilldownRequests.set(body, request);
     let entries = [];
+    let hasMore = false;
     let page = 0;
     let sortCol = 'time';
     let sortDesc = true;
 
     function redraw() {
-        body.innerHTML = renderDrilldownTable(entries, page, sortCol, sortDesc, showSite);
+        body.innerHTML = renderDrilldownTable(entries, page, hasMore, sortCol, sortDesc, showSite);
 
         // sort column buttons
         body.querySelectorAll('th[data-dd-col]').forEach((th) => {
@@ -508,7 +509,6 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
                     sortCol = col;
                     sortDesc = true;
                 }
-                page = 0;
                 redraw();
             });
         });
@@ -516,20 +516,31 @@ export async function openDrilldown(endpoint, hour, statusClass, showSite = fals
         // pagination buttons
         body.querySelectorAll('[data-dd-page]').forEach((btn) => {
             btn.addEventListener('click', () => {
-                page = parseInt(btn.dataset.ddPage, 10);
-                redraw();
+                loadPage(Number(btn.dataset.ddPage));
             });
         });
     }
 
-    try {
-        entries = await api.get(`${endpoint}${endpoint.includes('?') ? '&' : '?'}hour=${encodeURIComponent(hour)}&status=${statusClass}`);
-    } catch (err) {
-        body.innerHTML = `<p class="kp-muted uk-text-small">Failed to load: ${escapeHtml(err.message)}</p>`;
-        return;
+    async function loadPage(nextPage) {
+        const query = new URLSearchParams({ hour, status: statusClass, page: nextPage });
+        const path = `${endpoint}${endpoint.includes('?') ? '&' : '?'}${query}`;
+        body.innerHTML = `<div uk-spinner="ratio:0.8" style="color:var(--kp-blue)"></div>`;
+        try {
+            const data = await api.get(path);
+            if (!body.isConnected || drilldownRequests.get(body) !== request) return;
+            entries = data.entries;
+            hasMore = data.has_more;
+            page = nextPage;
+            redraw();
+        } catch (err) {
+            if (!body.isConnected || drilldownRequests.get(body) !== request) return;
+            redraw();
+            body.insertAdjacentHTML('afterbegin',
+                `<p class="kp-muted uk-text-small">Failed to load: ${escapeHtml(err.message)}</p>`);
+        }
     }
 
-    redraw();
+    await loadPage(0);
 }
 
 // -- wire --------------------------------------------------------------------

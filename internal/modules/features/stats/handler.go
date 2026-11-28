@@ -80,6 +80,13 @@ type CountedEntry struct {
 	Count int    `json:"count"`
 }
 
+const drilldownPageSize = 100
+
+type drilldownPage struct {
+	Entries []DrilldownEntry `json:"entries"`
+	HasMore bool             `json:"has_more"`
+}
+
 // DrilldownEntry is a single request record for the 4xx/5xx drilldown modal.
 type DrilldownEntry struct {
 	Time     string `json:"time"`
@@ -199,14 +206,18 @@ func (h *Handler) apiSiteDrilldown(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logPath := fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)
-	entries, err := parseDrilldown(r.Context(), []trafficSource{{path: logPath}}, hour, statusClass)
+	offset, paginated, ok := drilldownOffset(w, r)
+	if !ok {
+		return
+	}
+	entries, hasMore, err := parseDrilldown(r.Context(), []trafficSource{{path: logPath}}, hour, statusClass, offset)
 	if err != nil {
 		logger.Error("stats: drilldown parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	apiutil.JSON(w, http.StatusOK, entries)
+	writeDrilldownPage(w, entries, hasMore, paginated)
 }
 
 // apiSitePodStats upgrades to WebSocket and relays the site's shared pod stats
@@ -398,7 +409,11 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := parseDrilldown(r.Context(), h.scopeLogSources(scope, sites), hour, statusClass)
+	offset, paginated, ok := drilldownOffset(w, r)
+	if !ok {
+		return
+	}
+	entries, hasMore, err := parseDrilldown(r.Context(), h.scopeLogSources(scope, sites), hour, statusClass, offset)
 	if err != nil {
 		logger.Error("stats: global drilldown parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
@@ -415,7 +430,7 @@ func (h *Handler) apiGlobalDrilldown(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	apiutil.JSON(w, http.StatusOK, entries)
+	writeDrilldownPage(w, entries, hasMore, paginated)
 }
 
 // -- helpers -----------------------------------------------------------------
@@ -759,18 +774,40 @@ func parseTrafficLog(ctx context.Context, sources []trafficSource) (*TrafficStat
 	return &stats, nil
 }
 
-// parseDrilldown reads every source access log and returns each entry
-// matching the given hour and status class ("4xx" or "5xx"). Missing logs are
-// skipped; ordering across sources is left to the caller.
-func parseDrilldown(ctx context.Context, sources []trafficSource, hour, statusClass string) ([]DrilldownEntry, error) {
+// drilldownOffset validates a zero-based page index and bounds multiplication.
+func drilldownOffset(w http.ResponseWriter, r *http.Request) (uint64, bool, bool) {
+	raw := r.URL.Query().Get("page")
+	if raw == "" {
+		return 0, false, true
+	}
+	page, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || page > ^uint64(0)/drilldownPageSize {
+		apiutil.ErrorMsg(w, http.StatusBadRequest, "invalid drilldown page")
+		return 0, false, false
+	}
+	return page * drilldownPageSize, true, true
+}
+
+func writeDrilldownPage(w http.ResponseWriter, entries []DrilldownEntry, hasMore, paginated bool) {
+	if paginated {
+		apiutil.JSON(w, http.StatusOK, drilldownPage{Entries: entries, HasMore: hasMore})
+		return
+	}
+	apiutil.JSON(w, http.StatusOK, entries)
+}
+
+// parseDrilldown reads one page in source and file order. One additional match
+// indicates that another page is available without counting the full result.
+func parseDrilldown(ctx context.Context, sources []trafficSource, hour, statusClass string, offset uint64) ([]DrilldownEntry, bool, error) {
 	// parse the hour boundary once
 	hourTime, err := time.Parse(time.RFC3339, hour)
 	if err != nil {
-		return nil, fmt.Errorf("invalid hour param: %w", err)
+		return nil, false, fmt.Errorf("invalid hour param: %w", err)
 	}
 	hourEnd := hourTime.Add(time.Hour)
 
-	results := []DrilldownEntry{}
+	results := make([]DrilldownEntry, 0, drilldownPageSize)
+	hasMore := false
 
 	// scanSource appends a single log's matches; a closure so the file handle
 	// is released per source rather than held until return
@@ -833,6 +870,15 @@ func parseDrilldown(ctx context.Context, sources []trafficSource, hour, statusCl
 				continue
 			}
 
+			if offset > 0 {
+				offset--
+				continue
+			}
+			if len(results) == drilldownPageSize {
+				hasMore = true
+				return nil
+			}
+
 			ua := ""
 			if last >= 9 {
 				ua = strings.Trim(strings.Join(fields[8:last], " "), "\"")
@@ -856,17 +902,20 @@ func parseDrilldown(ctx context.Context, sources []trafficSource, hour, statusCl
 	// move on; only a cancelled request aborts the scan
 	for _, src := range sources {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if err := scanSource(src); err != nil {
 			if ctx.Err() != nil {
-				return nil, err
+				return nil, false, err
 			}
 			logger.Error("stats: drilldown parse %s: %v", src.path, err)
 		}
+		if hasMore {
+			break
+		}
 	}
 
-	return results, nil
+	return results, hasMore, nil
 }
 
 // topN returns the top n entries from a count map, sorted descending.
