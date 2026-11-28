@@ -7,6 +7,7 @@
 import { api } from '../api.js';
 import { cardRow, emptyState, siteTypeLabel, statusBadge, versionLabel } from '../helpers.js';
 import { showCreateSiteModal } from '../modals/create-site.js';
+import { loadChartJS } from './site-stats.js';
 
 export async function viewSites(root) {
     const sites = (await api.get("/sites")) ?? [];
@@ -110,6 +111,80 @@ export async function viewSites(root) {
 
     // wire select-all and row checkboxes
     wireBulkSelection();
+    
+    // load Chart.js and render the individual site traffic charts
+    await loadChartJS();
+    if (window.Chart) {
+        await Promise.allSettled(sites.map(s => renderSiteTraffic(s.ID)));
+    }
+}
+
+// render the compact 24-hour traffic chart for a site
+async function renderSiteTraffic(siteId) {
+    const canvas = document.getElementById(`site-traffic-${siteId}`);
+    if (!canvas) return;
+
+    // fetch the site's traffic data
+    const traffic = await api.get(`/sites/${siteId}/stats/traffic`).catch(() => null);
+    if (!traffic?.hits_per_hour?.length || !canvas.isConnected) return;
+
+    // destroy any existing chart before rendering
+    window.Chart.getChart(canvas)?.destroy();
+
+    // render the stacked traffic chart
+    new window.Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: traffic.hits_per_hour.map(b => {
+                return new Date(b.hour).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }),
+            datasets: [
+                {
+                    label: '2xx',
+                    data: traffic.hits_per_hour.map(b => b['2xx']),
+                    backgroundColor: 'rgba(39,174,96,0.75)',
+                    borderRadius: 2,
+                },
+                {
+                    label: '3xx',
+                    data: traffic.hits_per_hour.map(b => b['3xx']),
+                    backgroundColor: 'rgba(43,142,255,0.75)',
+                    borderRadius: 2,
+                },
+                {
+                    label: '4xx',
+                    data: traffic.hits_per_hour.map(b => b['4xx']),
+                    backgroundColor: 'rgba(255,171,0,0.75)',
+                    borderRadius: 2,
+                },
+                {
+                    label: '5xx',
+                    data: traffic.hits_per_hour.map(b => b['5xx']),
+                    backgroundColor: 'rgba(235,59,90,0.75)',
+                    borderRadius: 2,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                },
+            },
+            scales: {
+                x: { stacked: true, display: false },
+                y: { stacked: true, display: false, beginAtZero: true },
+            },
+        },
+    });
 }
 
 function siteListCard(site, allSites = []) {
@@ -146,6 +221,13 @@ function siteListCard(site, allSites = []) {
                           <a href="javascript:void(0)" data-action="manage" data-id="${parent.ID}"
                              style="color:var(--kp-cyan)">${parent.Name}</a>`, "kp-mono")
                     : ""}
+            </div>
+
+            <!-- site traffic — last 24 hours -->
+            <div style="padding:0 16px 12px">
+                <div style="position:relative;height:65px">
+                    <canvas id="site-traffic-${site.ID}"></canvas>
+                </div>
             </div>
 
             <!-- action buttons -->
