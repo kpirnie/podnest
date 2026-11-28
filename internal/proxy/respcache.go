@@ -6,6 +6,7 @@ package proxy
 
 import (
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -33,14 +34,6 @@ type respCapture struct {
 	body    cache.Builder
 	wrote   bool
 	active  bool
-}
-
-// respCacheBypassCookies are lowercase substrings of a Cookie header that mark a
-// request as personalised; the list matches the Varnish bypass_cookies default
-var respCacheBypassCookies = []string{
-	"wordpress_logged_in", "wordpress_sec", "woocommerce_", "wp_woocommerce",
-	"phpsessid", "laravel_session", "ci_session", "symfony", "sess",
-	"sessionid", "connect.sid",
 }
 
 // WriteHeader decides whether the response is cacheable before passing it on;
@@ -182,16 +175,13 @@ func respCacheableRequest(r *http.Request) bool {
 	if r.Header.Get("Authorization") != "" || r.Header.Get("Range") != "" || r.Header.Get("Upgrade") != "" {
 		return false
 	}
-	if strings.HasPrefix(strings.ToLower(r.URL.RequestURI()), "/wp-admin/") {
+	// Cookie names are application-defined and may carry private state.
+	if len(r.Header.Values("Cookie")) != 0 {
 		return false
 	}
-	ck := strings.ToLower(strings.Join(r.Header.Values("Cookie"), "; "))
-	for _, name := range respCacheBypassCookies {
-		if strings.Contains(ck, name) {
-			return false
-		}
-	}
-	return true
+	requestPath := strings.ToLower(path.Clean(r.URL.Path))
+	return requestPath != "/wp-admin" && !strings.HasPrefix(requestPath, "/wp-admin/") &&
+		requestPath != "/wp-login.php" && !strings.HasPrefix(requestPath, "/wp-login.php/")
 }
 
 // respCacheKey builds the primary cache key — scheme, host and full request URI.

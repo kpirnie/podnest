@@ -569,16 +569,18 @@ sub vcl_recv {
         return (pass);
     }
 %s
-    # strip cookies from cacheable requests to allow caching
-    unset req.http.Cookie;
+    # Forward application cookies and credentials without using the cache.
+    if (req.http.Cookie || req.http.Authorization ||
+        req.url ~ "(?i)^/wp-(admin|login[.]php)([/?]|$)") {
+        return (pass);
+    }
 }
 
 sub vcl_backend_response {
     set beresp.ttl   = %s;
     set beresp.grace = %s;
 
-    # a response that sets a cookie is user-specific — the request-side
-    # bypass list only covers cookies already known to this site's config
+    # a response that sets a cookie is user-specific
     if (beresp.http.Set-Cookie) {
         set beresp.uncacheable = true;
         set beresp.ttl = 0s;
@@ -629,14 +631,14 @@ func renderNginxPHP(configJSON string, listenPort int, burst int) (string, error
 
 	logger.Debug("rendering Nginx PHP server block (%d config entries)", len(cfg))
 
-	// wp-admin, logged-in users and PHP session holders always bypass so
-	// user-specific output is never cached and served to anyone else
+	// Cookie names are application-defined. Bypass both cache reads and writes for private requests.
 	fv := func(key string) string { return get(cfg, key, DefaultNginxFastCGI) }
 	fcgiSkip, fcgiCache := "", ""
 	if fv("fastcgi_cache") == "on" {
 		fcgiSkip = `set $pn_skip_cache 0;
-    if ($request_uri ~* "^/wp-admin/") { set $pn_skip_cache 1; }
-    if ($http_cookie ~* "wordpress_logged_in_|PHPSESSID") { set $pn_skip_cache 1; }`
+    if ($uri ~* "^/wp-(admin|login[.]php)(/|$)") { set $pn_skip_cache 1; }
+    if ($http_authorization != "") { set $pn_skip_cache 1; }
+    if ($http_cookie != "") { set $pn_skip_cache 1; }`
 		fcgiCache = fmt.Sprintf(`fastcgi_cache                   PODNEST;
         fastcgi_cache_key               "$scheme$request_method$host$request_uri";
         fastcgi_cache_valid             200 301 %s;
