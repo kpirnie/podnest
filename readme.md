@@ -133,7 +133,7 @@ curl -fsSL https://raw.githubusercontent.com/kpirnie/podnest/main/bootstrap.sh |
 Then set up PodNest. Replace USER with whatever username you would like to utilize, and select a version:
 
 ```bash
-pdnctl install --user USER --version latest|dev|beta
+pdnctl install --user USER --version latest|rc|beta|vX.Y.Z
 ```
 
 The timezone is pulled from the host, site data lives at `/home/<user>/sites`, and the install details are stored in `/etc/podnest/install.json` — every command after `install` needs zero flags.
@@ -146,10 +146,10 @@ Once running, the UI is available at: `http://your-host:9000`
 
 | Command | Description |
 | --- | --- |
-| `pdnctl install --user <name> --version <latest\|dev\|beta>` | Fresh rootless setup under a dedicated user |
+| `pdnctl install --user <name> --version <latest\|rc\|beta\|vX.Y.Z>` | Fresh rootless setup under a dedicated user |
 | `pdnctl recover` | Restore the latest S3 recovery point onto a fresh host. Use `--full` to complete site recovery in the CLI. |
 | `pdnctl update` | Self-update the `pdnctl` binary, then pull the newest image on the current channel and restart |
-| `pdnctl update --version <latest\|dev\|beta>` | Switch channels — future updates track the new channel |
+| `pdnctl update --version <latest\|rc\|beta\|vX.Y.Z>` | Switch channels or pin to a specific release — future updates retain the selected tag |
 | `pdnctl pull-images` | Pull updated versions of every image already on the host |
 | `pdnctl upgrade` | Verify `~/.pn.env` and ensure the service unit loads it, run `update`, pull all images, recreate every site pod on the fresh images, then prune stopped standalone containers and unused images |
 | `pdnctl start` / `pdnctl stop` / `pdnctl restart` | Control the PodNest service |
@@ -178,16 +178,18 @@ Prefer to deploy and manage the container yourself instead of using `pdnctl`? A 
 | Tag | Description |
 | --- | --- |
 | `latest` | Latest stable release — use this for production |
-| `dev` | Tracks the `develop` branch (also tagged `develop`) — use at your own risk |
-| `beta` | Tracks the `main` branch — preview features, not production-ready |
+| `rc` | Tracks the `main` branch — release candidate builds |
+| `beta` | Tracks the `develop` branch — active development, not production-ready |
+| `vX.Y.Z` | Pins the installation to a specific stable release |
 
 ```
 ghcr.io/kpirnie/podnest:latest
-ghcr.io/kpirnie/podnest:dev
+ghcr.io/kpirnie/podnest:rc
 ghcr.io/kpirnie/podnest:beta
+ghcr.io/kpirnie/podnest:vX.Y.Z
 ```
 
-Each release is also tagged with its version (for example `v1.33.29`). Only the most recent release's version tag is kept — when a new release is published, the previous release, its tag, and its image are removed — so pinning to a version tag is not a long-term option.
+Each stable release is also tagged with its version (for example `v1.33.29`). Previous releases, Git tags, and versioned container images are retained to support version pinning and rollbacks. Database schema compatibility must be considered before rolling back to an older release.
 
 ### Docker Compose
 
