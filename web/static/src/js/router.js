@@ -40,6 +40,14 @@ export const router = {
         const fn = this.routes[view];
         if (!fn) return;
         const el = document.getElementById("kp-view");
+
+        // destroy compact site traffic charts before replacing the view
+        if (window.Chart) {
+            el.querySelectorAll('canvas[id^="site-traffic-"]').forEach(canvas => {
+                window.Chart.getChart(canvas)?.destroy();
+            });
+        }
+
         el.innerHTML = spinner();
         try {
             await fn(el, params);
