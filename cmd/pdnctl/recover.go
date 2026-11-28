@@ -69,7 +69,7 @@ var recoverCmd = &cobra.Command{
 func init() {
 	flags := recoverCmd.Flags()
 	flags.StringVar(&recoverUser, "user", "", "dedicated Linux service username")
-	flags.StringVar(&recoverVersion, "version", "latest", "PodNest image channel: latest, dev, or beta")
+	flags.StringVar(&recoverVersion, "version", "latest", "PodNest image tag: latest, rc, beta, or vX.Y.Z")
 	flags.StringVar(&recoverEndpoint, "endpoint", "", "HTTPS S3 endpoint")
 	flags.StringVar(&recoverBucket, "bucket", "", "S3 bucket")
 	flags.StringVar(&recoverRegion, "region", "us-east-1", "S3 region")
