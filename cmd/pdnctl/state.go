@@ -23,7 +23,7 @@ const statePath = stateDir + "/install.json"
 type State struct {
 	User      string    `json:"user"`      // the dedicated user podnest runs under
 	UID       int       `json:"uid"`       // that user's uid — used for XDG_RUNTIME_DIR
-	Version   string    `json:"version"`   // the image tag channel: latest, dev, or beta
+	Version   string    `json:"version"`   // the image tag: latest, rc, beta, or vX.Y.Z
 	Port      int       `json:"port"`      // the UI port baked into the unit
 	DataPath  string    `json:"data_path"` // host-side site data path
 	TZ        string    `json:"tz"`        // host timezone baked into the unit
@@ -37,7 +37,7 @@ func loadState() (*State, error) {
 	b, err := os.ReadFile(statePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("no install found at %s — run: pdnctl install --user <username> --version <latest|dev|beta>: %w", statePath, err)
+			return nil, fmt.Errorf("no install found at %s — run: pdnctl install --user <username> --version <latest|rc|beta|vX.Y.Z>: %w", statePath, err)
 		}
 		return nil, err
 	}
