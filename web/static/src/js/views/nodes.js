@@ -11,10 +11,12 @@ import { toast } from '../toast.js';
 
 const NODE_PAIRED = 2;
 
-export async function viewNodes(root) {
+export async function viewNodes(root, params, signal) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     const nodes = await api.get("/nodes");
+
+    if (signal?.aborted) return;
 
     root.innerHTML = `
         <div id="kp-nodes">
@@ -50,7 +52,7 @@ export async function viewNodes(root) {
 
     // pair, update, and unpair finish in another tab — refresh when focus returns
     window.addEventListener("focus", () => {
-        if (document.getElementById("kp-nodes") === wrap) viewNodes(root);
+        if (document.getElementById("kp-nodes") === wrap) viewNodes(root, params, signal);
     }, { once: true });
 }
 
@@ -98,7 +100,7 @@ async function onNodeAction(e, root, nodes) {
                 const res = await api.post("/nodes", v);
                 openNodeLink(res.link);
                 toast.success("Finish pairing in the new tab");
-                await viewNodes(root);
+                await viewNodes(root, params, signal);
                 break;
             }
             case "node-open": {
@@ -116,7 +118,7 @@ async function onNodeAction(e, root, nodes) {
                 } else {
                     toast.success("Node updated");
                 }
-                await viewNodes(root);
+                await viewNodes(root, params, signal);
                 break;
             }
             case "node-remove": {
@@ -131,7 +133,7 @@ async function onNodeAction(e, root, nodes) {
                     toast.success("Finish unpairing in the new tab");
                 } else {
                     toast.success("Node removed");
-                    await viewNodes(root);
+                    await viewNodes(root, params, signal);
                 }
                 break;
             }
@@ -140,7 +142,7 @@ async function onNodeAction(e, root, nodes) {
                 if (!ok) return;
                 await api.delete(`/nodes/${node.id}?force=1`);
                 toast.success("Node removed");
-                await viewNodes(root);
+                await viewNodes(root, params, signal);
                 break;
             }
         }

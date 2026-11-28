@@ -56,7 +56,7 @@ function settingsIO(group) {
         </div>`;
 }
 
-export async function viewSettings(root, params = {}) {
+export async function viewSettings(root, params = {}, signal) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     // fetch every settings group in parallel
@@ -67,6 +67,8 @@ export async function viewSettings(root, params = {}) {
         api.get("/settings/resources"),
         api.get("/settings/malware"),
     ]);
+
+    if (signal?.aborted) return;
 
     root.innerHTML = `
     <div class="kp-view-header">
@@ -450,7 +452,7 @@ export async function viewSettings(root, params = {}) {
                 const data = await importMigration(`/api/settings/import?group=${encodeURIComponent(group)}`, file);
                 if (!data) return;
                 toast.success("Settings imported");
-                await viewSettings(root, { tab: group });
+                await viewSettings(root, { tab: group }, signal);
             } catch (err) {
                 toast.error(err.message);
             } finally {

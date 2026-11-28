@@ -239,11 +239,13 @@ function fmtJSON(s) {
 
 // -- entry -------------------------------------------------------------------
 
-export async function viewAuditLog(root) {
+export async function viewAuditLog(root, params, signal) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     const filter = { username: "", action: "", target_type: "", date_from: "", date_to: "", auth: "" };
     const data   = await fetchPage(filter, 1);
+    if (signal?.aborted) return;
+
     root.innerHTML = renderAuditLog(data, filter, 1);
     wireAuditLog(root, filter, 1);
 }

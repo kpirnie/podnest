@@ -303,7 +303,7 @@ function wireHealthBadges(root, id) {
     _healthWS.onclose = () => { _healthWS = null; };
 }
 
-export async function viewSiteDetail(root, { id, tab }) {
+export async function viewSiteDetail(root, { id, tab }, signal) {
     // fetch site detail and full site list in parallel for the nav selector
     const [{ site, domains, sftp }, rawSites, configs] = await Promise.all([
         api.get(`/sites/${id}`),
@@ -323,6 +323,8 @@ export async function viewSiteDetail(root, { id, tab }) {
     // reset the shared listener abort before the waf/routes wiring attaches
     if (_rpWireAbort) _rpWireAbort.abort();
     _rpWireAbort = new AbortController();
+
+    if (signal?.aborted) return;
 
     root.innerHTML = `
         <div class="kp-view-header">

@@ -10,10 +10,12 @@ import { showCreateUserModal } from '../modals/create-user.js';
 import { showEditUserModal } from '../modals/edit-user.js';
 import { toast } from '../toast.js';
 
-export async function viewUsers(root) {
+export async function viewUsers(root, params, signal) {
     if (!isAdmin()) { root.innerHTML = errorState("Access denied"); return; }
 
     const users = await api.get("/users");
+
+    if (signal?.aborted) return;
 
     root.innerHTML = `
         <div class="kp-view-header">

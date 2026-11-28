@@ -28,14 +28,14 @@ if (window.KP?.user?.role === 99) {
     setInterval(refreshDRWarning, 30000);
 }
 router.register("sites", viewSites);
-router.register("site-detail", (root, params) => viewSiteDetail(root, params));
-router.register("users", (root) => viewUsers(root));
-router.register("nodes", (root) => viewNodes(root));
-router.register("settings", (root, params) => viewSettings(root, params));
+router.register("site-detail", viewSiteDetail);
+router.register("users", viewUsers);
+router.register("nodes", viewNodes);
+router.register("settings", viewSettings);
 router.register("security", (root, params) => viewSecurity(root, params));
 router.register("waf", (root, params) => viewWAF(root, params));
 router.register("admin-logs", (root) => viewAdminLogs(root));
-router.register("audit-log", (root) => viewAuditLog(root));
+router.register("audit-log", viewAuditLog);
 
 /* -- protect native caret keys in form fields ------------------------------ */
 // UIkit's tab/switcher keyboard nav intercepts arrow keys and preventDefaults

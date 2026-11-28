@@ -44,7 +44,7 @@ export async function refreshDRWarning() {
     }
 }
 
-export async function viewDisasterRecovery(root) {
+export async function viewDisasterRecovery(root, params, signal) {
     if (window.KP?.user?.role !== 99) return;
     const status = await api.get(path);
     if (!status || window.location.hash !== "#disaster-recovery") return;
@@ -53,6 +53,8 @@ export async function viewDisasterRecovery(root) {
     const lastVerified = status.last_verified && !status.last_verified.startsWith("0001")
         ? new Date(status.last_verified).toLocaleString() : "None";
     const results = { running: "Running", failed: "Failed", succeeded: "Succeeded" };
+    if (signal?.aborted) return;
+
     root.innerHTML = `
         <section class="kp-card uk-padding-small" data-dr-panel>
             <h3 class="kp-view-title">Disaster Recovery</h3>
@@ -117,7 +119,7 @@ export async function viewDisasterRecovery(root) {
     if (status.result !== "running") showSiteBackupResults(panel, status, lastVerified !== "None");
 
     const refresh = () => {
-        if (panel.isConnected) viewDisasterRecovery(root).catch((err) => toast.error(err.message));
+        if (panel.isConnected) viewDisasterRecovery(root, params, signal).catch((err) => toast.error(err.message));
     };
     panel.querySelector("#kp-dr-refresh").addEventListener("click", refresh);
     panel.querySelector("#kp-dr-enroll")?.addEventListener("submit", async (event) => {
