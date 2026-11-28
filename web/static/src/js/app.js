@@ -11,7 +11,7 @@ import { toast } from './toast.js';
 import { viewAdminLogs } from './views/admin-logs.js';
 import { viewAuditLog } from './views/audit-log.js';
 import { refreshDRWarning, viewDisasterRecovery } from './views/disaster-recovery.js';
-import { viewDashboard } from './views/dashboard.js';
+import { tearDownDashboard, viewDashboard } from './views/dashboard.js';
 import { viewNodes } from './views/nodes.js';
 import { viewSecurity } from './views/security.js';
 import { viewSettings } from './views/settings.js';
@@ -21,13 +21,13 @@ import { viewUsers } from './views/users.js';
 import { viewWAF } from './views/waf.js';
 
 /* -- register routes ------------------------------------------------------- */
-router.register("dashboard", (root) => viewDashboard(root));
+router.register("dashboard", viewDashboard, tearDownDashboard);
 if (window.KP?.user?.role === 99) {
     router.register("disaster-recovery", viewDisasterRecovery);
     refreshDRWarning();
     setInterval(refreshDRWarning, 30000);
 }
-router.register("sites", (root) => viewSites(root));
+router.register("sites", viewSites);
 router.register("site-detail", (root, params) => viewSiteDetail(root, params));
 router.register("users", (root) => viewUsers(root));
 router.register("nodes", (root) => viewNodes(root));

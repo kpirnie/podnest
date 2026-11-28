@@ -19,17 +19,24 @@ let _dashChart = null;
 // holds the live host-usage WebSocket; closed when the dashboard is re-entered or left
 let _hostWS = null;
 
-// wireHostStats opens the host-usage stream and drives the four host cards,
-// closing itself once the cards are no longer in the DOM
-function wireHostStats() {
-    if (_hostWS) { _hostWS.close(); _hostWS = null; }
+// tearDownDashboard releases the host stream and traffic chart on navigation.
+export function tearDownDashboard() {
+    const ws = _hostWS;
+    _hostWS = null;
+    if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) ws.close();
+    _dashChart?.destroy();
+    _dashChart = null;
+}
 
+// wireHostStats opens the host-usage stream and drives the four host cards.
+function wireHostStats() {
     const pct = (used, total) => total > 0 ? `${(used / total * 100).toFixed(1)}%` : "—";
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/api/stats/host`);
     _hostWS = ws;
 
     ws.onmessage = (e) => {
+        if (_hostWS !== ws) return;
         const cpuEl = document.getElementById("dash-host-cpu");
         if (!cpuEl) { ws.close(); return; }
         let d;
@@ -56,9 +63,9 @@ async function renderDashChart(traffic, scope) {
     }
     if (!traffic?.hits_per_hour?.length) return;
 
-    await loadChartJS();
     const canvas = document.getElementById('dash-traffic-chart');
-    if (!canvas || !window.Chart) return;
+    await loadChartJS();
+    if (!canvas?.isConnected || !window.Chart) return;
 
     _dashChart = new window.Chart(canvas, {
         type: 'bar',
@@ -164,13 +171,15 @@ async function renderDashChart(traffic, scope) {
     });
 }
 
-export async function viewDashboard(root) {
+export async function viewDashboard(root, params, signal) {
     const [sites, traffic, nodes] = await Promise.all([
         api.get("/sites").catch(() => []),
         api.get("/stats/traffic").catch(() => null),
         window.KP?.user?.role === 99 ? api.get("/nodes").catch(() => []) : [],
     ]);
     
+    if (signal.aborted) return;
+
     const running = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 1).length;
     const proxies = sites.filter((s) => s.SiteType === 6).length;
     const errored = sites.filter((s) => s.SiteType !== 6 && s.SiteStatus === 4).length;
@@ -418,6 +427,7 @@ export async function viewDashboard(root) {
 
     // render hits-per-hour chart once Chart.js is ready
     await renderDashChart(traffic, "all");
+    if (signal.aborted) return;
 
     // scope toggle — re-pulls traffic for the chosen scope and redraws the
     // stat cards and chart; Top Sites is left on its initial site-only data
@@ -431,6 +441,7 @@ export async function viewDashboard(root) {
             data = await api.get(`/stats/traffic?scope=${scope}`);
         } catch (err) { toast.error(err.message); return; }
 
+        if (signal.aborted) return;
         btn.parentElement.querySelectorAll('[data-action="dash-scope"]').forEach((b) => {
             b.classList.toggle("kp-btn-primary", b === btn);
             b.classList.toggle("kp-btn-ghost", b !== btn);

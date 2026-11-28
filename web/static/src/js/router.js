@@ -10,7 +10,7 @@ export const router = {
     routes: {},
     // prevents the hashchange we fire ourselves from re-invoking the view
     _ownHashChange: false,
-    register(name, fn) { this.routes[name] = fn; },
+    register(name, render, teardown) { this.routes[name] = { render, teardown }; },
     async go(view, params = {}) {
         const hash = Object.keys(params).length
             ? view + "/" + Object.values(params).join("/")
@@ -37,22 +37,27 @@ export const router = {
         document.getElementById("kp-bn-more")
             ?.classList.toggle("kp-active", moreLinks.some((el) => el.dataset.view === view));
 
-        const fn = this.routes[view];
-        if (!fn) return;
+        const route = this.routes[view];
+        if (!route) return;
+        this._navigation?.abort();
+        this._teardown?.();
+        const navigation = new AbortController();
+        this._navigation = navigation;
+        this._teardown = route.teardown;
         const el = document.getElementById("kp-view");
 
         // destroy traffic charts before replacing the view
         if (window.Chart) {
-            el.querySelectorAll('canvas[id^="site-traffic-"], #dash-traffic-chart').forEach(canvas => {
+            el.querySelectorAll('canvas[id^="site-traffic-"]').forEach(canvas => {
                 window.Chart.getChart(canvas)?.destroy();
             });
         }
 
         el.innerHTML = spinner();
         try {
-            await fn(el, params);
+            await route.render(el, params, navigation.signal);
         } catch (e) {
-            el.innerHTML = errorState(e.message);
+            if (!navigation.signal.aborted) el.innerHTML = errorState(e.message);
         }
     },
 };

@@ -9,8 +9,9 @@ import { cardRow, emptyState, siteTypeLabel, statusBadge, versionLabel } from '.
 import { showCreateSiteModal } from '../modals/create-site.js';
 import { loadChartJS } from './site-stats.js';
 
-export async function viewSites(root) {
+export async function viewSites(root, params, signal) {
     const sites = (await api.get("/sites")) ?? [];
+    if (signal.aborted) return;
 
     root.innerHTML = `
         <div class="kp-view-header">
@@ -112,17 +113,28 @@ export async function viewSites(root) {
     // wire select-all and row checkboxes
     wireBulkSelection();
     
-    // load Chart.js and render the individual site traffic charts
+    // Capture these canvases before awaiting Chart.js so stale views cannot
+    // start work against the next view's charts.
+    const canvases = [...root.querySelectorAll('canvas[id^="site-traffic-"]')];
+    if (!canvases.length) return;
     await loadChartJS();
-    if (window.Chart) {
-        await Promise.allSettled(sites.map(s => renderSiteTraffic(s.ID)));
-    }
+    if (!window.Chart) return;
+
+    // Limit concurrent log requests while keeping the site controls usable.
+    const concurrency = 4;
+    let next = 0;
+    await Promise.allSettled(Array.from({ length: Math.min(concurrency, canvases.length) }, async () => {
+        while (next < canvases.length) {
+            const canvas = canvases[next++];
+            if (!canvas.isConnected) return;
+            await renderSiteTraffic(canvas);
+        }
+    }));
 }
 
 // render the compact 24-hour traffic chart for a site
-async function renderSiteTraffic(siteId) {
-    const canvas = document.getElementById(`site-traffic-${siteId}`);
-    if (!canvas) return;
+async function renderSiteTraffic(canvas) {
+    const siteId = canvas.id.slice("site-traffic-".length);
 
     // fetch the site's traffic data
     const traffic = await api.get(`/sites/${siteId}/stats/traffic`).catch(() => null);
