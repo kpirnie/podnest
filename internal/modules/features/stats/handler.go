@@ -499,26 +499,34 @@ func seekToCutoff(ctx context.Context, f *os.File, cutoff time.Time) error {
 		return err
 	}
 
+	r := bufio.NewReaderSize(f, bufio.MaxScanTokenSize)
+
 	// probe reads the first timestamped line at or after off, returning its
 	// timestamp and the offset the line began at
-	probe := func(off int64) (time.Time, int64, bool) {
+	probe := func(off int64) (time.Time, int64, bool, error) {
 		if _, err := f.Seek(off, io.SeekStart); err != nil {
-			return time.Time{}, 0, false
+			return time.Time{}, 0, false, err
 		}
-		r := bufio.NewReader(f)
+		r.Reset(f)
 		pos := off
 		if off > 0 {
 			// discard the partial line the offset landed inside
-			skipped, err := r.ReadBytes('\n')
+			skipped, err := r.ReadSlice('\n')
 			if err != nil {
-				return time.Time{}, 0, false
+				if err != io.EOF {
+					return time.Time{}, 0, false, err
+				}
+				return time.Time{}, 0, false, nil
 			}
 			pos += int64(len(skipped))
 		}
 		for range seekProbeLines {
-			line, err := r.ReadBytes('\n')
-			if err != nil && len(line) == 0 {
-				return time.Time{}, 0, false
+			line, err := r.ReadSlice('\n')
+			if err != nil && err != io.EOF {
+				return time.Time{}, 0, false, err
+			}
+			if len(line) == 0 {
+				return time.Time{}, 0, false, nil
 			}
 			start := pos
 			pos += int64(len(line))
@@ -530,9 +538,9 @@ func seekToCutoff(ctx context.Context, f *os.File, cutoff time.Time) error {
 			if perr != nil {
 				continue
 			}
-			return ts, start, true
+			return ts, start, true, nil
 		}
-		return time.Time{}, 0, false
+		return time.Time{}, 0, false, nil
 	}
 
 	lo, hi := int64(0), fi.Size()
@@ -542,7 +550,10 @@ func seekToCutoff(ctx context.Context, f *os.File, cutoff time.Time) error {
 			return err
 		}
 		mid := (lo + hi) / 2
-		ts, start, ok := probe(mid)
+		ts, start, ok, err := probe(mid)
+		if err != nil {
+			return err
+		}
 		if !ok {
 			hi = mid
 			continue
@@ -709,6 +720,9 @@ func parseTrafficLog(ctx context.Context, sources []trafficSource) (*TrafficStat
 	// one unreadable site log must not blank the whole aggregate — log it and
 	// move on; only a cancelled request aborts the scan
 	for _, src := range sources {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := scanSource(src); err != nil {
 			if ctx.Err() != nil {
 				return nil, err
@@ -841,6 +855,9 @@ func parseDrilldown(ctx context.Context, sources []trafficSource, hour, statusCl
 	// one unreadable site log must not fail the whole drilldown — log it and
 	// move on; only a cancelled request aborts the scan
 	for _, src := range sources {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := scanSource(src); err != nil {
 			if ctx.Err() != nil {
 				return nil, err
