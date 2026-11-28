@@ -6,7 +6,6 @@ package server
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,14 +19,12 @@ import (
 	"podnest/internal/db"
 	"podnest/internal/logger"
 	"podnest/internal/models"
-	"podnest/internal/podman"
 )
 
 // resourceState holds mutable watcher runtime state, protected by a mutex.
 type resourceState struct {
-	mu        sync.RWMutex
-	warning   *models.ResourceWarning
-	throttled map[string]bool // pod name → currently throttled
+	mu      sync.RWMutex
+	warning *models.ResourceWarning
 }
 
 // webhookClient bounds a webhook POST; http.DefaultClient has no timeout, so a
@@ -37,7 +34,7 @@ var webhookClient = &http.Client{Timeout: 15 * time.Second}
 const webhookMaxRespBytes = 64 << 10
 
 func newResourceState() *resourceState {
-	return &resourceState{throttled: make(map[string]bool)}
+	return &resourceState{}
 }
 
 // GetWarning returns a copy of the current warning state (nil if none).
@@ -69,6 +66,14 @@ func (rs *resourceState) clearWarning() {
 // When available memory drops below the reserve, it throttles the heaviest pod
 // and dispatches notifications. Fires immediately then on the configured interval.
 func (s *Server) resourceWatcher() {
+	var throttles []memoryThrottle
+	attemptedThrottle := false
+	defer func() {
+		for _, throttle := range liftMemoryThrottles(throttles) {
+			throttle.file.Close()
+		}
+	}()
+
 	poll := func() int {
 		ctx := s.ctx
 
@@ -88,7 +93,7 @@ func (s *Server) resourceWatcher() {
 		if f, err := strconv.ParseFloat(settings["resource_ram_reserve_gb"], 64); err == nil {
 			ramReserveGB = f
 		}
-		if f, err := strconv.ParseFloat(settings["resource_throttle_pct"], 64); err == nil {
+		if f, err := strconv.ParseFloat(settings["resource_throttle_pct"], 64); err == nil && f > 0 && f <= 100 {
 			throttlePct = f
 		}
 		if v := settings["resource_webhook_url"]; v != "" {
@@ -128,9 +133,10 @@ func (s *Server) resourceWatcher() {
 		}
 
 		if availableMB >= reserveMB {
+			throttles = liftMemoryThrottles(throttles)
+			attemptedThrottle = false
 			// available memory is above the reserve floor — resolve if previously breached
 			if s.resource.GetWarning() != nil {
-				s.liftThrottles(ctx, allStats)
 				s.resource.clearWarning()
 				s.dispatchWebhook(webhookURL, map[string]any{
 					"event":     "resource_threshold_resolved",
@@ -144,13 +150,6 @@ func (s *Server) resourceWatcher() {
 
 		// find the heaviest pod
 		offender, offenderMB := heaviestPod(podUsage)
-		if offender == "" {
-			return intervalSec
-		}
-
-		logger.Warn("resourceWatcher: memory threshold breached (availableMB=%d reserveMB=%d offender=%s %dMB)",
-			availableMB, reserveMB, offender, offenderMB)
-
 		// set / refresh the warning state
 		w := &models.ResourceWarning{
 			Active:      true,
@@ -161,13 +160,28 @@ func (s *Server) resourceWatcher() {
 			OffenderMB:  offenderMB,
 			Since:       time.Now().UTC(),
 		}
-		if existing := s.resource.GetWarning(); existing != nil {
-			w.Since = existing.Since // preserve original breach time
+		existing := s.resource.GetWarning()
+		if existing != nil {
+			w.Since = existing.Since
 		}
 		s.resource.setWarning(w)
-
-		// apply throttle to the offending pod's containers
-		s.applyThrottle(ctx, offender, allStats[offender], throttlePct)
+		// Apply pressure once per breach, when container statistics are available.
+		if !attemptedThrottle && offender != "" {
+			attemptedThrottle = true
+			for _, c := range allStats[offender] {
+				throttle, err := s.applyMemoryThrottle(ctx, c.Name, c.MemUsage, throttlePct)
+				if err != nil {
+					logger.Warn("resourceWatcher: soft throttle unavailable for %s: %v", c.Name, err)
+				} else if throttle.file != nil {
+					throttles = append(throttles, throttle)
+				}
+			}
+		}
+		if existing != nil {
+			return intervalSec
+		}
+		logger.Warn("resourceWatcher: memory threshold breached (availableMB=%d reserveMB=%d offender=%s %dMB)",
+			availableMB, reserveMB, offender, offenderMB)
 
 		// dispatch webhook and notification
 		payload := map[string]any{
@@ -182,7 +196,10 @@ func (s *Server) resourceWatcher() {
 		s.dispatchWebhook(webhookURL, payload)
 
 		// send admin notifications
-		msg := fmt.Sprintf("PodNest: available memory low — %dMB available, %dMB reserved. Throttling %s.", availableMB, reserveMB, offender)
+		msg := fmt.Sprintf("PodNest: available memory low — %dMB available, %dMB reserved.", availableMB, reserveMB)
+		if offender != "" {
+			msg += fmt.Sprintf(" Highest usage: %s.", offender)
+		}
 		s.notify("PodNest Resource Alert", msg, msg)
 
 		return intervalSec
@@ -197,57 +214,6 @@ func (s *Server) resourceWatcher() {
 			ticker.Reset(time.Duration(intervalSec) * time.Second)
 		}
 	}
-}
-
-// applyThrottle sets a cgroup memory limit on each container of the offending pod.
-func (s *Server) applyThrottle(ctx context.Context, podName string, containers []podman.ContainerStat, throttlePct float64) {
-	s.resource.mu.Lock()
-	s.resource.throttled[podName] = true
-	s.resource.mu.Unlock()
-
-	for _, c := range containers {
-		if c.MemUsage == 0 {
-			continue
-		}
-		// reduce current usage by throttle percentage
-		limit := int64(float64(c.MemUsage) * (1 - throttlePct/100))
-		if limit < 64*1024*1024 {
-			limit = 64 * 1024 * 1024 // floor at 64MB
-		}
-		if err := s.podman.UpdateContainerResources(ctx, c.Name, limit); err != nil {
-			logger.Error("applyThrottle: failed for %s: %v", c.Name, err)
-		} else {
-			logger.Debug("applyThrottle: set %dMB limit on %s", limit/(1024*1024), c.Name)
-		}
-	}
-}
-
-// liftThrottles removes memory limits from all previously throttled pods.
-func (s *Server) liftThrottles(ctx context.Context, allStats map[string][]podman.ContainerStat) {
-	s.resource.mu.Lock()
-	throttled := make(map[string]bool, len(s.resource.throttled))
-	for k, v := range s.resource.throttled {
-		throttled[k] = v
-	}
-	s.resource.mu.Unlock()
-
-	for podName := range throttled {
-		containers, ok := allStats[podName]
-		if !ok {
-			continue
-		}
-		for _, c := range containers {
-			if err := s.podman.UpdateContainerResources(ctx, c.Name, 0); err != nil {
-				logger.Error("liftThrottles: failed for %s: %v", c.Name, err)
-			} else {
-				logger.Debug("liftThrottles: removed limit on %s", c.Name)
-			}
-		}
-	}
-
-	s.resource.mu.Lock()
-	s.resource.throttled = make(map[string]bool)
-	s.resource.mu.Unlock()
 }
 
 // heaviestPod returns the pod name and MB of the pod with the highest memory usage.

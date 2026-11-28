@@ -844,22 +844,22 @@ func (c *Client) ReloadVarnish(ctx context.Context, name string) error {
 	return nil
 }
 
-// UpdateContainerResources applies or removes a memory limit on a running container
-// via the Docker-compat update endpoint. Set limitBytes=0 to remove the limit.
-func (c *Client) UpdateContainerResources(ctx context.Context, name string, limitBytes int64) error {
-	body := map[string]any{
-		"Memory":     limitBytes,
-		"MemorySwap": -1, // -1 requests unlimited swap
+// ContainerCgroup returns the running container's ID and Podman-reported cgroup path.
+func (c *Client) ContainerCgroup(ctx context.Context, name string) (string, string, error) {
+	var info struct {
+		ID    string `json:"Id"`
+		State struct {
+			Running    bool   `json:"Running"`
+			CgroupPath string `json:"CgroupPath"`
+		} `json:"State"`
 	}
-	if limitBytes == 0 {
-		body["MemorySwap"] = 0
+	if err := c.get(ctx, "/v4.0.0/libpod/containers/"+url.PathEscape(name)+"/json", &info); err != nil {
+		return "", "", err
 	}
-	if err := c.post(ctx, "/v1.41/containers/"+name+"/update", body, nil); err != nil {
-		logger.Error("UpdateContainerResources: failed for %s: %v", name, err)
-		return err
+	if !info.State.Running || info.ID == "" || info.State.CgroupPath == "" {
+		return "", "", fmt.Errorf("no running cgroup for container %s", name)
 	}
-	logger.Debug("UpdateContainerResources: set limit=%d on %s", limitBytes, name)
-	return nil
+	return info.ID, info.State.CgroupPath, nil
 }
 
 // ContainerStats returns resource usage for the named containers, or for
