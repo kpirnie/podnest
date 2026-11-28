@@ -33,7 +33,7 @@ var updateCmd = &cobra.Command{
 
 // wire up the update flag
 func init() {
-	updateCmd.Flags().StringVar(&updateVersion, "version", "", "switch channels: latest, rc, or beta (default: keep current)")
+	updateCmd.Flags().StringVar(&updateVersion, "version", "", "select version: latest, rc, beta, or vX.Y.Z (default: keep current)")
 	rootCmd.AddCommand(updateCmd)
 }
 
@@ -58,7 +58,7 @@ func runUpdate() error {
 	ver := s.Version
 	if updateVersion != "" {
 		if !validVersion(updateVersion) {
-			return fmt.Errorf("--version must be one of: latest, dev, beta")
+			return fmt.Errorf("--version must be latest, rc, beta, or vX.Y.Z")
 		}
 		ver = updateVersion
 	}
