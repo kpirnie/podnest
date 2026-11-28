@@ -120,7 +120,7 @@ func validVersion(v string) bool {
 // runInstall carries out the full fresh setup
 func runInstall(recoverData func(*user.User, int, string) error) error {
 	if !validVersion(installVersion) {
-		return fmt.Errorf("--version must be one of: a valid version number, latest, rc, or beta")
+		return fmt.Errorf("--version must be one of: a valid version number (vX.Y.Z), latest, rc, or beta")
 	}
 
 	// refuse to double-install — update is the path once state exists
