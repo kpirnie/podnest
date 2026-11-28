@@ -849,7 +849,7 @@ func (c *Client) ReloadVarnish(ctx context.Context, name string) error {
 func (c *Client) UpdateContainerResources(ctx context.Context, name string, limitBytes int64) error {
 	body := map[string]any{
 		"Memory":     limitBytes,
-		"MemorySwap": -1, // -1 = unlimited swap; prevents swap-based OOM circumvention
+		"MemorySwap": -1, // -1 requests unlimited swap
 	}
 	if limitBytes == 0 {
 		body["MemorySwap"] = 0
