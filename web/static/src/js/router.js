@@ -41,9 +41,9 @@ export const router = {
         if (!fn) return;
         const el = document.getElementById("kp-view");
 
-        // destroy compact site traffic charts before replacing the view
+        // destroy traffic charts before replacing the view
         if (window.Chart) {
-            el.querySelectorAll('canvas[id^="site-traffic-"]').forEach(canvas => {
+            el.querySelectorAll('canvas[id^="site-traffic-"], #dash-traffic-chart').forEach(canvas => {
                 window.Chart.getChart(canvas)?.destroy();
             });
         }
