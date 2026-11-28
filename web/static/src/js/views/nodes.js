@@ -48,12 +48,12 @@ export async function viewNodes(root, params, signal) {
         </div>`;
 
     const wrap = document.getElementById("kp-nodes");
-    wrap.addEventListener("click", (e) => onNodeAction(e, root, nodes));
+    wrap.addEventListener("click", (e) => onNodeAction(e, root, nodes, params, signal));
 
     // pair, update, and unpair finish in another tab — refresh when focus returns
     window.addEventListener("focus", () => {
         if (document.getElementById("kp-nodes") === wrap) viewNodes(root, params, signal);
-    }, { once: true });
+    }, { once: true, signal });
 }
 
 function nodeRow(n) {
@@ -86,7 +86,7 @@ function nodeRow(n) {
     </tr>`;
 }
 
-async function onNodeAction(e, root, nodes) {
+async function onNodeAction(e, root, nodes, params, signal) {
     const btn = e.target.closest("[data-action^='node-']");
     if (!btn) return;
     e.stopPropagation();
