@@ -155,12 +155,6 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheKey := fmt.Sprintf("site:%d", site.ID)
-	if cached := globalCache.get(cacheKey); cached != nil {
-		apiutil.JSON(w, http.StatusOK, cached)
-		return
-	}
-
 	// RP sites write to a per-site log with no domain filtering needed;
 	// non-RP sites still require at least one domain to be registered
 	if site.SiteType != models.SiteTypeReverseProxy {
@@ -172,14 +166,14 @@ func (h *Handler) apiSiteTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// per-site log is already filtered — no domain matching needed
-	stats, err := parseTrafficLog(r.Context(), []trafficSource{{path: fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)}})
+	cacheKey := fmt.Sprintf("site:%d:%s", site.ID, site.Name)
+	stats, err := globalCache.load(r.Context(), cacheKey, []trafficSource{{path: fmt.Sprintf("%s/sites/%s/logs/access.log", h.AppPath, site.Name)}})
 	if err != nil {
 		logger.Error("stats: traffic parse for site %d: %v", site.ID, err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	globalCache.set(cacheKey, stats)
 	apiutil.JSON(w, http.StatusOK, stats)
 }
 
@@ -317,18 +311,6 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// admins share one entry per scope; any non-admin is cached under their uid
-	// so one user's data can never be served from another's cached entry
-	cacheKey := "global:" + scope
-	if user.Role != models.RoleAdmin {
-		cacheKey = fmt.Sprintf("user:%d", user.ID)
-	}
-
-	if cached := globalCache.get(cacheKey); cached != nil {
-		apiutil.JSON(w, http.StatusOK, cached)
-		return
-	}
-
 	// the panel scope reads only the global log, so the site list is skipped
 	var sites []*models.Site
 	if scope != scopePanel {
@@ -341,14 +323,26 @@ func (h *Handler) apiGlobalTraffic(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats, err := parseTrafficLog(r.Context(), h.scopeLogSources(scope, sites))
+	cacheKey := "global:" + scope
+	// Bind cached results to the current set of authorized logs, including
+	// site identity so a deleted and recreated site has a separate result.
+	siteKeys := make([]string, 0, len(sites))
+	for _, site := range sites {
+		siteKeys = append(siteKeys, fmt.Sprintf("%d:%q", site.ID, site.Name))
+	}
+	sort.Strings(siteKeys)
+	cacheKey += "|" + strings.Join(siteKeys, "|")
+	if user.Role != models.RoleAdmin {
+		cacheKey = fmt.Sprintf("user:%d:%s", user.ID, cacheKey)
+	}
+
+	stats, err := globalCache.load(r.Context(), cacheKey, h.scopeLogSources(scope, sites))
 	if err != nil {
 		logger.Error("stats: global traffic parse: %v", err)
 		apiutil.Error(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	globalCache.set(cacheKey, stats)
 	apiutil.JSON(w, http.StatusOK, stats)
 }
 
