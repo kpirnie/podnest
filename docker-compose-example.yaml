@@ -1,9 +1,11 @@
 services:
   # rename this service to your liking
   podnest:
-    # latest is the latest "release", while dev is under constant development. Use dev at your own risk
+    # latest is the stable release, rc is the release candidate, and beta is under active development
+    # a specific release can also be pinned using its vX.Y.Z tag
     image: ghcr.io/kpirnie/podnest:latest
-    #image: ghcr.io/kpirnie/podnest:dev
+    #image: ghcr.io/kpirnie/podnest:rc
+    #image: ghcr.io/kpirnie/podnest:beta
 
     # name your container to your liking
     container_name: podnest
