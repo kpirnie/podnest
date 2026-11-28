@@ -37,9 +37,9 @@ jobs:
             VERSION="${{ github.ref_name }}"
             echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:latest,ghcr.io/${{ github.repository_owner }}/podnest:${VERSION}" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:beta" >> $GITHUB_OUTPUT
+            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:rc" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
-            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:develop,ghcr.io/${{ github.repository_owner }}/podnest:dev" >> $GITHUB_OUTPUT
+            echo "TAGS=ghcr.io/${{ github.repository_owner }}/podnest:beta" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and Push
@@ -84,52 +84,3 @@ jobs:
           files: |
             pdnctl-linux-amd64
             pdnctl-linux-arm64
-
-  cleanup-previous:
-    runs-on: ubuntu-latest
-    needs: [build-and-push, release-pdnctl]
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-      packages: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      IMAGE: ghcr.io/${{ github.repository_owner }}/podnest
-
-    steps:
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Find previous release
-        id: prev
-        run: |
-          PREV=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --limit 10 --json tagName --jq '.[].tagName' | grep -vx "${{ github.ref_name }}" | head -n 1 || true)
-          echo "TAG=${PREV}" >> $GITHUB_OUTPUT
-
-      - name: Delete previous image
-        if: steps.prev.outputs.TAG != ''
-        run: |
-          PREV="${{ steps.prev.outputs.TAG }}"
-          PKG="/users/${{ github.repository_owner }}/packages/container/podnest/versions"
-          gh api --paginate "$PKG" --jq '.[] | [.id, .name, (.metadata.container.tags | join(","))] | @tsv' > versions.tsv
-          INDEX_ID=$(awk -F'\t' -v t="$PREV" '$3==t {print $1}' versions.tsv)
-          if [[ -z "$INDEX_ID" ]]; then
-            echo "No image found tagged only ${PREV}"
-            exit 0
-          fi
-          CHILDREN=$(docker buildx imagetools inspect --raw "${IMAGE}:${PREV}" | jq -r '.manifests[]?.digest')
-          gh api -X DELETE "${PKG}/${INDEX_ID}"
-          for D in $CHILDREN; do
-            ID=$(awk -F'\t' -v d="$D" '$2==d && $3=="" {print $1}' versions.tsv)
-            if [[ -n "$ID" ]]; then
-              gh api -X DELETE "${PKG}/${ID}"
-            fi
-          done
-
-      - name: Delete previous release and tag
-        if: steps.prev.outputs.TAG != ''
-        run: gh release delete "${{ steps.prev.outputs.TAG }}" --repo "${{ github.repository }}" --cleanup-tag --yes

@@ -33,7 +33,7 @@ var updateCmd = &cobra.Command{
 
 // wire up the update flag
 func init() {
-	updateCmd.Flags().StringVar(&updateVersion, "version", "", "switch channels: latest, dev, or beta (default: keep current)")
+	updateCmd.Flags().StringVar(&updateVersion, "version", "", "switch channels: latest, rc, or beta (default: keep current)")
 	rootCmd.AddCommand(updateCmd)
 }
 

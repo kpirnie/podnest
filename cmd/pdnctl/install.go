@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -105,15 +106,21 @@ func detectTZ() string {
 	return "UTC"
 }
 
-// validVersion checks the tag against the allowed channels
+// validVersion checks the tag against the allowed channels or a specific release
 func validVersion(v string) bool {
-	return v == "latest" || v == "dev" || v == "beta"
+	if v == "latest" || v == "rc" || v == "beta" {
+		return true
+	}
+
+	// allow explicit version pinning and rollbacks
+	matched, _ := regexp.MatchString(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`, v)
+	return matched
 }
 
 // runInstall carries out the full fresh setup
 func runInstall(recoverData func(*user.User, int, string) error) error {
 	if !validVersion(installVersion) {
-		return fmt.Errorf("--version must be one of: latest, dev, beta")
+		return fmt.Errorf("--version must be one of: a valid version number, latest, rc, or beta")
 	}
 
 	// refuse to double-install — update is the path once state exists
