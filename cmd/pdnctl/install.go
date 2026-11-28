@@ -48,7 +48,7 @@ var installCmd = &cobra.Command{
 // wire up the install flags
 func init() {
 	installCmd.Flags().StringVar(&installUser, "user", "", "the dedicated user PodNest runs under")
-	installCmd.Flags().StringVar(&installVersion, "version", "", "the PodNest image tag: latest, dev, or beta")
+	installCmd.Flags().StringVar(&installVersion, "version", "", "the PodNest image tag: latest, rc, beta, or vX.Y.Z")
 	installCmd.MarkFlagRequired("user")
 	installCmd.MarkFlagRequired("version")
 	rootCmd.AddCommand(installCmd)
@@ -278,7 +278,7 @@ func runInstall(recoverData func(*user.User, int, string) error) error {
 
 >>> Manage it with:
     pdnctl start | stop | restart | status
-    pdnctl update [--version latest|dev|beta]
+    pdnctl update [--version latest|rc|beta|vX.Y.Z]
     pdnctl pull-images
     pdnctl upgrade
     pdnctl uninstall
